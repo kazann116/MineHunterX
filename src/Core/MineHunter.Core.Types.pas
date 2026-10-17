@@ -1,0 +1,973 @@
+﻿unit MineHunter.Core.Types;
+
+{
+  MineHunter X — базовые модели данных публичного API.
+
+  Все модели — записи (record) со значимой семантикой. Снимок после публикации
+  сканером не изменяется, поэтому его можно безопасно читать из любого потока.
+  Время во всех моделях хранится в UTC.
+}
+
+interface
+
+uses
+  System.SysUtils;
+
+const
+  MH_CORE_VERSION = '0.1.0';
+
+  /// Значение ThreadCount, когда число потоков неизвестно.
+  MH_UNKNOWN_COUNT = -1;
+
+  /// Источник самодиагностики. Его записи о процессе MineHunter дублируют данные
+  /// коллектора процессов, поэтому в историю и профиль нормы не попадают.
+  MH_SELF_SOURCE_ID = 'self';
+
+type
+  EMHError = class(Exception);
+
+  /// Унифицированный статус источника данных (контракт для всех коллекторов).
+  TMHSourceState = (
+    ssUnknown,      // источник ещё не опрашивался
+    ssSuccess,      // данные получены полностью
+    ssPartial,      // данные получены частично (нет прав, нет истории и т.п.)
+    ssUnavailable,  // источник недоступен на этой системе или временно отключён
+    ssError         // сбой при сборе
+  );
+
+  /// Вид метрики. Новые значения добавляются только в конец: имена
+  /// сериализуются, но порядок используется в массивах-описаниях.
+  /// В TMHSnapshot.Metrics хранятся метрики уровня системы, в
+  /// TMHProcessInfo — метрики процесса.
+  TMHMetricKind = (
+    mkCpuPercent,
+    mkWorkingSetBytes,
+    mkPrivateBytes,
+    mkDiskBytesPerSec,
+    mkNetworkBytesPerSec,
+    mkGpuPercent,
+    mkTemperatureCelsius,
+    mkMemoryUsedBytes,
+    mkMemoryTotalBytes,
+    mkMemoryLoadPercent,
+    mkDiskReadBytesPerSec,
+    mkDiskWriteBytesPerSec,
+    mkDiskActivePercent,
+    /// Доля времени работы процессоров без учёта частоты (GetSystemTimes).
+    /// mkCpuPercent — «загруженность» с учётом частоты, как в диспетчере задач.
+    mkCpuTimePercent,
+    /// Производительность процессора относительно базовой частоты, % (выше 100 — турбо).
+    mkCpuFrequencyPercent,
+    /// Предел производительности, установленный прошивкой (100 — ограничений нет;
+    /// меньше — троттлинг по температуре или питанию).
+    mkCpuPerformanceLimitPercent,
+    /// Загрузка вычислительных движков GPU (Compute, CUDA), %.
+    mkGpuComputePercent,
+    /// Выделенная видеопамять (у процесса — его доля).
+    mkGpuMemoryBytes,
+    mkGpuTemperatureCelsius,
+    mkCpuTemperatureCelsius,
+    mkDiskTemperatureCelsius,
+    /// Частный рабочий набор процесса — колонка «Память» диспетчера задач.
+    mkPrivateWorkingSetBytes
+  );
+
+  /// Уровень доступа, с которым удалось открыть процесс.
+  TMHAccessLevel = (alUnknown, alFull, alLimited, alDenied);
+
+  TMHSignatureState = (
+    sgNotChecked,
+    sgSignedTrusted,
+    sgSignedUntrusted,
+    sgUnsigned,
+    sgCheckFailed
+  );
+
+  /// Итог оценки. Это «степень подозрения», а не диагноз заражения.
+  TMHRiskLevel = (
+    rlNone,              // признаков нет
+    rlLow,               // слабые признаки, наблюдение
+    rlNeedsReview,       // требует проверки
+    rlSuspicious,        // подозрительно
+    rlHighlySuspicious   // высокая степень подозрения
+  );
+
+  /// Контекст работы компьютера для профиля нормы.
+  TMHWorkContext = (wcUnknown, wcIdle, wcWork, wcGaming);
+
+  TMHFindingCategory = (
+    fcMining,       // признаки скрытого майнинга
+    fcSuspicious,   // подозрительный процесс (маскировка, расположение, подпись)
+    fcPersistence,  // подозрительное закрепление в автозапуске
+    fcPerformance   // необычная нагрузка без признаков угрозы
+  );
+
+  /// Устройство, к которому относится датчик температуры.
+  TMHSensorKind = (skCpu, skGpu, skDisk);
+
+  TMHAutostartKind = (akRegistryRun, akRegistryRunOnce, akStartupFolder, akService,
+    akScheduledTask);
+  TMHAutostartScope = (asMachine, asUser);
+  TMHTransport = (ntTcp, ntUdp);
+
+  /// Идентичность экземпляра процесса: PID + время создания.
+  /// PID в Windows переиспользуется, поэтому одного PID недостаточно.
+  TMHProcessId = record
+  public
+    Pid: Cardinal;
+    /// Время создания процесса в формате FILETIME (100-нс интервалы с 1601 г., UTC).
+    /// 0 — время неизвестно.
+    CreateTime: UInt64;
+    class function Create(APid: Cardinal; ACreateTime: UInt64): TMHProcessId; static;
+    class function Empty: TMHProcessId; static;
+    function IsEmpty: Boolean;
+    function HasCreateTime: Boolean;
+    function ToString: string;
+    function GetHashCode: Integer;
+    class operator Equal(const A, B: TMHProcessId): Boolean;
+    class operator NotEqual(const A, B: TMHProcessId): Boolean;
+  end;
+
+  /// Измерение. HasValue = False означает «нет данных» — это не ноль.
+  TMHMetric = record
+  public
+    Kind: TMHMetricKind;
+    Value: Double;
+    HasValue: Boolean;
+    TimestampUtc: TDateTime;
+    class function Available(AKind: TMHMetricKind; AValue: Double;
+      ATimestampUtc: TDateTime): TMHMetric; static;
+    class function NoData(AKind: TMHMetricKind;
+      ATimestampUtc: TDateTime): TMHMetric; static;
+  end;
+
+  TMHProcessInfo = record
+  public
+    Id: TMHProcessId;
+    ParentPid: Cardinal;
+    Name: string;
+    /// Полный путь к образу; пустая строка — путь получить не удалось.
+    ImagePath: string;
+    /// SHA-256 в hex; пустая строка — хеш не вычислялся.
+    Sha256: string;
+    Signature: TMHSignatureState;
+    Access: TMHAccessLevel;
+    Cpu: TMHMetric;
+    WorkingSet: TMHMetric;
+    PrivateBytes: TMHMetric;
+    /// MH_UNKNOWN_COUNT, если неизвестно.
+    ThreadCount: Integer;
+    /// Идентификатор источника, предоставившего данные.
+    SourceId: string;
+    /// Командная строка ('' — не получена). Не сохраняется в истории.
+    CommandLine: string;
+    /// У процесса есть видимое окно верхнего уровня (по данным контекста).
+    HasVisibleWindow: Boolean;
+    /// Частный рабочий набор (колонка «Память» диспетчера задач).
+    PrivateWorkingSet: TMHMetric;
+    /// Загрузка GPU — самый загруженный движок процесса, % (как в диспетчере задач).
+    Gpu: TMHMetric;
+    /// Загрузка вычислительных движков GPU (Compute, CUDA), %.
+    GpuCompute: TMHMetric;
+    /// Выделенная видеопамять процесса.
+    GpuMemory: TMHMetric;
+    class function Create(const AId: TMHProcessId; const AName: string;
+      ATimestampUtc: TDateTime): TMHProcessInfo; static;
+  end;
+
+  /// Дополнительные сведения о процессе от вспомогательных источников.
+  /// Сканер переносит в процесс только заполненные поля.
+  TMHProcessDetail = record
+    Id: TMHProcessId;
+    CommandLine: string;
+    /// Метрики GPU; HasValue = False — источник их не передавал.
+    Gpu: TMHMetric;
+    GpuCompute: TMHMetric;
+    GpuMemory: TMHMetric;
+    class function Create(const AId: TMHProcessId): TMHProcessDetail; static;
+  end;
+
+  /// Сведения об исполняемом файле: хеш и цифровая подпись.
+  TMHFileInfo = record
+  public
+    /// Нормализованный путь (MHNormalizePath).
+    Path: string;
+    /// -1 — размер неизвестен.
+    SizeBytes: Int64;
+    LastWriteUtc: TDateTime;
+    /// SHA-256 в нижнем регистре hex; '' — не вычислялся.
+    Sha256: string;
+    Signature: TMHSignatureState;
+    /// Издатель из сертификата подписи ('' — нет данных).
+    Signer: string;
+    /// 'embedded' — подпись в файле, 'catalog' — подпись каталога Windows, '' — нет.
+    SignatureSource: string;
+    /// Причина отсутствия данных ('' — ошибок нет).
+    Error: string;
+    class function Create(const APath: string): TMHFileInfo; static;
+  end;
+
+  /// Элемент автозапуска (MH-04).
+  TMHAutostartEntry = record
+  public
+    Kind: TMHAutostartKind;
+    Scope: TMHAutostartScope;
+    /// Имя значения реестра, файла ярлыка, службы или путь задания.
+    Name: string;
+    /// Команда в исходном виде.
+    Command: string;
+    /// Нормализованный путь исполняемого файла ('' — не удалось определить).
+    ImagePath: string;
+    /// Раздел реестра, папка, «services» или папка планировщика.
+    Location: string;
+    Enabled: Boolean;
+    /// Тип запуска службы, триггер задания, учётная запись и т.п.
+    Details: string;
+  end;
+
+  /// Сетевое соединение или прослушиваемый порт (MH-05).
+  TMHNetConnection = record
+  public
+    Transport: TMHTransport;
+    IPv6: Boolean;
+    LocalAddress: string;
+    LocalPort: Word;
+    /// '' для UDP и прослушиваемых портов.
+    RemoteAddress: string;
+    RemotePort: Word;
+    /// 'ESTABLISHED', 'LISTEN', ... ; '' для UDP.
+    State: string;
+    OwningPid: Cardinal;
+    function IsRemote: Boolean;
+  end;
+
+  /// Показание датчика температуры.
+  TMHSensorReading = record
+  public
+    Kind: TMHSensorKind;
+    /// Модель устройства или имя датчика.
+    Device: string;
+    /// Источник: 'D3DKMT', 'NVML', 'storage', 'LibreHardwareMonitor'…
+    Source: string;
+    Celsius: Double;
+    /// Порог производителя (предупреждение или начало снижения частоты);
+    /// 0 — неизвестен.
+    LimitCelsius: Double;
+    class function Create(AKind: TMHSensorKind; const ADevice, ASource: string;
+      ACelsius, ALimitCelsius: Double): TMHSensorReading; static;
+  end;
+
+  /// Контекст работы пользователя на момент снимка.
+  TMHContextInfo = record
+  public
+    Available: Boolean;
+    UserIdleSeconds: Cardinal;
+    ForegroundPid: Cardinal;
+    /// Полноэкранное приложение (игра, презентация, видео).
+    FullscreenActive: Boolean;
+    WorkContext: TMHWorkContext;
+    /// PID процессов с видимыми окнами верхнего уровня.
+    VisibleWindowPids: TArray<Cardinal>;
+    function HasVisibleWindow(APid: Cardinal): Boolean;
+  end;
+
+  TMHSourceStatus = record
+  public
+    SourceId: string;
+    State: TMHSourceState;
+    /// Пояснение для пользователя (причина частичных данных или ошибки).
+    Message: string;
+    /// Источник даст больше данных при запуске с повышенными правами.
+    RequiresElevation: Boolean;
+    TimestampUtc: TDateTime;
+    DurationMs: Cardinal;
+    ItemCount: Integer;
+    class function Create(const ASourceId: string; AState: TMHSourceState;
+      const AMessage: string; ATimestampUtc: TDateTime): TMHSourceStatus; static;
+  end;
+
+  /// Признак, повлиявший на оценку. Weight > 0 повышает риск,
+  /// Weight < 0 — отрицательный (оправдывающий) фактор.
+  TMHEvidence = record
+  public
+    Code: string;
+    Description: string;
+    Weight: Integer;
+    /// Наблюдаемое значение в читаемом виде (например, «87% CPU в течение 40 мин»).
+    Observed: string;
+    class function Create(const ACode, ADescription: string; AWeight: Integer;
+      const AObserved: string = ''): TMHEvidence; static;
+    function IsNegativeFactor: Boolean;
+  end;
+
+  TMHFinding = record
+  public
+    Id: TGUID;
+    Process: TMHProcessId;
+    ProcessName: string;
+    ImagePath: string;
+    Title: string;
+    Summary: string;
+    /// 0..100
+    Score: Integer;
+    Level: TMHRiskLevel;
+    /// Уверенность оценки 0..1 (снижается при отсутствии данных).
+    Confidence: Double;
+    Evidence: TArray<TMHEvidence>;
+    MissingData: TArray<string>;
+    Recommendations: TArray<string>;
+    RulesetVersion: string;
+    DetectedAtUtc: TDateTime;
+    Category: TMHFindingCategory;
+    /// Стабильный ключ находки (процесс + категория) для объединения повторов.
+    Key: string;
+    ParentPid: Cardinal;
+    /// Сумма положительных и отрицательных весов до ограничения 0..100.
+    RawScore: Integer;
+    function PositiveEvidence: TArray<TMHEvidence>;
+    function NegativeEvidence: TArray<TMHEvidence>;
+  end;
+
+  TMHFindings = TArray<TMHFinding>;
+
+  /// Пороги перевода балла 0..100 в уровень риска. Настраиваются пользователем.
+  TMHRiskThresholds = record
+  public
+    Low: Integer;
+    NeedsReview: Integer;
+    Suspicious: Integer;
+    HighlySuspicious: Integer;
+    class function Default: TMHRiskThresholds; static;
+    /// Пороги должны строго возрастать в пределах 1..100.
+    function IsValid: Boolean;
+    function LevelOf(AScore: Integer): TMHRiskLevel;
+  end;
+
+  /// Параметры анализатора угроз (настраиваются пользователем, MH-07).
+  TMHAnalyzerSettings = record
+  public
+    Thresholds: TMHRiskThresholds;
+    /// Порог высокой нагрузки процесса, % всей машины.
+    HighCpuPercent: Double;
+    /// Порог высокой нагрузки, % одного ядра (для многоядерных систем).
+    HighCoreCpuPercent: Double;
+    /// Сколько минут нагрузка должна держаться, чтобы считаться длительной.
+    SustainedMinutes: Integer;
+    /// Минимум снимков, после которого профиль нормы используется.
+    BaselineMinSamples: Integer;
+    class function Default: TMHAnalyzerSettings; static;
+    function Normalized: TMHAnalyzerSettings;
+  end;
+
+  /// Разрешённая пользователем программа: находки по ней не создаются.
+  TMHExclusion = record
+  public
+    /// MHProgramKey: нормализованный путь в нижнем регистре.
+    Key: string;
+    /// Если задан — исключение действует только для файла с этим SHA-256
+    /// (подмена файла по тому же пути снова вызовет проверку).
+    Sha256: string;
+    Name: string;
+    Comment: string;
+    CreatedUtc: TDateTime;
+    function Matches(const AKey, ASha256: string): Boolean;
+  end;
+
+  /// Статистика ряда значений.
+  TMHStat = record
+  public
+    SampleCount: Integer;
+    Mean: Double;
+    Median: Double;
+    P95: Double;
+    Max: Double;
+    function HasData: Boolean;
+    /// Вычисляет статистику; значения массива переупорядочиваются.
+    class function FromValues(var AValues: TArray<Double>): TMHStat; static;
+  end;
+
+  /// Норма для отдельной программы (ключ — нормализованный путь в нижнем регистре
+  /// или имя процесса, если путь неизвестен).
+  TMHProcessBaseline = record
+    Key: string;
+    Name: string;
+    Cpu: TMHStat;
+    WorkingSet: TMHStat;
+    /// Доля снимков контекста, в которых программа присутствовала (0..1).
+    PresenceRatio: Double;
+  end;
+
+  /// Профиль нормы компьютера для одного контекста работы (MH-06).
+  TMHBaseline = record
+  public
+    Context: TMHWorkContext;
+    CreatedUtc: TDateTime;
+    UpdatedUtc: TDateTime;
+    /// Число снимков, по которым построен профиль.
+    SampleCount: Integer;
+    PeriodFromUtc: TDateTime;
+    PeriodToUtc: TDateTime;
+    SystemCpu: TMHStat;
+    MemoryLoad: TMHStat;
+    DiskActive: TMHStat;
+    Processes: TArray<TMHProcessBaseline>;
+    class function Empty: TMHBaseline; static;
+    /// Профиль считается сформированным при достаточном числе наблюдений.
+    function IsEstablished(AMinSamples: Integer): Boolean;
+    function FindProcess(const AKey: string; out AStat: TMHProcessBaseline): Boolean;
+  end;
+
+  /// Состояние системы на момент опроса.
+  TMHSnapshot = record
+  public
+    Sequence: UInt64;
+    TimestampUtc: TDateTime;
+    Processes: TArray<TMHProcessInfo>;
+    Metrics: TArray<TMHMetric>;
+    Sources: TArray<TMHSourceStatus>;
+    Files: TArray<TMHFileInfo>;
+    Autostart: TArray<TMHAutostartEntry>;
+    Connections: TArray<TMHNetConnection>;
+    Context: TMHContextInfo;
+    /// Показания датчиков температуры (GPU, накопители, процессор).
+    Sensors: TArray<TMHSensorReading>;
+    class function Create(ASequence: UInt64;
+      ATimestampUtc: TDateTime): TMHSnapshot; static;
+    function FindProcess(const AId: TMHProcessId; out AInfo: TMHProcessInfo): Boolean;
+    function FindSource(const ASourceId: string; out AStatus: TMHSourceStatus): Boolean;
+    /// Поиск по нормализованному пути без учёта регистра.
+    function FindFile(const APath: string; out AInfo: TMHFileInfo): Boolean;
+    function ConnectionsOf(APid: Cardinal): TArray<TMHNetConnection>;
+    function FindMetric(AKind: TMHMetricKind; out AMetric: TMHMetric): Boolean;
+  end;
+
+  /// Результат одного вызова коллектора: статус источника и собранные данные.
+  /// Сканер объединяет результат со снимком только если коллектор не упал.
+  TMHCollectionResult = record
+  public
+    Status: TMHSourceStatus;
+    Processes: TArray<TMHProcessInfo>;
+    Metrics: TArray<TMHMetric>;
+    Files: TArray<TMHFileInfo>;
+    Autostart: TArray<TMHAutostartEntry>;
+    Connections: TArray<TMHNetConnection>;
+    ProcessDetails: TArray<TMHProcessDetail>;
+    Sensors: TArray<TMHSensorReading>;
+    /// Контекст передаётся, только если HasContext = True.
+    HasContext: Boolean;
+    Context: TMHContextInfo;
+    class function Create(const AStatus: TMHSourceStatus): TMHCollectionResult; static;
+  end;
+
+function MHSourceStateToString(AState: TMHSourceState): string;
+function MHRiskLevelToString(ALevel: TMHRiskLevel): string;
+function MHSignatureToString(AState: TMHSignatureState): string;
+function MHFindingCategoryToString(ACategory: TMHFindingCategory): string;
+function MHAutostartKindToString(AKind: TMHAutostartKind): string;
+function MHWorkContextToString(AContext: TMHWorkContext): string;
+/// Ключ программы для профиля нормы и исключений: путь в нижнем регистре
+/// (или имя, если путь неизвестен).
+function MHProgramKey(const AImagePath, AName: string): string;
+function MHClampScore(AScore: Integer): Integer;
+
+implementation
+
+uses
+  System.Hash, System.Math, System.Generics.Collections, System.Generics.Defaults;
+
+{ TMHProcessId }
+
+class function TMHProcessId.Create(APid: Cardinal; ACreateTime: UInt64): TMHProcessId;
+begin
+  Result.Pid := APid;
+  Result.CreateTime := ACreateTime;
+end;
+
+class function TMHProcessId.Empty: TMHProcessId;
+begin
+  Result.Pid := 0;
+  Result.CreateTime := 0;
+end;
+
+function TMHProcessId.IsEmpty: Boolean;
+begin
+  Result := (Pid = 0) and (CreateTime = 0);
+end;
+
+function TMHProcessId.HasCreateTime: Boolean;
+begin
+  Result := CreateTime <> 0;
+end;
+
+function TMHProcessId.ToString: string;
+begin
+  Result := Format('%u@%x', [Pid, CreateTime]);
+end;
+
+function TMHProcessId.GetHashCode: Integer;
+var
+  LKey: array[0..1] of UInt64;
+begin
+  LKey[0] := Pid;
+  LKey[1] := CreateTime;
+  Result := THashBobJenkins.GetHashValue(LKey, SizeOf(LKey));
+end;
+
+class operator TMHProcessId.Equal(const A, B: TMHProcessId): Boolean;
+begin
+  Result := (A.Pid = B.Pid) and (A.CreateTime = B.CreateTime);
+end;
+
+class operator TMHProcessId.NotEqual(const A, B: TMHProcessId): Boolean;
+begin
+  Result := not (A = B);
+end;
+
+{ TMHMetric }
+
+class function TMHMetric.Available(AKind: TMHMetricKind; AValue: Double;
+  ATimestampUtc: TDateTime): TMHMetric;
+begin
+  Result.Kind := AKind;
+  Result.Value := AValue;
+  Result.HasValue := True;
+  Result.TimestampUtc := ATimestampUtc;
+end;
+
+class function TMHMetric.NoData(AKind: TMHMetricKind;
+  ATimestampUtc: TDateTime): TMHMetric;
+begin
+  Result.Kind := AKind;
+  Result.Value := 0;
+  Result.HasValue := False;
+  Result.TimestampUtc := ATimestampUtc;
+end;
+
+{ TMHProcessInfo }
+
+class function TMHProcessInfo.Create(const AId: TMHProcessId; const AName: string;
+  ATimestampUtc: TDateTime): TMHProcessInfo;
+begin
+  Result := Default(TMHProcessInfo);
+  Result.Id := AId;
+  Result.Name := AName;
+  Result.Signature := sgNotChecked;
+  Result.Access := alUnknown;
+  Result.Cpu := TMHMetric.NoData(mkCpuPercent, ATimestampUtc);
+  Result.WorkingSet := TMHMetric.NoData(mkWorkingSetBytes, ATimestampUtc);
+  Result.PrivateBytes := TMHMetric.NoData(mkPrivateBytes, ATimestampUtc);
+  Result.PrivateWorkingSet := TMHMetric.NoData(mkPrivateWorkingSetBytes, ATimestampUtc);
+  Result.Gpu := TMHMetric.NoData(mkGpuPercent, ATimestampUtc);
+  Result.GpuCompute := TMHMetric.NoData(mkGpuComputePercent, ATimestampUtc);
+  Result.GpuMemory := TMHMetric.NoData(mkGpuMemoryBytes, ATimestampUtc);
+  Result.ThreadCount := MH_UNKNOWN_COUNT;
+end;
+
+{ TMHProcessDetail }
+
+class function TMHProcessDetail.Create(const AId: TMHProcessId): TMHProcessDetail;
+begin
+  Result := Default(TMHProcessDetail);
+  Result.Id := AId;
+  Result.Gpu := TMHMetric.NoData(mkGpuPercent, 0);
+  Result.GpuCompute := TMHMetric.NoData(mkGpuComputePercent, 0);
+  Result.GpuMemory := TMHMetric.NoData(mkGpuMemoryBytes, 0);
+end;
+
+{ TMHSensorReading }
+
+class function TMHSensorReading.Create(AKind: TMHSensorKind; const ADevice, ASource: string;
+  ACelsius, ALimitCelsius: Double): TMHSensorReading;
+begin
+  Result.Kind := AKind;
+  Result.Device := ADevice;
+  Result.Source := ASource;
+  Result.Celsius := ACelsius;
+  Result.LimitCelsius := ALimitCelsius;
+end;
+
+{ TMHFileInfo }
+
+class function TMHFileInfo.Create(const APath: string): TMHFileInfo;
+begin
+  Result := Default(TMHFileInfo);
+  Result.Path := APath;
+  Result.SizeBytes := -1;
+  Result.Signature := sgNotChecked;
+end;
+
+{ TMHNetConnection }
+
+function TMHNetConnection.IsRemote: Boolean;
+begin
+  Result := (Transport = ntTcp) and (RemoteAddress <> '') and (RemotePort <> 0) and
+    (RemoteAddress <> '0.0.0.0') and (RemoteAddress <> '::') and
+    (RemoteAddress <> '127.0.0.1') and (RemoteAddress <> '::1');
+end;
+
+{ TMHContextInfo }
+
+function TMHContextInfo.HasVisibleWindow(APid: Cardinal): Boolean;
+var
+  LPid: Cardinal;
+begin
+  for LPid in VisibleWindowPids do
+    if LPid = APid then
+      Exit(True);
+  Result := False;
+end;
+
+{ TMHSourceStatus }
+
+class function TMHSourceStatus.Create(const ASourceId: string; AState: TMHSourceState;
+  const AMessage: string; ATimestampUtc: TDateTime): TMHSourceStatus;
+begin
+  Result := Default(TMHSourceStatus);
+  Result.SourceId := ASourceId;
+  Result.State := AState;
+  Result.Message := AMessage;
+  Result.TimestampUtc := ATimestampUtc;
+end;
+
+{ TMHEvidence }
+
+class function TMHEvidence.Create(const ACode, ADescription: string; AWeight: Integer;
+  const AObserved: string): TMHEvidence;
+begin
+  Result.Code := ACode;
+  Result.Description := ADescription;
+  Result.Weight := AWeight;
+  Result.Observed := AObserved;
+end;
+
+function TMHEvidence.IsNegativeFactor: Boolean;
+begin
+  Result := Weight < 0;
+end;
+
+{ TMHFinding }
+
+function TMHFinding.PositiveEvidence: TArray<TMHEvidence>;
+var
+  LItem: TMHEvidence;
+begin
+  Result := nil;
+  for LItem in Evidence do
+    if LItem.Weight > 0 then
+      Result := Result + [LItem];
+end;
+
+function TMHFinding.NegativeEvidence: TArray<TMHEvidence>;
+var
+  LItem: TMHEvidence;
+begin
+  Result := nil;
+  for LItem in Evidence do
+    if LItem.Weight < 0 then
+      Result := Result + [LItem];
+end;
+
+{ TMHAnalyzerSettings }
+
+class function TMHAnalyzerSettings.Default: TMHAnalyzerSettings;
+begin
+  Result.Thresholds := TMHRiskThresholds.Default;
+  Result.HighCpuPercent := 25;
+  Result.HighCoreCpuPercent := 80;
+  Result.SustainedMinutes := 10;
+  Result.BaselineMinSamples := 1800;
+end;
+
+function TMHAnalyzerSettings.Normalized: TMHAnalyzerSettings;
+begin
+  Result := Self;
+  if not Result.Thresholds.IsValid then
+    Result.Thresholds := TMHRiskThresholds.Default;
+  Result.HighCpuPercent := EnsureRange(HighCpuPercent, 1.0, 100.0);
+  Result.HighCoreCpuPercent := EnsureRange(HighCoreCpuPercent, 10.0, 100.0);
+  Result.SustainedMinutes := EnsureRange(SustainedMinutes, 1, 24 * 60);
+  Result.BaselineMinSamples := EnsureRange(BaselineMinSamples, 10, 10000000);
+end;
+
+{ TMHExclusion }
+
+function TMHExclusion.Matches(const AKey, ASha256: string): Boolean;
+begin
+  Result := (Key <> '') and SameText(Key, AKey) and
+    ((Sha256 = '') or SameText(Sha256, ASha256));
+end;
+
+{ TMHStat }
+
+function TMHStat.HasData: Boolean;
+begin
+  Result := SampleCount > 0;
+end;
+
+class function TMHStat.FromValues(var AValues: TArray<Double>): TMHStat;
+var
+  I: Integer;
+  LSum: Double;
+
+  function Percentile(AP: Double): Double;
+  var
+    LPos: Double;
+    LLow: Integer;
+  begin
+    // Линейная интерполяция между соседними порядковыми статистиками.
+    LPos := AP * (Length(AValues) - 1);
+    LLow := Trunc(LPos);
+    if LLow >= High(AValues) then
+      Result := AValues[High(AValues)]
+    else
+      Result := AValues[LLow] + (AValues[LLow + 1] - AValues[LLow]) * (LPos - LLow);
+  end;
+
+begin
+  Result := Default(TMHStat);
+  Result.SampleCount := Length(AValues);
+  if Result.SampleCount = 0 then
+    Exit;
+  TArray.Sort<Double>(AValues);
+  LSum := 0;
+  for I := 0 to High(AValues) do
+    LSum := LSum + AValues[I];
+  Result.Mean := LSum / Length(AValues);
+  Result.Median := Percentile(0.5);
+  Result.P95 := Percentile(0.95);
+  Result.Max := AValues[High(AValues)];
+end;
+
+{ TMHRiskThresholds }
+
+class function TMHRiskThresholds.Default: TMHRiskThresholds;
+begin
+  Result.Low := 15;
+  Result.NeedsReview := 35;
+  Result.Suspicious := 60;
+  Result.HighlySuspicious := 85;
+end;
+
+function TMHRiskThresholds.IsValid: Boolean;
+begin
+  Result := (Low >= 1) and (Low < NeedsReview) and (NeedsReview < Suspicious) and
+    (Suspicious < HighlySuspicious) and (HighlySuspicious <= 100);
+end;
+
+function TMHRiskThresholds.LevelOf(AScore: Integer): TMHRiskLevel;
+begin
+  if not IsValid then
+    raise EMHError.Create('Некорректные пороги уровня риска');
+  AScore := MHClampScore(AScore);
+  if AScore >= HighlySuspicious then
+    Result := rlHighlySuspicious
+  else if AScore >= Suspicious then
+    Result := rlSuspicious
+  else if AScore >= NeedsReview then
+    Result := rlNeedsReview
+  else if AScore >= Low then
+    Result := rlLow
+  else
+    Result := rlNone;
+end;
+
+{ TMHBaseline }
+
+class function TMHBaseline.Empty: TMHBaseline;
+begin
+  Result := Default(TMHBaseline);
+  Result.Context := wcUnknown;
+end;
+
+function TMHBaseline.IsEstablished(AMinSamples: Integer): Boolean;
+begin
+  Result := (AMinSamples > 0) and (SampleCount >= AMinSamples);
+end;
+
+function TMHBaseline.FindProcess(const AKey: string; out AStat: TMHProcessBaseline): Boolean;
+var
+  I: Integer;
+begin
+  for I := 0 to High(Processes) do
+    if SameText(Processes[I].Key, AKey) then
+    begin
+      AStat := Processes[I];
+      Exit(True);
+    end;
+  AStat := Default(TMHProcessBaseline);
+  Result := False;
+end;
+
+{ TMHSnapshot }
+
+class function TMHSnapshot.Create(ASequence: UInt64; ATimestampUtc: TDateTime): TMHSnapshot;
+begin
+  Result := Default(TMHSnapshot);
+  Result.Sequence := ASequence;
+  Result.TimestampUtc := ATimestampUtc;
+end;
+
+function TMHSnapshot.FindProcess(const AId: TMHProcessId; out AInfo: TMHProcessInfo): Boolean;
+var
+  I: Integer;
+begin
+  for I := 0 to High(Processes) do
+    if Processes[I].Id = AId then
+    begin
+      AInfo := Processes[I];
+      Exit(True);
+    end;
+  AInfo := Default(TMHProcessInfo);
+  Result := False;
+end;
+
+function TMHSnapshot.FindSource(const ASourceId: string; out AStatus: TMHSourceStatus): Boolean;
+var
+  I: Integer;
+begin
+  for I := 0 to High(Sources) do
+    if SameText(Sources[I].SourceId, ASourceId) then
+    begin
+      AStatus := Sources[I];
+      Exit(True);
+    end;
+  AStatus := Default(TMHSourceStatus);
+  Result := False;
+end;
+
+function TMHSnapshot.FindFile(const APath: string; out AInfo: TMHFileInfo): Boolean;
+var
+  I: Integer;
+begin
+  if APath <> '' then
+    for I := 0 to High(Files) do
+      if SameText(Files[I].Path, APath) then
+      begin
+        AInfo := Files[I];
+        Exit(True);
+      end;
+  AInfo := Default(TMHFileInfo);
+  Result := False;
+end;
+
+function TMHSnapshot.ConnectionsOf(APid: Cardinal): TArray<TMHNetConnection>;
+var
+  LItem: TMHNetConnection;
+begin
+  Result := nil;
+  for LItem in Connections do
+    if LItem.OwningPid = APid then
+      Result := Result + [LItem];
+end;
+
+function TMHSnapshot.FindMetric(AKind: TMHMetricKind; out AMetric: TMHMetric): Boolean;
+var
+  I: Integer;
+begin
+  for I := 0 to High(Metrics) do
+    if Metrics[I].Kind = AKind then
+    begin
+      AMetric := Metrics[I];
+      Exit(True);
+    end;
+  AMetric := TMHMetric.NoData(AKind, TimestampUtc);
+  Result := False;
+end;
+
+{ TMHCollectionResult }
+
+class function TMHCollectionResult.Create(const AStatus: TMHSourceStatus): TMHCollectionResult;
+begin
+  Result := Default(TMHCollectionResult);
+  Result.Status := AStatus;
+end;
+
+function MHSourceStateToString(AState: TMHSourceState): string;
+begin
+  case AState of
+    ssSuccess:     Result := 'успех';
+    ssPartial:     Result := 'частично';
+    ssUnavailable: Result := 'недоступно';
+    ssError:       Result := 'ошибка';
+  else
+    Result := 'не опрашивался';
+  end;
+end;
+
+function MHRiskLevelToString(ALevel: TMHRiskLevel): string;
+begin
+  case ALevel of
+    rlLow:              Result := 'низкий';
+    rlNeedsReview:      Result := 'требует проверки';
+    rlSuspicious:       Result := 'подозрительно';
+    rlHighlySuspicious: Result := 'высокая степень подозрения';
+  else
+    Result := 'нет признаков';
+  end;
+end;
+
+function MHSignatureToString(AState: TMHSignatureState): string;
+begin
+  case AState of
+    sgSignedTrusted:   Result := 'подписан, доверенный издатель';
+    sgSignedUntrusted: Result := 'подпись недействительна или не доверена';
+    sgUnsigned:        Result := 'без цифровой подписи';
+    sgCheckFailed:     Result := 'проверить подпись не удалось';
+  else
+    Result := 'не проверялась';
+  end;
+end;
+
+function MHFindingCategoryToString(ACategory: TMHFindingCategory): string;
+begin
+  case ACategory of
+    fcMining:      Result := 'признаки скрытого майнинга';
+    fcPersistence: Result := 'подозрительный автозапуск';
+    fcPerformance: Result := 'необычная нагрузка';
+  else
+    Result := 'подозрительный процесс';
+  end;
+end;
+
+function MHAutostartKindToString(AKind: TMHAutostartKind): string;
+begin
+  case AKind of
+    akRegistryRun:     Result := 'реестр Run';
+    akRegistryRunOnce: Result := 'реестр RunOnce';
+    akStartupFolder:   Result := 'папка автозагрузки';
+    akService:         Result := 'служба';
+  else
+    Result := 'планировщик заданий';
+  end;
+end;
+
+function MHWorkContextToString(AContext: TMHWorkContext): string;
+begin
+  case AContext of
+    wcIdle:   Result := 'простой';
+    wcWork:   Result := 'работа';
+    wcGaming: Result := 'игра / полноэкранный режим';
+  else
+    Result := 'не определён';
+  end;
+end;
+
+function MHProgramKey(const AImagePath, AName: string): string;
+begin
+  if AImagePath <> '' then
+    Result := AImagePath.ToLower
+  else
+    Result := AName.ToLower;
+end;
+
+function MHClampScore(AScore: Integer): Integer;
+begin
+  if AScore < 0 then
+    Result := 0
+  else if AScore > 100 then
+    Result := 100
+  else
+    Result := AScore;
+end;
+
+end.

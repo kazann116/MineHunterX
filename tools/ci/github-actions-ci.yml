@@ -1,0 +1,49 @@
+# Сборка и тесты MineHunter X.
+#
+# Delphi не установлен на GitHub-hosted раннерах, поэтому нужен self-hosted
+# Windows-раннер с RAD Studio 12 (Studio\23.0) и метками: self-hosted, windows, delphi.
+# Путь к RAD Studio можно переопределить переменной окружения BDS на раннере.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: [self-hosted, windows, delphi]
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        config: [Debug, Release]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build (${{ matrix.config }}|Win64)
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File tools\build.ps1 -Config ${{ matrix.config }}
+
+      - name: Test (${{ matrix.config }})
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File tools\test.ps1 -Config ${{ matrix.config }}
+
+      # Короткий soak (около 2 мин) на каждом изменении; полный — вручную:
+      # build\Win64\Release\MineHunter.Soak.exe (14 400 циклов = 8 ч при 2 с).
+      - name: Short soak (${{ matrix.config }})
+        shell: powershell
+        run: build\Win64\${{ matrix.config }}\MineHunter.Soak.exe --cycles=400 --max-minutes=5 --report=build\test-results\soak-${{ matrix.config }}.md
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.config }}
+          path: |
+            build/test-results/*.xml
+            build/test-results/*.md
+            build/Win64/${{ matrix.config }}/reports/*.md
+          if-no-files-found: warn

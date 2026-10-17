@@ -1,0 +1,32 @@
+# Артефакты сборки (воспроизводимы через tools\build.ps1)
+build/
+*.dcu
+*.exe
+*.dll
+*.map
+*.rsm
+*.tds
+*.drc
+
+# Ресурсы, генерируемые MSBuild из .dproj/.rc (исходник ресурсов — *.rc)
+*.res
+
+# Локальные файлы IDE
+__history/
+__recovery/
+*.local
+*.identcache
+*.dsk
+*.stat
+*.~*
+*.dproj.local
+*.groupproj.local
+
+# Python
+__pycache__/
+
+# Комплекты для передачи (exe публикуется в GitHub Releases)
+dist/
+
+# Внутренние документы
+MineHunter_X_TZ.pdf

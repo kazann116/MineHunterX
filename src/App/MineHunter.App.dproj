@@ -1,0 +1,155 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+    <PropertyGroup>
+        <ProjectGuid>{3A0D4C2B-7E61-4B8E-A7C5-1F2E9D6B0A11}</ProjectGuid>
+        <ProjectVersion>20.1</ProjectVersion>
+        <FrameworkType>VCL</FrameworkType>
+        <AppType>Application</AppType>
+        <MainSource>MineHunter.App.dpr</MainSource>
+        <Base>True</Base>
+        <Config Condition="'$(Config)'==''">Debug</Config>
+        <Platform Condition="'$(Platform)'==''">Win64</Platform>
+        <TargetedPlatforms>2</TargetedPlatforms>
+    </PropertyGroup>
+    <PropertyGroup Condition="'$(Config)'=='Base' or '$(Base)'!=''">
+        <Base>true</Base>
+    </PropertyGroup>
+    <PropertyGroup Condition="('$(Platform)'=='Win64' and '$(Base)'=='true') or '$(Base_Win64)'!=''">
+        <Base_Win64>true</Base_Win64>
+        <CfgParent>Base</CfgParent>
+        <Base>true</Base>
+    </PropertyGroup>
+    <PropertyGroup Condition="'$(Config)'=='Debug' or '$(Cfg_1)'!=''">
+        <Cfg_1>true</Cfg_1>
+        <CfgParent>Base</CfgParent>
+        <Base>true</Base>
+    </PropertyGroup>
+    <PropertyGroup Condition="('$(Platform)'=='Win64' and '$(Cfg_1)'=='true') or '$(Cfg_1_Win64)'!=''">
+        <Cfg_1_Win64>true</Cfg_1_Win64>
+        <CfgParent>Cfg_1</CfgParent>
+        <Cfg_1>true</Cfg_1>
+        <Base>true</Base>
+    </PropertyGroup>
+    <PropertyGroup Condition="'$(Config)'=='Release' or '$(Cfg_2)'!=''">
+        <Cfg_2>true</Cfg_2>
+        <CfgParent>Base</CfgParent>
+        <Base>true</Base>
+    </PropertyGroup>
+    <PropertyGroup Condition="('$(Platform)'=='Win64' and '$(Cfg_2)'=='true') or '$(Cfg_2_Win64)'!=''">
+        <Cfg_2_Win64>true</Cfg_2_Win64>
+        <CfgParent>Cfg_2</CfgParent>
+        <Cfg_2>true</Cfg_2>
+        <Base>true</Base>
+    </PropertyGroup>
+    <PropertyGroup Condition="'$(Base)'!=''">
+        <SanitizedProjectName>MineHunter_App</SanitizedProjectName>
+        <DCC_ExeOutput>..\..\build\$(Platform)\$(Config)</DCC_ExeOutput>
+        <DCC_DcuOutput>..\..\build\dcu\MineHunter.App\$(Platform)\$(Config)</DCC_DcuOutput>
+        <DCC_UnitSearchPath>..\Core;..\Core\Collectors;..\Storage;$(DCC_UnitSearchPath)</DCC_UnitSearchPath>
+        <DCC_Namespace>System;Xml;Data;Datasnap;Web;Soap;Vcl;Vcl.Imaging;Vcl.Touch;Vcl.Samples;Vcl.Shell;$(DCC_Namespace)</DCC_Namespace>
+        <DCC_Define>$(DCC_Define)</DCC_Define>
+        <DCC_Hints>true</DCC_Hints>
+        <DCC_Warnings>true</DCC_Warnings>
+        <VerInfo_IncludeVerInfo>false</VerInfo_IncludeVerInfo>
+        <Manifest_File>None</Manifest_File>
+        <AppEnableRuntimeThemes>false</AppEnableRuntimeThemes>
+    </PropertyGroup>
+    <PropertyGroup Condition="'$(Base_Win64)'!=''">
+        <DCC_Namespace>Winapi;System.Win;Data.Win;Datasnap.Win;Web.Win;Soap.Win;Xml.Win;$(DCC_Namespace)</DCC_Namespace>
+    </PropertyGroup>
+    <PropertyGroup Condition="'$(Cfg_1)'!=''">
+        <DCC_Define>DEBUG;$(DCC_Define)</DCC_Define>
+        <DCC_DebugDCUs>false</DCC_DebugDCUs>
+        <DCC_DebugInfoInExe>true</DCC_DebugInfoInExe>
+        <DCC_GenerateStackFrames>true</DCC_GenerateStackFrames>
+        <DCC_Optimize>false</DCC_Optimize>
+        <DCC_RangeChecking>true</DCC_RangeChecking>
+        <DCC_IntegerOverflowCheck>true</DCC_IntegerOverflowCheck>
+    </PropertyGroup>
+    <PropertyGroup Condition="'$(Cfg_2)'!=''">
+        <DCC_Define>RELEASE;$(DCC_Define)</DCC_Define>
+        <DCC_DebugInformation>0</DCC_DebugInformation>
+        <DCC_LocalDebugSymbols>false</DCC_LocalDebugSymbols>
+        <DCC_SymbolReferenceInfo>0</DCC_SymbolReferenceInfo>
+    </PropertyGroup>
+    <ItemGroup>
+        <DelphiCompile Include="$(MainSource)">
+            <MainSource>MainSource</MainSource>
+        </DelphiCompile>
+        <DCCReference Include="..\Core\MineHunter.Core.Types.pas"/>
+        <DCCReference Include="..\Core\MineHunter.Core.Interfaces.pas"/>
+        <DCCReference Include="..\Core\MineHunter.Core.Calc.pas"/>
+        <DCCReference Include="..\Core\MineHunter.Core.Logging.pas"/>
+        <DCCReference Include="..\Core\MineHunter.Core.Container.pas"/>
+        <DCCReference Include="..\Core\MineHunter.Core.Scanner.pas"/>
+        <DCCReference Include="..\Core\MineHunter.Core.Paths.pas"/>
+        <DCCReference Include="..\Core\MineHunter.Core.Serialization.pas"/>
+        <DCCReference Include="..\Core\Collectors\MineHunter.Collectors.SelfMonitor.pas"/>
+        <DCCReference Include="..\Core\Collectors\MineHunter.Collectors.Processes.pas"/>
+        <DCCReference Include="..\Core\Collectors\MineHunter.Collectors.Processes.WinApi.pas"/>
+        <DCCReference Include="..\Core\Collectors\MineHunter.Collectors.System.pas"/>
+        <DCCReference Include="..\Core\Collectors\MineHunter.Collectors.Pdh.pas"/>
+        <DCCReference Include="..\Core\Collectors\MineHunter.Collectors.Gpu.pas"/>
+        <DCCReference Include="..\Core\Collectors\MineHunter.Collectors.Gpu.WinApi.pas"/>
+        <DCCReference Include="..\Core\Collectors\MineHunter.Collectors.Sensors.pas"/>
+        <DCCReference Include="..\Core\Collectors\MineHunter.Collectors.Sensors.WinApi.pas"/>
+        <DCCReference Include="..\Core\Collectors\MineHunter.Collectors.System.WinApi.pas"/>
+        <DCCReference Include="..\Core\Collectors\MineHunter.Collectors.Autostart.pas"/>
+        <DCCReference Include="..\Core\Collectors\MineHunter.Collectors.Autostart.WinApi.pas"/>
+        <DCCReference Include="..\Core\Collectors\MineHunter.Collectors.Network.pas"/>
+        <DCCReference Include="..\Core\Collectors\MineHunter.Collectors.Network.WinApi.pas"/>
+        <DCCReference Include="..\Core\Collectors\MineHunter.Collectors.Files.pas"/>
+        <DCCReference Include="..\Core\Collectors\MineHunter.Collectors.Files.WinApi.pas"/>
+        <DCCReference Include="..\Core\Collectors\MineHunter.Collectors.Context.pas"/>
+        <DCCReference Include="..\Core\Collectors\MineHunter.Collectors.Context.WinApi.pas"/>
+        <DCCReference Include="..\Core\MineHunter.Analysis.Indicators.pas"/>
+        <DCCReference Include="..\Core\MineHunter.Analysis.Engine.pas"/>
+        <DCCReference Include="..\Core\MineHunter.Analysis.Baseline.pas"/>
+        <DCCReference Include="..\Core\MineHunter.Core.Settings.pas"/>
+        <DCCReference Include="..\Core\MineHunter.Core.Reports.pas"/>
+        <DCCReference Include="..\Core\MineHunter.Core.Actions.pas"/>
+        <DCCReference Include="..\Core\MineHunter.Core.Actions.WinApi.pas"/>
+        <DCCReference Include="..\Storage\MineHunter.Storage.SQLite.pas"/>
+        <DCCReference Include="MineHunter.App.Bootstrap.pas"/>
+        <DCCReference Include="MineHunter.App.Display.pas"/>
+        <DCCReference Include="MineHunter.App.ProcessView.pas"/>
+        <DCCReference Include="MineHunter.App.FindingsView.pas"/>
+        <DCCReference Include="MineHunter.App.Chart.pas"/>
+        <DCCReference Include="MineHunter.App.DashboardView.pas"/>
+        <DCCReference Include="MineHunter.App.Tiles.pas"/>
+        <DCCReference Include="MineHunter.App.MainForm.pas">
+            <Form>MainForm</Form>
+            <FormType>dfm</FormType>
+        </DCCReference>
+        <RcCompile Include="MineHunter.App.Resources.rc">
+            <Form>MineHunter.App.Resources.res</Form>
+        </RcCompile>
+        <BuildConfiguration Include="Base">
+            <Key>Base</Key>
+        </BuildConfiguration>
+        <BuildConfiguration Include="Debug">
+            <Key>Cfg_1</Key>
+            <CfgParent>Base</CfgParent>
+        </BuildConfiguration>
+        <BuildConfiguration Include="Release">
+            <Key>Cfg_2</Key>
+            <CfgParent>Base</CfgParent>
+        </BuildConfiguration>
+    </ItemGroup>
+    <ProjectExtensions>
+        <Borland.Personality>Delphi.Personality.12</Borland.Personality>
+        <Borland.ProjectType>Application</Borland.ProjectType>
+        <BorlandProject>
+            <Delphi.Personality>
+                <Source>
+                    <Source Name="MainSource">MineHunter.App.dpr</Source>
+                </Source>
+            </Delphi.Personality>
+            <Platforms>
+                <Platform value="Win64">True</Platform>
+            </Platforms>
+        </BorlandProject>
+        <ProjectFileVersion>12</ProjectFileVersion>
+    </ProjectExtensions>
+    <Import Project="$(BDS)\Bin\CodeGear.Delphi.Targets" Condition="Exists('$(BDS)\Bin\CodeGear.Delphi.Targets')"/>
+    <Import Project="$(APPDATA)\Embarcadero\$(BDSAPPDATABASEDIR)\$(PRODUCTVERSION)\UserTools.proj" Condition="Exists('$(APPDATA)\Embarcadero\$(BDSAPPDATABASEDIR)\$(PRODUCTVERSION)\UserTools.proj')"/>
+</Project>
