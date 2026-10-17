@@ -11,7 +11,8 @@ uses
   MineHunter.App.FindingsView, MineHunter.Core.Reports, MineHunter.Core.Actions,
   MineHunter.Core.Settings, MineHunter.Analysis.Engine, MineHunter.Analysis.Baseline,
   MineHunter.App.DashboardView, MineHunter.App.Tiles, MineHunter.Core.Quarantine,
-  MineHunter.App.Notifier;
+  MineHunter.App.Notifier, MineHunter.Core.Inventory, MineHunter.Core.Energy,
+  MineHunter.Core.CheckReport;
 
 type
   TMHPage = (pgDashboard, pgProcesses, pgFindings, pgHistory, pgSettings);
@@ -187,6 +188,8 @@ type
     HIGH_CPU_CHOICES: array[0..4] of Integer = (10, 15, 25, 40, 60);
     SUSTAINED_CHOICES: array[0..3] of Integer = (5, 10, 15, 30);
     LEARNING_CHOICES: array[0..3] of Integer = (1, 3, 7, 14);
+    /// За сколько дней показывать «Что изменилось».
+    CHANGES_DAYS = 7;
   private
     FServices: TMHAppServices;
     FOwnsServices: Boolean;
@@ -251,6 +254,28 @@ type
     FChkEconomy: TCheckBox;
     FChkAutostart: TCheckBox;
     FLblAutostart: TLabel;
+    FLblPrice: TLabel;
+    FEdPrice: TEdit;
+    FBtnCheckNow: TButton;
+    FCheckPending: Boolean;
+    FCheckBaseline: UInt64;
+    FLastCheckReport: TMHCheckReport;
+    FCheckCount: Integer;
+    FShowReport: TProc<TMHCheckReport>;
+    FChangesPanel: TPanel;
+    FLblEnergy: TLabel;
+    FChangesList: TListView;
+    FHistoryResultEnergy: TMHEnergyEstimate;
+    FHistoryResultChanges: TArray<TMHInventoryItem>;
+    FHistoryResultInventoryStart: TDateTime;
+    FHistoryResultHours: Integer;
+    procedure CreateCheckAndChangesControls;
+    procedure CheckNowClick(Sender: TObject);
+    procedure CompleteCheck(const ASnapshot: TMHSnapshot; const AFindings: TMHFindings);
+    procedure DefaultShowReport(AReport: TMHCheckReport);
+    procedure ApplyChanges;
+    procedure PriceExit(Sender: TObject);
+    procedure PriceKeyPress(Sender: TObject; var Key: Char);
     procedure CreateTray;
     procedure CreateBackgroundSettings;
     procedure UpdateTray;
@@ -360,6 +385,19 @@ type
     property AutostartCheckBox: TCheckBox read FChkAutostart;
     /// Выход из программы (а не сворачивание в трей) при закрытии окна.
     procedure Quit;
+    /// «Проверить сейчас»: внеочередной цикл со сбросом кэшей и отчёт по его итогам.
+    procedure CheckNow;
+    property CheckNowButton: TButton read FBtnCheckNow;
+    property CheckPending: Boolean read FCheckPending;
+    property LastCheckReport: TMHCheckReport read FLastCheckReport;
+    property CheckCount: Integer read FCheckCount;
+    /// Показ отчёта проверки (по умолчанию — окно с текстом). Тесты подменяют.
+    property ShowCheckReport: TProc<TMHCheckReport> read FShowReport write FShowReport;
+    property ChangesList: TListView read FChangesList;
+    property EnergyLabel: TLabel read FLblEnergy;
+    property PriceEdit: TEdit read FEdPrice;
+    /// Применяет цену электроэнергии из поля ввода (False — некорректное значение).
+    function ApplyPriceText: Boolean;
     property FindingsModel: TMHFindingsModel read FFindingsModel;
     /// Ключ выбранной находки ('' — не выбрана); запись выбирает находку в списке.
     property SelectedFindingKey: string read FSelectedFindingKey;
@@ -383,7 +421,7 @@ uses
   System.Math, System.DateUtils, System.UITypes, System.StrUtils,
   MineHunter.Core.Scanner, MineHunter.App.Display, MineHunter.Collectors.SelfMonitor,
   MineHunter.Collectors.Processes, MineHunter.Collectors.System, MineHunter.Core.Paths,
-  MineHunter.Core.SelfAutostart;
+  MineHunter.Core.SelfAutostart, MineHunter.Collectors.Processes.WinApi;
 
 function PercentText(AValue: Double): string; forward;
 
@@ -476,6 +514,7 @@ begin
   FNotifier := TMHAlertNotifier.Create(rlSuspicious, 60);
   CreateTray;
   CreateBackgroundSettings;
+  CreateCheckAndChangesControls;
   cbHistoryPeriod.Items.Clear;
   cbHistoryPeriod.Items.Add('1 час');
   cbHistoryPeriod.Items.Add('6 часов');
@@ -1142,6 +1181,9 @@ var
   LBaselines: TMHBaselineManager;
   LStorage: TMHSQLiteRepository;
   LMinSamples: Integer;
+  LPrice: Double;
+  LHours, LEnergyPoints: Integer;
+  LInventory: IMHInventoryHistory;
 begin
   FHistoryRequested := True;
   LHistory := FServices.MetricHistory;
@@ -1173,6 +1215,11 @@ begin
   LBaselines := FServices.Baselines;
   LStorage := FServices.Storage;
   LMinSamples := FServices.Settings.Analyzer.BaselineMinSamples;
+  LPrice := FServices.Settings.ElectricityPrice;
+  LHours := HISTORY_HOURS[Max(0, cbHistoryPeriod.ItemIndex)];
+  LEnergyPoints := Max(HISTORY_POINTS, LHours * 12);
+  if not Supports(FServices.MetricHistory, IMHInventoryHistory, LInventory) then
+    LInventory := nil;
 
   FHistoryLoader := TThread.CreateAnonymousThread(
     procedure
@@ -1183,14 +1230,29 @@ begin
       LBase, LCurrent: TMHBaseline;
       LComparisons: TArray<TMHMetricComparison>;
       LDeviations: TArray<TMHProcessDeviation>;
+      LEnergy: TMHEnergyEstimate;
+      LChanges: TArray<TMHInventoryItem>;
+      LInventoryStart: TDateTime;
     begin
       SetLength(LSeries, Length(HISTORY_KINDS));
+      LEnergy := Default(TMHEnergyEstimate);
+      LChanges := nil;
+      LInventoryStart := 0;
       LComparisons := nil;
       LDeviations := nil;
       LInfo := '';
       try
         for K := Low(HISTORY_KINDS) to High(HISTORY_KINDS) do
           LSeries[K] := LHistory.LoadMetricSeries(HISTORY_KINDS[K], LFrom, LTo, HISTORY_POINTS);
+        // Энергия видеокарты за период: точки не реже раза в 5 минут, промежутки длиннее
+        // трёх интервалов (программа была закрыта) не учитываются.
+        LEnergy := MHEstimateEnergy(LHistory.LoadMetricSeries(mkGpuPowerWatts, LFrom, LTo, LEnergyPoints),
+          LPrice, Max(15.0, 3 * LHours * 60 / LEnergyPoints));
+        if LInventory <> nil then
+        begin
+          LChanges := LInventory.LoadInventoryChanges(LTo - CHANGES_DAYS, 500);
+          LInventoryStart := LInventory.InventoryStartUtc;
+        end;
         // Сравнение периода с профилем нормы того же контекста работы (MH-06).
         if (LBaselines <> nil) and (LStorage <> nil) then
         begin
@@ -1214,6 +1276,10 @@ begin
         on E: Exception do
           LError := E.Message;
       end;
+      FHistoryResultEnergy := LEnergy;
+      FHistoryResultChanges := LChanges;
+      FHistoryResultInventoryStart := LInventoryStart;
+      FHistoryResultHours := LHours;
       FHistoryResultComparisons := LComparisons;
       FHistoryResultDeviations := LDeviations;
       FHistoryResultBaselineInfo := LInfo;
@@ -1269,7 +1335,10 @@ end;
 procedure TMainForm.HistoryLoaded;
 begin
   if not FDestroying and (FHistoryResultGeneration = FHistoryGeneration) then
+  begin
     ApplyComparison;
+    ApplyChanges;
+  end;
   ApplyHistory(FHistoryResultGeneration, FHistoryResultFrom, FHistoryResultTo,
     FHistoryResultSeries, FHistoryResultError);
   FHistoryResultSeries := nil;
@@ -1426,6 +1495,10 @@ begin
   UpdateProtection(ASnapshot);
   NotifyAlerts(AFindings, ASnapshot.TimestampUtc);
   UpdateTray;
+  // Отчёт «Проверить сейчас» — по первому снимку, собранному после сброса кэшей.
+  if FCheckPending and (FServices.Scanner.LastRefreshSequence > FCheckBaseline) and
+     (ASnapshot.Sequence >= FServices.Scanner.LastRefreshSequence) then
+    CompleteCheck(ASnapshot, AFindings);
 end;
 
 procedure TMainForm.UpdateProtection(const ASnapshot: TMHSnapshot);
@@ -2696,6 +2769,295 @@ begin
     CanClose := False;
     HideToTray;
   end;
+end;
+
+procedure TMainForm.CreateCheckAndChangesControls;
+begin
+  FShowReport := DefaultShowReport;
+
+  // «Проверить сейчас» — в верхней панели рядом с запуском и остановкой.
+  FBtnCheckNow := TButton.Create(Self);
+  FBtnCheckNow.Parent := pnlTop;
+  FBtnCheckNow.SetBounds(lblScanState.Left + lblScanState.Width + 12, btnStart.Top, 170, btnStart.Height);
+  FBtnCheckNow.Caption := 'Проверить сейчас';
+  FBtnCheckNow.Hint := 'Внеочередная полная проверка (перечитываются автозапуск и признаки вмешательства) ' +
+    'и понятный отчёт по её итогам.';
+  FBtnCheckNow.ShowHint := True;
+  FBtnCheckNow.OnClick := CheckNowClick;
+
+  // «Что изменилось» и электроэнергия — на странице «История», над сравнением с нормой.
+  FChangesPanel := TPanel.Create(Self);
+  FChangesPanel.Parent := pnlBaseline.Parent;
+  FChangesPanel.BevelOuter := bvNone;
+  FChangesPanel.Height := 190;
+  FChangesPanel.Top := pnlBaseline.Top - 1;
+  FChangesPanel.Align := alBottom;
+  FLblEnergy := TLabel.Create(Self);
+  FLblEnergy.Parent := FChangesPanel;
+  FLblEnergy.SetBounds(8, 4, FChangesPanel.Width - 16, 30);
+  FLblEnergy.Anchors := [akLeft, akTop, akRight];
+  FLblEnergy.AutoSize := False;
+  FLblEnergy.WordWrap := True;
+  FLblEnergy.ShowAccelChar := False;
+  FLblEnergy.Caption := 'Электроэнергия: загрузка…';
+  FChangesList := TListView.Create(Self);
+  FChangesList.Parent := FChangesPanel;
+  FChangesList.SetBounds(8, 38, FChangesPanel.Width - 16, FChangesPanel.Height - 44);
+  FChangesList.Anchors := [akLeft, akTop, akRight, akBottom];
+  FChangesList.ViewStyle := vsReport;
+  FChangesList.ReadOnly := True;
+  FChangesList.RowSelect := True;
+  with FChangesList.Columns.Add do
+  begin
+    Caption := 'Впервые замечено';
+    Width := 120;
+  end;
+  with FChangesList.Columns.Add do
+  begin
+    Caption := 'Что изменилось';
+    Width := 230;
+  end;
+  with FChangesList.Columns.Add do
+  begin
+    Caption := 'Объект';
+    Width := 180;
+  end;
+  with FChangesList.Columns.Add do
+  begin
+    Caption := 'Где';
+    Width := 260;
+  end;
+
+  // Цена электроэнергии — в настройках работы в фоне.
+  FBackgroundBox.Height := FBackgroundBox.Height + 36;
+  FLblPrice := TLabel.Create(Self);
+  FLblPrice.Parent := FBackgroundBox;
+  FLblPrice.SetBounds(16, FBackgroundBox.Height - 44, 260, 15);
+  FLblPrice.Caption := 'Цена электроэнергии, ₽ за кВт·ч:';
+  FEdPrice := TEdit.Create(Self);
+  FEdPrice.Parent := FBackgroundBox;
+  FEdPrice.SetBounds(280, FBackgroundBox.Height - 48, 90, 23);
+  FEdPrice.Text := FormatFloat('0.00', FServices.Settings.ElectricityPrice);
+  FEdPrice.Hint := 'Используется для оценки стоимости работы видеокарты (и скрытого майнера на ней).';
+  FEdPrice.ShowHint := True;
+  FEdPrice.OnExit := PriceExit;
+  FEdPrice.OnKeyPress := PriceKeyPress;
+end;
+
+function TMainForm.ApplyPriceText: Boolean;
+var
+  LText: string;
+  LValue: Double;
+  LSettings: TMHAppSettings;
+  LFormat: TFormatSettings;
+begin
+  LText := Trim(FEdPrice.Text).Replace(',', '.').Replace('₽', '').Trim;
+  LFormat := TFormatSettings.Invariant;
+  Result := TryStrToFloat(LText, LValue, LFormat) and (LValue >= 0) and
+    (LValue <= TMHAppSettings.MaxElectricityPrice);
+  if Result then
+  begin
+    LSettings := FServices.Settings;
+    LSettings.ElectricityPrice := LValue;
+    ChangeSettings(LSettings);
+  end;
+  FEdPrice.Text := FormatFloat('0.00', FServices.Settings.ElectricityPrice);
+end;
+
+procedure TMainForm.PriceExit(Sender: TObject);
+begin
+  ApplyPriceText;
+end;
+
+procedure TMainForm.PriceKeyPress(Sender: TObject; var Key: Char);
+begin
+  if Key = #13 then
+  begin
+    Key := #0;
+    ApplyPriceText;
+  end;
+end;
+
+procedure TMainForm.CheckNowClick(Sender: TObject);
+begin
+  CheckNow;
+end;
+
+procedure TMainForm.CheckNow;
+begin
+  if FCheckPending then
+    Exit;
+  FCheckPending := True;
+  FCheckBaseline := FServices.Scanner.LastRefreshSequence;
+  FBtnCheckNow.Enabled := False;
+  FBtnCheckNow.Caption := 'Проверка…';
+  FServices.Scanner.RequestRefresh;
+  // Без запущенного наблюдения цикл выполняется здесь же: обработчики вызываются
+  // в этом потоке, и отчёт будет готов к выходу из процедуры.
+  if not FServices.Scanner.IsRunning then
+    FServices.Scanner.ScanOnce;
+end;
+
+procedure TMainForm.CompleteCheck(const ASnapshot: TMHSnapshot; const AFindings: TMHFindings);
+var
+  LInput: TMHCheckReportInput;
+  LInventory: IMHInventoryHistory;
+  LInfo: TSystemInfo;
+  LNow: TDateTime;
+begin
+  FCheckPending := False;
+  FBtnCheckNow.Enabled := True;
+  FBtnCheckNow.Caption := 'Проверить сейчас';
+  LInput := Default(TMHCheckReportInput);
+  LInput.Snapshot := ASnapshot;
+  LInput.Findings := AFindings;
+  GetSystemInfo(LInfo);
+  LInput.CpuCount := LInfo.dwNumberOfProcessors;
+  LInput.ChangesDays := CHANGES_DAYS;
+  LInput.ElectricityPrice := FServices.Settings.ElectricityPrice;
+  LInput.IsElevated := TMHWinProcessApi.QueryElevation;
+  LNow := ASnapshot.TimestampUtc;
+  try
+    if Supports(FServices.MetricHistory, IMHInventoryHistory, LInventory) then
+    begin
+      LInput.ChangesAvailable := True;
+      LInput.Changes := LInventory.LoadInventoryChanges(LNow - CHANGES_DAYS, 200);
+      LInput.InventoryStartUtc := LInventory.InventoryStartUtc;
+    end;
+    if FServices.MetricHistory <> nil then
+      LInput.Energy := MHEstimateEnergy(FServices.MetricHistory.LoadMetricSeries(mkGpuPowerWatts,
+        LNow - 1, LNow, 24 * 60), LInput.ElectricityPrice);
+  except
+    on E: Exception do
+      FServices.Logger.Log(llWarning, 'check', 'История для отчёта недоступна: ' + E.Message);
+  end;
+  FLastCheckReport := MHBuildCheckReport(LInput);
+  Inc(FCheckCount);
+  FServices.Logger.Log(llInfo, 'check', 'Проверка выполнена: ' + FLastCheckReport.Headline);
+  UpdateEvents;
+  if Assigned(FShowReport) then
+    FShowReport(FLastCheckReport);
+end;
+
+procedure TMainForm.DefaultShowReport(AReport: TMHCheckReport);
+var
+  LForm: TForm;
+  LMemo: TMemo;
+  LPanel: TPanel;
+  LHeadline: TLabel;
+  LSave, LClose: TButton;
+  LFileName: string;
+  LHtml: Boolean;
+begin
+  if not Visible then
+  begin
+    // Окно скрыто в трей — итог показывается уведомлением.
+    if (FTray <> nil) and FTray.Visible then
+    begin
+      FTray.BalloonTitle := 'MineHunter X: проверка завершена';
+      FTray.BalloonHint := AReport.Headline + '.';
+      FTray.BalloonFlags := bfInfo;
+      FTray.ShowBalloonHint;
+    end;
+    Exit;
+  end;
+  LForm := TForm.Create(nil);
+  try
+    LForm.Caption := 'MineHunter X — результат проверки';
+    LForm.Position := poOwnerFormCenter;
+    LForm.Width := 860;
+    LForm.Height := 640;
+    LForm.Font.Assign(Font);
+    LHeadline := TLabel.Create(LForm);
+    LHeadline.Parent := LForm;
+    LHeadline.Align := alTop;
+    LHeadline.AlignWithMargins := True;
+    LHeadline.Caption := AReport.Headline;
+    LHeadline.Font.Size := 13;
+    LHeadline.Font.Style := [fsBold];
+    case AReport.Verdict of
+      cvThreat: LHeadline.Font.Color := $002020C0;
+      cvAttention: LHeadline.Font.Color := $000080C0;
+    else
+      LHeadline.Font.Color := $00208020;
+    end;
+    LPanel := TPanel.Create(LForm);
+    LPanel.Parent := LForm;
+    LPanel.Align := alBottom;
+    LPanel.Height := 46;
+    LPanel.BevelOuter := bvNone;
+    LMemo := TMemo.Create(LForm);
+    LMemo.Parent := LForm;
+    LMemo.Align := alClient;
+    LMemo.AlignWithMargins := True;
+    LMemo.ReadOnly := True;
+    LMemo.ScrollBars := ssVertical;
+    LMemo.Font.Name := 'Consolas';
+    LMemo.Text := AReport.Text;
+    LSave := TButton.Create(LForm);
+    LSave.Parent := LPanel;
+    LSave.SetBounds(8, 8, 220, 30);
+    LSave.Caption := 'Сохранить подробный отчёт…';
+    LSave.ModalResult := mrYes;
+    LClose := TButton.Create(LForm);
+    LClose.Parent := LPanel;
+    LClose.SetBounds(236, 8, 120, 30);
+    LClose.Caption := 'Закрыть';
+    LClose.ModalResult := mrCancel;
+    LClose.Cancel := True;
+    LClose.Default := True;
+    if LForm.ShowModal = mrYes then
+      if AskExportFile('minehunter-check-' + FormatDateTime('yyyymmdd-hhnn', Now), LFileName, LHtml) then
+        ExportReport(LFileName, LHtml);
+  finally
+    LForm.Free;
+  end;
+end;
+
+procedure TMainForm.ApplyChanges;
+var
+  LItem: TMHInventoryItem;
+  LView: TListItem;
+  LEnergy: TMHEnergyEstimate;
+  LText: string;
+begin
+  if FChangesList = nil then
+    Exit;
+  LEnergy := FHistoryResultEnergy;
+  if LEnergy.HasData and (LEnergy.CoveredHours > 0) then
+    LText := Format('Электроэнергия видеокарты за %d ч (измерено %.1f ч): %s ≈ %s · в среднем %.0f Вт, ' +
+      'пик %.0f Вт · при такой нагрузке ≈ %s в месяц (цена %s за кВт·ч).',
+      [FHistoryResultHours, LEnergy.CoveredHours, MHFormatEnergy(LEnergy.KWh), MHFormatMoney(LEnergy.Cost),
+       LEnergy.AverageWatts, LEnergy.PeakWatts, MHFormatMoney(LEnergy.CostPerMonth),
+       MHFormatMoney(FServices.Settings.ElectricityPrice)])
+  else
+    LText := 'Электроэнергия: видеокарта не сообщает мощность (датчик есть у видеокарт NVIDIA) ' +
+      'или за период нет измерений.';
+  FLblEnergy.Caption := LText;
+
+  FChangesList.Items.BeginUpdate;
+  try
+    FChangesList.Items.Clear;
+    for LItem in FHistoryResultChanges do
+    begin
+      LView := FChangesList.Items.Add;
+      LView.Caption := FormatDateTime('dd.mm hh:nn', TTimeZone.Local.ToLocalTime(LItem.FirstSeenUtc));
+      LView.SubItems.Add(MHInventoryKindTitle(LItem.Kind));
+      LView.SubItems.Add(LItem.Name);
+      if LItem.Details <> '' then
+        LView.SubItems.Add(LItem.Details)
+      else
+        LView.SubItems.Add(LItem.ImagePath);
+    end;
+  finally
+    FChangesList.Items.EndUpdate;
+  end;
+  if Length(FHistoryResultChanges) > 0 then
+    FChangesList.Hint := ''
+  else if FHistoryResultInventoryStart > 0 then
+    FChangesList.Hint := 'За 7 дней ничего нового не появилось. Наблюдение ведётся с ' +
+      MHFormatUtcAsLocal(FHistoryResultInventoryStart) + '.';
+  FChangesList.ShowHint := FChangesList.Hint <> '';
 end;
 
 procedure TMainForm.RefreshActionLog;

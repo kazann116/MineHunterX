@@ -90,7 +90,7 @@ const
     'memoryUsedBytes', 'memoryTotalBytes', 'memoryLoadPercent', 'diskReadBytesPerSec',
     'diskWriteBytesPerSec', 'diskActivePercent', 'cpuTimePercent', 'cpuFrequencyPercent',
     'cpuPerformanceLimitPercent', 'gpuComputePercent', 'gpuMemoryBytes', 'gpuTemperatureCelsius',
-    'cpuTemperatureCelsius', 'diskTemperatureCelsius', 'privateWorkingSetBytes');
+    'cpuTemperatureCelsius', 'diskTemperatureCelsius', 'privateWorkingSetBytes', 'gpuPowerWatts');
   ACCESS_NAMES: array[TMHAccessLevel] of string = ('unknown', 'full', 'limited', 'denied');
   SENSOR_KIND_NAMES: array[TMHSensorKind] of string = ('cpu', 'gpu', 'disk');
   TAMPER_KIND_NAMES: array[TMHTamperKind] of string = ('wmiSubscription', 'defenderExclusion',

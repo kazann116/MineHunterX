@@ -185,6 +185,8 @@ begin
       Result := FormatBytes(AMetric.Value) + '/с';
     mkTemperatureCelsius, mkGpuTemperatureCelsius, mkCpuTemperatureCelsius, mkDiskTemperatureCelsius:
       Result := FormatNumber(AMetric.Value, '0') + ' °C';
+    mkGpuPowerWatts:
+      Result := FormatNumber(AMetric.Value, '0') + ' Вт';
   else
     Result := FormatNumber(AMetric.Value, '0.##');
   end;
@@ -233,6 +235,7 @@ begin
     mkGpuTemperatureCelsius: Result := 'Температура GPU';
     mkCpuTemperatureCelsius: Result := 'Температура CPU';
     mkDiskTemperatureCelsius: Result := 'Температура диска';
+    mkGpuPowerWatts:       Result := 'Мощность видеокарты';
   else
     Result := 'Память процесса';
   end;

@@ -69,7 +69,9 @@ type
     mkCpuTemperatureCelsius,
     mkDiskTemperatureCelsius,
     /// Частный рабочий набор процесса — колонка «Память» диспетчера задач.
-    mkPrivateWorkingSetBytes
+    mkPrivateWorkingSetBytes,
+    /// Потребляемая мощность видеокарт (сумма по адаптерам, датчик драйвера), Вт.
+    mkGpuPowerWatts
   );
 
   /// Уровень доступа, с которым удалось открыть процесс.

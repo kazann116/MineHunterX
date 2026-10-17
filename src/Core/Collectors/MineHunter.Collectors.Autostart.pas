@@ -57,7 +57,7 @@ type
     function ExpandEnvironment(const AText: string): string;
   end;
 
-  TMHAutostartCollector = class(TInterfacedObject, IMHCollector)
+  TMHAutostartCollector = class(TInterfacedObject, IMHCollector, IMHCacheInvalidation)
   public const
     SourceIdValue = 'autostart';
     DefaultRefreshSeconds = 60;

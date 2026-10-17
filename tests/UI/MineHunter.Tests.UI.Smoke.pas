@@ -60,6 +60,7 @@ type
     [Test] procedure History_ComparisonWithBaseline;
     [Test] procedure Findings_Remediate_QuarantineAndRestore;
     [Test] procedure Background_TrayEconomyNotifyAndAutostart;
+    [Test] procedure CheckNow_ReportChangesEnergyAndPrice;
   end;
 
 implementation
@@ -74,7 +75,7 @@ uses
   MineHunter.Collectors.Gpu, MineHunter.Collectors.Sensors, MineHunter.Tests.GpuSensors,
   MineHunter.App.DashboardView, MineHunter.Core.Actions, MineHunter.Core.Quarantine,
   MineHunter.Tests.Quarantine, MineHunter.Tests.SettingsReports, MineHunter.Tests.Background,
-  MineHunter.Core.SelfAutostart,
+  MineHunter.Core.SelfAutostart, MineHunter.Core.CheckReport,
   MineHunter.Tests.Fakes;
 
 var
@@ -955,6 +956,51 @@ begin
     GTestRunKeyOps := nil;
     CheckSynchronize(0);
   end;
+end;
+
+procedure TMainFormSmokeTests.CheckNow_ReportChangesEnergyAndPrice;
+var
+  LReports: Integer;
+  LLast: TMHCheckReport;
+begin
+  LReports := 0;
+  FForm.ShowCheckReport :=
+    procedure(AReport: TMHCheckReport)
+    begin
+      Inc(LReports);
+      LLast := AReport;
+    end;
+  Assert.IsNotNull(FForm.CheckNowButton);
+  Assert.IsFalse(FServices.Scanner.IsRunning);
+  // Наблюдение остановлено — проверка выполняется сразу.
+  FForm.CheckNow;
+  Assert.AreEqual(1, LReports);
+  Assert.IsFalse(FForm.CheckPending);
+  Assert.IsTrue(FForm.CheckNowButton.Enabled);
+  Assert.IsNotEmpty(LLast.Headline);
+  Assert.IsTrue(LLast.Text.Contains('1. ТРЕВОГИ'));
+  Assert.IsTrue(LLast.Text.Contains('3. ЧТО ИЗМЕНИЛОСЬ'));
+  Assert.AreEqual(1, FForm.CheckCount);
+  // Обычный цикл отчёт не показывает.
+  FServices.Scanner.ScanOnce;
+  Assert.AreEqual(1, LReports);
+
+  // «История»: панель изменений и электроэнергии заполняется фоновым загрузчиком.
+  FForm.NavigateTo(pgHistory);
+  Assert.IsTrue(WaitForHistory(10000));
+  Assert.IsNotNull(FForm.ChangesList);
+  Assert.IsTrue(string(FForm.EnergyLabel.Caption).Contains('Электроэнергия'),
+    string(FForm.EnergyLabel.Caption));
+
+  // Цена электроэнергии: некорректное значение отклоняется.
+  FForm.PriceEdit.Text := '7,5';
+  Assert.IsTrue(FForm.ApplyPriceText);
+  Assert.AreEqual(7.5, FServices.Settings.ElectricityPrice, 0.0001);
+  FForm.PriceEdit.Text := 'дорого';
+  Assert.IsFalse(FForm.ApplyPriceText);
+  Assert.AreEqual(7.5, FServices.Settings.ElectricityPrice, 0.0001);
+  FForm.PriceEdit.Text := '-3';
+  Assert.IsFalse(FForm.ApplyPriceText);
 end;
 
 initialization

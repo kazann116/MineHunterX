@@ -3,7 +3,9 @@
 {
   История наблюдений в SQLite (MH-09): IMHRepository + IMHMetricHistory,
   история находок (IMHFindingHistory), журнал действий (IMHActionLog) и
-  хранилище профилей нормы (IMHBaselineStore).
+  хранилище профилей нормы (IMHBaselineStore), учёт «что изменилось»
+  (IMHInventoryHistory: впервые замеченные автозапуск, признаки вмешательства,
+  программы; обновляется не чаще раза в MH_INVENTORY_REFRESH_SECONDS).
 
   - FireDAC со статически встроенным SQLite: внешняя sqlite3.dll не нужна.
   - Защита от повреждения: WAL + synchronous=NORMAL, транзакция на каждый
@@ -34,7 +36,8 @@ interface
 uses
   System.SysUtils, System.SyncObjs,
   FireDAC.Comp.Client,
-  MineHunter.Core.Types, MineHunter.Core.Interfaces, MineHunter.Analysis.Baseline;
+  MineHunter.Core.Types, MineHunter.Core.Interfaces, MineHunter.Analysis.Baseline,
+  MineHunter.Core.Inventory;
 
 type
   EMHStorageError = class(EMHError);
@@ -54,9 +57,12 @@ type
   end;
 
   TMHSQLiteRepository = class(TInterfacedObject, IMHRepository, IMHMetricHistory,
-    IMHFindingHistory, IMHActionLog, IMHBaselineStore)
+    IMHFindingHistory, IMHActionLog, IMHBaselineStore, IMHInventoryHistory)
   public const
-    SchemaVersion = 2;
+    SchemaVersion = 3;
+    /// Учёт хранится не меньше этого срока (даже при короткой истории снимков).
+    MinInventoryRetentionDays = 30;
+    MaxInventoryRows = 20000;
     /// Предел кэша страниц SQLite на соединение (страниц по 4 КБ ≈ 8 МБ). Значение
     /// FireDAC по умолчанию — 10000 страниц (≈ 40 МБ), кэш растёт вместе с базой.
     CacheSizePages = 2000;
@@ -71,6 +77,9 @@ type
     FRecoveredFrom: string;
     FInsertSnapshot, FInsertMetric, FInsertSource, FInsertProcess: TFDQuery;
     FUpsertFinding, FInsertAction: TFDQuery;
+    FUpsertInventory: TFDQuery;
+    FLastInventoryUtc: TDateTime;
+    procedure SaveInventoryLocked(const ASnapshot: TMHSnapshot);
     procedure Log(ALevel: TMHLogLevel; const AMessage: string);
     procedure CheckOpen;
     procedure OpenConnection(AIsNew: Boolean);
@@ -132,6 +141,10 @@ type
     procedure LogAction(const ARecord: TMHActionRecord);
     function LoadActions(AMaxCount: Integer): TArray<TMHActionRecord>;
 
+    { IMHInventoryHistory }
+    function LoadInventoryChanges(ASinceUtc: TDateTime; AMaxCount: Integer): TArray<TMHInventoryItem>;
+    function InventoryStartUtc: TDateTime;
+
     { IMHBaselineStore }
     /// Сохраняет (заменяет) профиль нормы контекста ABaseline.Context.
     procedure SaveBaseline(const ABaseline: TMHBaseline);
@@ -184,7 +197,7 @@ const
   // Для 64-битных значений используется тип BIGINT: FireDAC читает колонки
   // SQLite типа INTEGER как 32-битные. id INTEGER PRIMARY KEY — псевдоним rowid.
 
-  MIGRATIONS: array[1..2] of string = (
+  MIGRATIONS: array[1..3] of string = (
     'CREATE TABLE snapshots(' +
     '  id INTEGER PRIMARY KEY,' +
     '  seq BIGINT NOT NULL,' +
@@ -242,8 +255,30 @@ const
     '  action TEXT NOT NULL,' +
     '  target TEXT NOT NULL,' +
     '  result TEXT NOT NULL,' +
-    '  success INTEGER NOT NULL);'
+    '  success INTEGER NOT NULL);',
+
+    // 3: учёт «что изменилось».
+    'CREATE TABLE inventory(' +
+    '  kind TEXT NOT NULL,' +
+    '  key TEXT NOT NULL,' +
+    '  name TEXT NOT NULL,' +
+    '  details TEXT,' +
+    '  image_path TEXT,' +
+    '  first_seen BIGINT NOT NULL,' +
+    '  last_seen BIGINT NOT NULL,' +
+    '  PRIMARY KEY(kind, key)) WITHOUT ROWID;' +
+    'CREATE INDEX ix_inventory_first_seen ON inventory(first_seen);' +
+    'CREATE INDEX ix_inventory_last_seen ON inventory(last_seen);'
   );
+
+  UPSERT_INVENTORY_SQL =
+    'INSERT INTO inventory(kind, key, name, details, image_path, first_seen, last_seen) ' +
+    'VALUES (:kind, :key, :name, :details, :path, :seen, :seen) ' +
+    'ON CONFLICT(kind, key) DO UPDATE SET ' +
+    '  last_seen = MAX(inventory.last_seen, excluded.last_seen),' +
+    '  first_seen = MIN(inventory.first_seen, excluded.first_seen),' +
+    '  name = excluded.name, details = excluded.details,' +
+    '  image_path = COALESCE(excluded.image_path, inventory.image_path)';
 
   // Повтор находки: время первого/последнего наблюдения расширяется, счётчик
   // растёт, уровень и JSON берутся от самого позднего наблюдения.
@@ -462,6 +497,7 @@ begin
   FreeAndNil(FInsertProcess);
   FreeAndNil(FUpsertFinding);
   FreeAndNil(FInsertAction);
+  FreeAndNil(FUpsertInventory);
   if FConnection <> nil then
   begin
     try
@@ -572,6 +608,7 @@ begin
   FUpsertFinding := NewQuery(UPSERT_FINDING_SQL);
   FInsertAction := NewQuery('INSERT INTO actions(ts, action, target, result, success) ' +
     'VALUES (:ts, :action, :target, :result, :success)');
+  FUpsertInventory := NewQuery(UPSERT_INVENTORY_SQL);
 end;
 
 function TMHSQLiteRepository.GetOptions: TMHStorageOptions;
@@ -689,6 +726,7 @@ begin
         SetParam(FInsertProcess, 'source', LInfo.SourceId, ftWideString);
         FInsertProcess.ExecSQL;
       end;
+      SaveInventoryLocked(ASnapshot);
       FConnection.Commit;
     except
       FConnection.Rollback;
@@ -730,6 +768,11 @@ begin
   LCutoff := MHUtcToUnixMs(FClock.NowUtc - FOptions.RetentionDays);
   LDeleted := FConnection.ExecSQL('DELETE FROM snapshots WHERE ts < :cutoff', [LCutoff]);
   LOther := FConnection.ExecSQL('DELETE FROM findings WHERE last_seen < :cutoff', [LCutoff]);
+  // Учёт «что изменилось» мал и нужен за неделю и дольше — хранится не меньше месяца.
+  Inc(LOther, FConnection.ExecSQL('DELETE FROM inventory WHERE last_seen < :cutoff',
+    [MHUtcToUnixMs(FClock.NowUtc - Max(FOptions.RetentionDays, MinInventoryRetentionDays))]));
+  Inc(LOther, FConnection.ExecSQL('DELETE FROM inventory WHERE (kind, key) IN (SELECT kind, key FROM inventory ' +
+    'ORDER BY last_seen DESC LIMIT -1 OFFSET :n)', [MaxInventoryRows]));
   if LOther > 0 then
     Log(llInfo, Format('Ротация истории: удалено находок — %d', [LOther]));
   Inc(LOther, TrimActionsLocked);
@@ -1081,12 +1124,108 @@ begin
   end;
 end;
 
+procedure TMHSQLiteRepository.SaveInventoryLocked(const ASnapshot: TMHSnapshot);
+var
+  LItem: TMHInventoryItem;
+  LPath: Variant;
+begin
+  // Учёт обновляется не на каждом снимке: состав автозапуска и программ меняется
+  // редко, а запись сотен строк каждые 2 секунды тратила бы диск.
+  if (FLastInventoryUtc <> 0) and (ASnapshot.TimestampUtc >= FLastInventoryUtc) and
+     ((ASnapshot.TimestampUtc - FLastInventoryUtc) * SecsPerDay < MH_INVENTORY_REFRESH_SECONDS) then
+    Exit;
+  FLastInventoryUtc := ASnapshot.TimestampUtc;
+  for LItem in MHInventoryFromSnapshot(ASnapshot, FOptions.StoreProcessPaths) do
+  begin
+    if LItem.ImagePath <> '' then
+      LPath := LItem.ImagePath
+    else
+      LPath := Null;
+    SetParam(FUpsertInventory, 'kind', MHInventoryKindToName(LItem.Kind), ftWideString);
+    SetParam(FUpsertInventory, 'key', LItem.Key, ftWideString);
+    SetParam(FUpsertInventory, 'name', LItem.Name, ftWideString);
+    SetParam(FUpsertInventory, 'details', LItem.Details, ftWideString);
+    SetParam(FUpsertInventory, 'path', LPath, ftWideString);
+    SetParam(FUpsertInventory, 'seen', MHUtcToUnixMs(ASnapshot.TimestampUtc), ftLargeint);
+    FUpsertInventory.ExecSQL;
+  end;
+end;
+
+function TMHSQLiteRepository.InventoryStartUtc: TDateTime;
+var
+  LValue: Variant;
+begin
+  FLock.Enter;
+  try
+    CheckOpen;
+    LValue := FConnection.ExecSQLScalar('SELECT MIN(first_seen) FROM inventory');
+    if VarIsNull(LValue) or VarIsEmpty(LValue) then
+      Result := 0
+    else
+      Result := MHUnixMsToUtc(LValue);
+  finally
+    FLock.Leave;
+  end;
+end;
+
+function TMHSQLiteRepository.LoadInventoryChanges(ASinceUtc: TDateTime;
+  AMaxCount: Integer): TArray<TMHInventoryItem>;
+var
+  LQuery: TFDQuery;
+  LList: TList<TMHInventoryItem>;
+  LItem: TMHInventoryItem;
+begin
+  if AMaxCount <= 0 then
+    Exit(nil);
+  FLock.Enter;
+  try
+    CheckOpen;
+    // Исходное состояние каждого вида — всё, что замечено в первые
+    // MH_INVENTORY_GRACE_MINUTES после начала его учёта.
+    LQuery := NewQuery('SELECT i.kind, i.key, i.name, i.details, i.image_path, i.first_seen, i.last_seen ' +
+      'FROM inventory i JOIN (SELECT kind, MIN(first_seen) AS start FROM inventory GROUP BY kind) k ' +
+      '  ON k.kind = i.kind ' +
+      'WHERE i.first_seen >= :since AND i.first_seen > k.start + :grace ' +
+      'ORDER BY i.first_seen DESC LIMIT :n');
+    LList := TList<TMHInventoryItem>.Create;
+    try
+      LQuery.ParamByName('since').AsLargeInt := MHUtcToUnixMs(ASinceUtc);
+      LQuery.ParamByName('grace').AsLargeInt := Int64(MH_INVENTORY_GRACE_MINUTES) * 60 * 1000;
+      LQuery.ParamByName('n').AsInteger := AMaxCount;
+      LQuery.Open;
+      while not LQuery.Eof do
+      begin
+        LItem := Default(TMHInventoryItem);
+        if MHTryInventoryKindFromName(LQuery.Fields[0].AsString, LItem.Kind) then
+        begin
+          LItem.Key := LQuery.Fields[1].AsString;
+          LItem.Name := LQuery.Fields[2].AsString;
+          LItem.Details := LQuery.Fields[3].AsString;
+          LItem.ImagePath := LQuery.Fields[4].AsString;
+          LItem.FirstSeenUtc := MHUnixMsToUtc(LQuery.Fields[5].AsLargeInt);
+          LItem.LastSeenUtc := MHUnixMsToUtc(LQuery.Fields[6].AsLargeInt);
+          LList.Add(LItem);
+        end;
+        LQuery.Next;
+      end;
+      Result := LList.ToArray;
+    finally
+      LList.Free;
+      LQuery.Free;
+    end;
+  finally
+    FLock.Leave;
+  end;
+end;
+
 procedure TMHSQLiteRepository.Clear;
 begin
   FLock.Enter;
   try
     FConnection.ExecSQL('DELETE FROM snapshots');
     FConnection.ExecSQL('DELETE FROM findings');
+    FConnection.ExecSQL('DELETE FROM inventory');
+    FLastInventoryUtc := 0;
     RunPragma('PRAGMA incremental_vacuum');
     RunPragma('PRAGMA wal_checkpoint(TRUNCATE)');
     Log(llWarning, 'История наблюдений и находок очищена пользователем');

@@ -59,6 +59,8 @@ begin
       Result := MHFormatBytes(AMetric.Value) + '/с';
     mkTemperatureCelsius, mkGpuTemperatureCelsius, mkCpuTemperatureCelsius, mkDiskTemperatureCelsius:
       Result := FormatFloat('0', AMetric.Value) + ' °C';
+    mkGpuPowerWatts:
+      Result := FormatFloat('0', AMetric.Value) + ' Вт';
   else
     Result := FormatFloat('0.##', AMetric.Value);
   end;

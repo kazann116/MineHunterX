@@ -57,6 +57,9 @@ type
     /// Температура, с которой начинается снижение частоты (если известна).
     HasSlowdown: Boolean;
     SlowdownCelsius: Double;
+    /// Текущая потребляемая мощность (NVML), Вт.
+    HasPower: Boolean;
+    PowerWatts: Double;
   end;
 
   IMHGpuApi = interface
@@ -208,9 +211,9 @@ var
   LPids: TDictionary<Cardinal, TPidGpu>;
   LPidGpu: TPidGpu;
   LKey, LAdapter: string;
-  LValue, LGpu, LCompute, LAdapterMemory, LTemperature: Double;
+  LValue, LGpu, LCompute, LAdapterMemory, LTemperature, LPower: Double;
   LPid: Cardinal;
-  LHasAdapterMemory, LHasTemperature: Boolean;
+  LHasAdapterMemory, LHasTemperature, LHasPower: Boolean;
   LMetrics: TList<TMHMetric>;
   LDetails: TList<TMHProcessDetail>;
   LDetail: TMHProcessDetail;
@@ -344,6 +347,20 @@ begin
           LSensor.TemperatureCelsius);
         LHasTemperature := True;
       end;
+    // Мощность: сумма по адаптерам, сообщившим её (обычно только NVIDIA через NVML).
+    LHasPower := False;
+    LPower := 0;
+    for LSensor in LSensors do
+      if LSensor.HasPower and (LSensor.PowerWatts >= 0) and (LSensor.PowerWatts < 2000) then
+      begin
+        LPower := LPower + LSensor.PowerWatts;
+        LHasPower := True;
+      end;
+    if LHasPower then
+      LMetrics.Add(TMHMetric.Available(mkGpuPowerWatts, LPower, LNow))
+    else
+      LMetrics.Add(TMHMetric.NoData(mkGpuPowerWatts, LNow));
+
     if LHasTemperature then
       LMetrics.Add(TMHMetric.Available(mkGpuTemperatureCelsius, LTemperature, LNow))
     else

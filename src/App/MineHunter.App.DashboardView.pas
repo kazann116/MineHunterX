@@ -147,7 +147,7 @@ end;
 
 function GpuTile(const ASnapshot: TMHSnapshot): TMHTileData;
 var
-  LGpu, LCompute, LMemory: TMHMetric;
+  LGpu, LCompute, LMemory, LPower: TMHMetric;
   LParts: string;
 begin
   Result := Tile(tkGpu, 'Видеокарта');
@@ -160,6 +160,8 @@ begin
     LParts := 'вычисления ' + Percent(LCompute.Value);
   if ASnapshot.FindMetric(mkGpuMemoryBytes, LMemory) and LMemory.HasValue then
     LParts := IfThen(LParts <> '', LParts + ' · ', '') + 'видеопамять ' + MHFormatBytes(LMemory.Value);
+  if ASnapshot.FindMetric(mkGpuPowerWatts, LPower) and LPower.HasValue then
+    LParts := IfThen(LParts <> '', LParts + ' · ', '') + Format('%.0f Вт', [LPower.Value]);
   Result.Detail := LParts;
 end;
 

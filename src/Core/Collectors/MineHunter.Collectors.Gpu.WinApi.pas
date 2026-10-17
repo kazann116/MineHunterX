@@ -15,7 +15,9 @@
        D3DKMTQueryAdapterInfo(KMTQAITYPE_ADAPTERPERFDATA) — данные драйвера
        (WDDM 2.4+, Windows 10 1803+), то же, что диспетчер задач показывает
        для дискретных видеокарт. Программные адаптеры пропускаются.
-    2) NVML (nvml.dll из драйвера NVIDIA) — если D3DKMT температуры не дал.
+    2) NVML (nvml.dll из драйвера NVIDIA) — температура, если D3DKMT её не дал,
+       и потребляемая мощность (nvmlDeviceGetPowerUsage, мВт) для оценки
+       стоимости электроэнергии.
        Библиотека загружается только из System32 или из каталога NVSMI в
        Program Files (защита от подмены DLL), функции — через GetProcAddress.
   Дескрипторы адаптеров открываются на время опроса и сразу закрываются.
@@ -42,6 +44,7 @@ type
       out ATemperature: Cardinal): Integer; cdecl;
     TNvmlDeviceGetName = function(ADevice: TNvmlDevice; AName: PAnsiChar;
       ALength: Cardinal): Integer; cdecl;
+    TNvmlDeviceGetPowerUsage = function(ADevice: TNvmlDevice; out AMilliwatts: Cardinal): Integer; cdecl;
   private
     FPdh: TMHPdhQuery;
     FEngineCounter: THandle;
@@ -62,6 +65,7 @@ type
     FNvmlGetTemperature: TNvmlDeviceGetTemperature;
     FNvmlGetThreshold: TNvmlDeviceGetTemperatureThreshold;
     FNvmlGetName: TNvmlDeviceGetName;
+    FNvmlGetPower: TNvmlDeviceGetPowerUsage;
     function ReadD3dkmtSensors(out AReason: string): TArray<TMHGpuSensor>;
     procedure InitNvml;
     function ReadNvmlSensors(out AReason: string): TArray<TMHGpuSensor>;
@@ -413,6 +417,7 @@ begin
   @FNvmlGetTemperature := GetProcAddress(FNvml, 'nvmlDeviceGetTemperature');
   @FNvmlGetThreshold := GetProcAddress(FNvml, 'nvmlDeviceGetTemperatureThreshold');
   @FNvmlGetName := GetProcAddress(FNvml, 'nvmlDeviceGetName');
+  @FNvmlGetPower := GetProcAddress(FNvml, 'nvmlDeviceGetPowerUsage');
   if not (Assigned(LInit) and Assigned(FNvmlShutdown) and Assigned(FNvmlGetCount) and
           Assigned(FNvmlGetHandle) and Assigned(FNvmlGetTemperature)) then
   begin
@@ -429,7 +434,7 @@ end;
 
 function TMHWinGpuApi.ReadNvmlSensors(out AReason: string): TArray<TMHGpuSensor>;
 var
-  LCount, LTemp, LThreshold, I, LLimit: Cardinal;
+  LCount, LTemp, LThreshold, I, LLimit, LMilliwatts: Cardinal;
   LDevice: TNvmlDevice;
   LName: array[0..95] of AnsiChar;
   LSensor: TMHGpuSensor;
@@ -477,6 +482,13 @@ begin
         LSensor.HasSlowdown := True;
         LSensor.SlowdownCelsius := LThreshold;
       end;
+      // Видеокарты без датчика мощности (часть ноутбучных) возвращают NOT_SUPPORTED.
+      if Assigned(FNvmlGetPower) and (FNvmlGetPower(LDevice, LMilliwatts) = NVML_SUCCESS) and
+         (LMilliwatts < 2000000) then
+      begin
+        LSensor.HasPower := True;
+        LSensor.PowerWatts := LMilliwatts / 1000;
+      end;
       LList.Add(LSensor);
     end;
     Result := LList.ToArray;
@@ -488,25 +500,33 @@ end;
 procedure TMHWinGpuApi.RefreshSensors;
 var
   LD3dReason, LNvmlReason: string;
-  LSensor: TMHGpuSensor;
+  LSensor, LCopy: TMHGpuSensor;
   LNvml: TArray<TMHGpuSensor>;
-  LHasTemperature: Boolean;
+  LHasTemperature, LD3dHasTemperature: Boolean;
 begin
   FSensors := ReadD3dkmtSensors(LD3dReason);
   LHasTemperature := False;
   for LSensor in FSensors do
     LHasTemperature := LHasTemperature or LSensor.HasTemperature;
   FSensorReason := '';
+  // NVML опрашивается всегда: это единственный источник мощности. Температура из
+  // NVML берётся, только если D3DKMT её не дал (иначе адаптер учитывался бы дважды).
+  LNvml := ReadNvmlSensors(LNvmlReason);
+  LD3dHasTemperature := LHasTemperature;
+  for LSensor in LNvml do
+  begin
+    LCopy := LSensor;
+    if LD3dHasTemperature then
+    begin
+      LCopy.HasTemperature := False;
+      LCopy.HasSlowdown := False;
+    end;
+    if LCopy.HasTemperature or LCopy.HasPower then
+      FSensors := FSensors + [LCopy];
+    LHasTemperature := LHasTemperature or LCopy.HasTemperature;
+  end;
   if LHasTemperature then
     Exit;
-  // D3DKMT температуры не дал (драйвер не сообщает или видеокарта встроенная) — пробуем NVML.
-  LNvml := ReadNvmlSensors(LNvmlReason);
-  for LSensor in LNvml do
-    if LSensor.HasTemperature then
-    begin
-      FSensors := FSensors + [LSensor];
-      LHasTemperature := True;
-    end;
   if not LHasTemperature then
   begin
     if LD3dReason = '' then

@@ -30,9 +30,10 @@ type
     FPidCounter: THandle;
     FPrivateTick: UInt64;
     FPrivateSets: TArray<TMHPidBytes>;
-    class function QueryElevation: Boolean; static;
     procedure RefreshPrivateSets;
   public
+    /// Запущен ли текущий процесс с повышенными правами (токен elevated).
+    class function QueryElevation: Boolean; static;
     constructor Create;
     destructor Destroy; override;
     function PrivateWorkingSets: TArray<TMHPidBytes>;

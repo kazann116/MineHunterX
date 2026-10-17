@@ -92,6 +92,11 @@ type
     FOnSnapshot: TMHSnapshotEvent;
     FOnFinding: TMHFindingEvent;
     FOnCycle: TMHCycleEvent;
+    /// 1 — следующий цикл сбрасывает кэши коллекторов (RequestRefresh).
+    FRefreshPending: Integer;
+    /// Номер снимка последнего цикла со сбросом кэшей (0 — не было).
+    FLastRefreshSequence: Int64;
+    function GetLastRefreshSequence: UInt64;
     function GetOptions: TMHScannerOptions;
     procedure SetOptions(const AValue: TMHScannerOptions);
     function GetBaseline: TMHBaseline;
@@ -132,6 +137,12 @@ type
     /// Синхронный цикл сканирования в вызывающем потоке.
     /// Обработчики событий вызываются в этом же потоке.
     function ScanOnce: TMHSnapshot;
+    /// «Проверить сейчас»: следующий цикл перечитывает и кэшируемые источники
+    /// (автозапуск, признаки вмешательства). Если сканирование запущено,
+    /// цикл начинается сразу, не дожидаясь интервала.
+    procedure RequestRefresh;
+    /// Номер снимка, в котором выполнен последний запрошенный сброс кэшей.
+    property LastRefreshSequence: UInt64 read GetLastRefreshSequence;
 
     property IsRunning: Boolean read GetIsRunning;
     property Options: TMHScannerOptions read GetOptions write SetOptions;
@@ -533,11 +544,18 @@ end;
 function TMHScanner.CollectSnapshot: TMHSnapshot;
 var
   I: Integer;
+  LRefresh: Boolean;
+  LCache: IMHCacheInvalidation;
   LStatuses: TArray<TMHSourceStatus>;
   LDetails: TArray<TMHProcessDetail>;
 begin
   Inc(FSequence);
   Result := TMHSnapshot.Create(FSequence, FClock.NowUtc);
+  LRefresh := TInterlocked.Exchange(FRefreshPending, 0) = 1;
+  if LRefresh then
+    for I := 0 to High(FCollectors) do
+      if Supports(FCollectors[I].Collector, IMHCacheInvalidation, LCache) then
+        LCache.Invalidate;
   SetLength(LStatuses, Length(FCollectors));
   LDetails := nil;
   for I := 0 to High(FCollectors) do
@@ -547,6 +565,20 @@ begin
   end;
   Result.Sources := LStatuses;
   EnrichProcesses(Result, LDetails);
+  if LRefresh then
+    TInterlocked.Exchange(FLastRefreshSequence, Int64(Result.Sequence));
+end;
+
+procedure TMHScanner.RequestRefresh;
+begin
+  TInterlocked.Exchange(FRefreshPending, 1);
+  if FWorker <> nil then
+    FWorker.Wake;
+end;
+
+function TMHScanner.GetLastRefreshSequence: UInt64;
+begin
+  Result := UInt64(TInterlocked.Read(FLastRefreshSequence));
 end;
 
 function TMHScanner.GetRepository: IMHRepository;

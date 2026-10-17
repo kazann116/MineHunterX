@@ -60,6 +60,13 @@ type
     property DisplayName: string read GetDisplayName;
   end;
 
+  /// Коллектор с кэшем (автозапуск, признаки вмешательства): Invalidate
+  /// заставляет следующий Collect перечитать источники («Проверить сейчас»).
+  IMHCacheInvalidation = interface
+    ['{6F0B7C1E-2E1A-4F57-9A0C-3D5B8E7A1C11}']
+    procedure Invalidate;
+  end;
+
   /// Детерминированный анализ: одинаковые входные данные дают одинаковый результат.
   IMHAnalyzer = interface
     ['{6F0B7C1E-2E1A-4F57-9A0C-3D5B8E7A1C20}']

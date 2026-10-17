@@ -46,7 +46,7 @@ type
     function IsManagedComputer: Boolean;
   end;
 
-  TMHTamperCollector = class(TInterfacedObject, IMHCollector)
+  TMHTamperCollector = class(TInterfacedObject, IMHCollector, IMHCacheInvalidation)
   public const
     SourceIdValue = 'tamper';
     DefaultRefreshSeconds = 120;
@@ -67,6 +67,8 @@ type
     function GetSourceId: string;
     function GetDisplayName: string;
     function Collect(const ASnapshot: TMHSnapshot): TMHCollectionResult;
+    /// Сбрасывает кэш: следующий Collect перечитает источники.
+    procedure Invalidate;
     /// Сколько раз источники перечитывались (для тестов кэширования).
     property ReadCount: Integer read FReadCount;
   end;
@@ -238,6 +240,11 @@ begin
   // Полный отказ не кэшируется: следующий опрос повторит чтение.
   FHasCache := FCachedState <> ssError;
   FCacheUtc := FClock.NowUtc;
+end;
+
+procedure TMHTamperCollector.Invalidate;
+begin
+  FHasCache := False;
 end;
 
 function TMHTamperCollector.Collect(const ASnapshot: TMHSnapshot): TMHCollectionResult;

@@ -270,7 +270,7 @@ begin
 
   LRaw := OpenRaw;
   try
-    Assert.AreEqual(2, Integer(LRaw.ExecSQLScalar('SELECT MAX(version) FROM schema_version')));
+    Assert.AreEqual(TMHSQLiteRepository.SchemaVersion, Integer(LRaw.ExecSQLScalar('SELECT MAX(version) FROM schema_version')));
     Assert.AreEqual(2, Integer(LRaw.ExecSQLScalar('SELECT COUNT(*) FROM snapshots')));
   finally
     LRaw.Free;
