@@ -58,6 +58,7 @@ type
     [Test] procedure Findings_DefenderAndOpenLocation_ValidatePath;
     [Test] procedure Settings_AnalysisAreAppliedAndPersisted;
     [Test] procedure History_ComparisonWithBaseline;
+    [Test] procedure Findings_Remediate_QuarantineAndRestore;
   end;
 
 implementation
@@ -70,8 +71,14 @@ uses
   MineHunter.Core.Settings, MineHunter.Core.Serialization, MineHunter.Collectors.Processes,
   MineHunter.Collectors.SelfMonitor, MineHunter.Collectors.System, MineHunter.Storage.SQLite,
   MineHunter.Collectors.Gpu, MineHunter.Collectors.Sensors, MineHunter.Tests.GpuSensors,
-  MineHunter.App.DashboardView,
+  MineHunter.App.DashboardView, MineHunter.Core.Actions, MineHunter.Core.Quarantine,
+  MineHunter.Tests.Quarantine, MineHunter.Tests.SettingsReports,
   MineHunter.Tests.Fakes;
+
+var
+  // Подмена операций ОС для тестов действий (nil — настоящие операции).
+  GTestQuarantineOps: IMHQuarantineOps;
+  GTestSystemOps: IMHSystemOps;
 
 function NewTempDir: string;
 begin
@@ -125,6 +132,10 @@ begin
     LContainer.RegisterInstance<IMHCollector>(
       TMHSensorCollector.Create(ASensorApi as IMHSensorApi, LClock) as IMHCollector);
   LContainer.RegisterInstance<IMHAnalyzer>(TFakeAnalyzer.Create(False) as IMHAnalyzer);
+  if GTestQuarantineOps <> nil then
+    LContainer.RegisterInstance<IMHQuarantineOps>(GTestQuarantineOps);
+  if GTestSystemOps <> nil then
+    LContainer.RegisterInstance<IMHSystemOps>(GTestSystemOps);
   LContainer.RegisterSingleton<IMHRepository>(
     function: IMHRepository
     begin
@@ -791,6 +802,80 @@ begin
   Assert.IsTrue(FForm.lvDeviations.Items.Count >= 1);
   FForm.btnRebuildBaselineClick(nil);
   Assert.IsTrue(string(FForm.lblBaselineInfo.Caption).Contains('перестраивается'));
+end;
+
+procedure TMainFormSmokeTests.Findings_Remediate_QuarantineAndRestore;
+var
+  LServices: TMHAppServices;
+  LForm: TMainForm;
+  LProc: TFakeProcessApi;
+  LSys: TFakeSystemMetricsApi;
+  LFs: TFakeQuarantineOps;
+  LOs: TFakeSystemOps;
+  LAsked: string;
+begin
+  LFs := TFakeQuarantineOps.Create;
+  GTestQuarantineOps := LFs;
+  LOs := TFakeSystemOps.Create;
+  GTestSystemOps := LOs;
+  LFs.AddFile('C:\Fake\chrome.exe', 'payload');
+  try
+    LServices := NewTestServices(LProc, LSys, TPath.Combine(FTempDir, 'remediate.db'));
+    try
+      LForm := TMainForm.CreateWithServices(nil, LServices);
+      try
+        Assert.IsNotNull(LForm.RemediateButton);
+        Assert.IsFalse(LForm.RemediateButton.Enabled, 'Без выбранной находки исправлять нечего');
+        Assert.AreEqual(0, LForm.QuarantineList.Items.Count);
+        LServices.Scanner.ScanOnce;
+        LForm.SelectFinding('test:finding');
+        Assert.IsTrue(LForm.RemediateButton.Enabled);
+
+        // Отказ — ничего не меняется.
+        LAsked := '';
+        LForm.ConfirmAction :=
+          function(const AQuestion: string): Boolean
+          begin
+            LAsked := AQuestion;
+            Result := False;
+          end;
+        LForm.RemediateSelected;
+        Assert.IsTrue(LAsked.Contains('C:\Fake\chrome.exe'), LAsked);
+        Assert.IsTrue(LAsked.Contains('PID 200'), LAsked);
+        Assert.IsTrue(LAsked.Contains('Карантин'), 'План объясняет, как откатить');
+        Assert.IsTrue(LFs.FileExists('C:\Fake\chrome.exe'));
+        Assert.AreEqual(0, LOs.TerminateCalls);
+
+        // Согласие — процесс останавливается, файл перемещается в карантин.
+        LForm.ConfirmAction :=
+          function(const AQuestion: string): Boolean
+          begin
+            Result := True;
+          end;
+        LForm.RemediateSelected;
+        Assert.IsFalse(LFs.FileExists('C:\Fake\chrome.exe'), 'Файл перемещён в карантин');
+        Assert.AreEqual(1, LForm.QuarantineList.Items.Count);
+        Assert.IsTrue(LForm.QuarantineList.Items[0].SubItems[1].Contains('chrome.exe'));
+        Assert.IsTrue(string(LForm.lblCardStatus.Caption).Contains('Исправление'),
+          string(LForm.lblCardStatus.Caption));
+
+        // Восстановление из списка.
+        LForm.QuarantineList.Items[0].Selected := True;
+        LForm.RestoreSelectedQuarantine;
+        Assert.IsTrue(LFs.FileExists('C:\Fake\chrome.exe'), 'Файл возвращён на место');
+        Assert.AreEqual(0, LForm.QuarantineList.Items.Count);
+        Assert.IsTrue(Length(LServices.ActionLog.LoadActions(20)) >= 2, 'Действия записаны в журнал');
+      finally
+        LForm.Free;
+      end;
+    finally
+      LServices.Free;
+    end;
+  finally
+    GTestQuarantineOps := nil;
+    GTestSystemOps := nil;
+    CheckSynchronize(0);
+  end;
 end;
 
 initialization

@@ -16,7 +16,8 @@ uses
   System.SysUtils, System.Classes, System.SyncObjs,
   MineHunter.Core.Types, MineHunter.Core.Interfaces, MineHunter.Core.Container,
   MineHunter.Core.Scanner, MineHunter.Storage.SQLite, MineHunter.Analysis.Engine,
-  MineHunter.Analysis.Baseline, MineHunter.Core.Settings, MineHunter.Core.Actions;
+  MineHunter.Analysis.Baseline, MineHunter.Core.Settings, MineHunter.Core.Actions,
+  MineHunter.Core.Quarantine;
 
 type
   /// Периодически перестраивает профили нормы в фоновом потоке.
@@ -62,6 +63,7 @@ type
     FSettings: TMHAppSettings;
     FSettingsLoadedOk: Boolean;
     FActions: TMHSafeActions;
+    FQuarantine: TMHQuarantine;
   public
     /// Путь базы истории для стандартной конфигурации ('' — MHDefaultHistoryPath).
     /// Позволяет тестам не трогать историю пользователя.
@@ -107,6 +109,8 @@ type
     property SettingsStore: TMHSettingsStore read FSettingsStore;
     /// Безопасные действия (открыть расположение, Defender, остановка процесса).
     property Actions: TMHSafeActions read FActions;
+    /// Карантин и откат исправлений (хранилище — рядом с базой истории).
+    property Quarantine: TMHQuarantine read FQuarantine;
   end;
 
 implementation
@@ -123,7 +127,7 @@ uses
   MineHunter.Collectors.Gpu, MineHunter.Collectors.Gpu.WinApi,
   MineHunter.Collectors.Sensors, MineHunter.Collectors.Sensors.WinApi,
   MineHunter.Collectors.Tamper, MineHunter.Collectors.Tamper.WinApi,
-  MineHunter.Core.Actions.WinApi;
+  MineHunter.Core.Actions.WinApi, MineHunter.Core.Quarantine.WinApi, System.IOUtils;
 
 const
   BASELINE_FIRST_DELAY_MS = 60 * 1000;
@@ -332,6 +336,10 @@ begin
 end;
 
 constructor TMHAppServices.Create(AContainer: TMHContainer);
+var
+  LQuarantineDir: string;
+  LQuarantineOps: IMHQuarantineOps;
+  LSystemOps: IMHSystemOps;
 begin
   inherited Create;
   if AContainer = nil then
@@ -386,7 +394,18 @@ begin
       BASELINE_INTERVAL_MS);
   end;
 
-  FActions := TMHSafeActions.Create(TMHWinSystemOps.Create as IMHSystemOps, FActionLog, FClock);
+  // Обращения к ОС для действий можно подменить через контейнер (тесты).
+  if not FContainer.TryResolve<IMHSystemOps>(LSystemOps) then
+    LSystemOps := TMHWinSystemOps.Create;
+  FActions := TMHSafeActions.Create(LSystemOps, FActionLog, FClock);
+  LQuarantineDir := DefaultHistoryPath;
+  if LQuarantineDir = '' then
+    LQuarantineDir := MHDefaultHistoryPath;
+  // Операции карантина можно подменить через контейнер (тесты, встраивание).
+  if not FContainer.TryResolve<IMHQuarantineOps>(LQuarantineOps) then
+    LQuarantineOps := TMHWinQuarantineOps.Create;
+  FQuarantine := TMHQuarantine.Create(LQuarantineOps, FActionLog, FClock,
+    TPath.Combine(ExtractFileDir(LQuarantineDir), 'Quarantine'));
 
   // Настройки: повреждённый файл заменяется значениями по умолчанию (с копией .bad).
   FSettings := TMHAppSettings.Default;
@@ -451,6 +470,7 @@ begin
   // Сначала фоновые потоки: они используют сервисы контейнера.
   FreeAndNil(FScheduler);
   FScanner.Free;
+  FreeAndNil(FQuarantine);
   FreeAndNil(FActions);
   FreeAndNil(FSettingsStore);
   FBaselines := nil;

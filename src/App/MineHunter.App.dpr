@@ -18,6 +18,8 @@ uses
   MineHunter.Collectors.Tamper in '..\Core\Collectors\MineHunter.Collectors.Tamper.pas',
   MineHunter.Collectors.Tamper.WinApi in '..\Core\Collectors\MineHunter.Collectors.Tamper.WinApi.pas',
   MineHunter.Analysis.Tamper in '..\Core\MineHunter.Analysis.Tamper.pas',
+  MineHunter.Core.Quarantine in '..\Core\MineHunter.Core.Quarantine.pas',
+  MineHunter.Core.Quarantine.WinApi in '..\Core\MineHunter.Core.Quarantine.WinApi.pas',
   MineHunter.Collectors.Gpu in '..\Core\Collectors\MineHunter.Collectors.Gpu.pas',
   MineHunter.Collectors.Gpu.WinApi in '..\Core\Collectors\MineHunter.Collectors.Gpu.WinApi.pas',
   MineHunter.Collectors.Sensors in '..\Core\Collectors\MineHunter.Collectors.Sensors.pas',

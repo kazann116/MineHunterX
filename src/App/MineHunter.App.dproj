@@ -91,6 +91,8 @@
         <DCCReference Include="..\Core\Collectors\MineHunter.Collectors.Tamper.pas"/>
         <DCCReference Include="..\Core\Collectors\MineHunter.Collectors.Tamper.WinApi.pas"/>
         <DCCReference Include="..\Core\MineHunter.Analysis.Tamper.pas"/>
+        <DCCReference Include="..\Core\MineHunter.Core.Quarantine.pas"/>
+        <DCCReference Include="..\Core\MineHunter.Core.Quarantine.WinApi.pas"/>
         <DCCReference Include="..\Core\Collectors\MineHunter.Collectors.Gpu.pas"/>
         <DCCReference Include="..\Core\Collectors\MineHunter.Collectors.Gpu.WinApi.pas"/>
         <DCCReference Include="..\Core\Collectors\MineHunter.Collectors.Sensors.pas"/>

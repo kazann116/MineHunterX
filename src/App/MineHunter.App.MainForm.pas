@@ -10,7 +10,7 @@ uses
   MineHunter.App.ProcessView, MineHunter.App.Chart, MineHunter.Storage.SQLite,
   MineHunter.App.FindingsView, MineHunter.Core.Reports, MineHunter.Core.Actions,
   MineHunter.Core.Settings, MineHunter.Analysis.Engine, MineHunter.Analysis.Baseline,
-  MineHunter.App.DashboardView, MineHunter.App.Tiles;
+  MineHunter.App.DashboardView, MineHunter.App.Tiles, MineHunter.Core.Quarantine;
 
 type
   TMHPage = (pgDashboard, pgProcesses, pgFindings, pgHistory, pgSettings);
@@ -229,6 +229,18 @@ type
     FDefenderThread: TThread;
     FDefenderResult: TMHActionResult;
     FDefenderDone: Boolean;
+    FRemediateButton: TButton;
+    FQuarantineBox: TGroupBox;
+    FQuarantineList: TListView;
+    FQuarantineRestore: TButton;
+    FQuarantinePurge: TButton;
+    FQuarantineItems: TArray<TMHQuarantineItem>;
+    procedure CreateRemediationControls;
+    procedure RemediateClick(Sender: TObject);
+    function ExecuteRemediationStep(const AStep: TMHRemediationStep; const AReason: string): TMHActionResult;
+    procedure QuarantineSelectItem(Sender: TObject; Item: TListItem; Selected: Boolean);
+    procedure QuarantineRestoreClick(Sender: TObject);
+    procedure QuarantinePurgeClick(Sender: TObject);
     procedure HandleCycle(const ASnapshot: TMHSnapshot; const AFindings: TMHFindings);
     procedure UpdateProtection(const ASnapshot: TMHSnapshot);
     procedure RefreshFindingsList;
@@ -295,6 +307,16 @@ type
     property HistoryLoading: Boolean read FHistoryLoading;
     /// Подтверждение опасных действий (по умолчанию — диалог). Тесты подменяют.
     property ConfirmAction: TMHConfirmFunc read FConfirm write FConfirm;
+    /// Кнопка «Исправить…» карточки находки и список карантина (для тестов).
+    property RemediateButton: TButton read FRemediateButton;
+    property QuarantineList: TListView read FQuarantineList;
+    /// Строит план исправления выбранной находки, спрашивает подтверждение и выполняет.
+    procedure RemediateSelected;
+    /// Перечитывает список карантина в настройках.
+    procedure RefreshQuarantine;
+    /// Восстановить / удалить навсегда выделенный в списке объект карантина.
+    procedure RestoreSelectedQuarantine;
+    procedure PurgeSelectedQuarantine;
     property FindingsModel: TMHFindingsModel read FFindingsModel;
     /// Ключ выбранной находки ('' — не выбрана); запись выбирает находку в списке.
     property SelectedFindingKey: string read FSelectedFindingKey;
@@ -397,6 +419,7 @@ begin
 
   FConfirm := DefaultConfirm;
   CreateCharts;
+  CreateRemediationControls;
   cbHistoryPeriod.Items.Clear;
   cbHistoryPeriod.Items.Add('1 час');
   cbHistoryPeriod.Items.Add('6 часов');
@@ -1589,6 +1612,8 @@ begin
   btnStopProcess.Enabled := LHasFinding and LHasProcess;
   btnAllow.Enabled := LHasFinding and (LRow.Finding.ImagePath <> '');
   btnExportCard.Enabled := LHasFinding;
+  if FRemediateButton <> nil then
+    FRemediateButton.Enabled := LHasFinding and FHasLastSnapshot and (FServices.Quarantine <> nil);
 end;
 
 procedure TMainForm.pnlCardChartResize(Sender: TObject);
@@ -2069,6 +2094,247 @@ begin
   if MHRemoveExclusion(LSettings, LExclusion.Key, LExclusion.Sha256) then
     ChangeSettings(LSettings);
   RefreshExclusions;
+end;
+
+procedure TMainForm.CreateRemediationControls;
+begin
+  // Вторая строка кнопок карточки: исправление с откатом.
+  pnlCardButtons.Height := pnlCardButtons.Height + 36;
+  FRemediateButton := TButton.Create(Self);
+  FRemediateButton.Parent := pnlCardButtons;
+  FRemediateButton.SetBounds(btnOpenLocation.Left, btnOpenLocation.Top + btnOpenLocation.Height + 6, 320, 30);
+  FRemediateButton.Caption := 'Исправить (карантин с откатом)…';
+  FRemediateButton.Hint := 'Показывает план: остановить процесс, отключить автозапуск и признаки ' +
+    'вмешательства, переместить файлы в карантин. Каждый шаг можно отменить в «Настройки → Карантин».';
+  FRemediateButton.ShowHint := True;
+  FRemediateButton.Enabled := False;
+  FRemediateButton.OnClick := RemediateClick;
+
+  // Раздел «Карантин» в настройках — под журналом действий.
+  FQuarantineBox := TGroupBox.Create(Self);
+  FQuarantineBox.Parent := sbSettings;
+  FQuarantineBox.SetBounds(gbActionLog.Left, gbActionLog.Top + gbActionLog.Height + 16, gbActionLog.Width, 230);
+  FQuarantineBox.Caption := 'Карантин и откат исправлений';
+  FQuarantineList := TListView.Create(Self);
+  FQuarantineList.Parent := FQuarantineBox;
+  FQuarantineList.SetBounds(12, 24, FQuarantineBox.Width - 24, 150);
+  FQuarantineList.ViewStyle := vsReport;
+  FQuarantineList.ReadOnly := True;
+  FQuarantineList.RowSelect := True;
+  FQuarantineList.HideSelection := False;
+  with FQuarantineList.Columns.Add do
+  begin
+    Caption := 'Когда';
+    Width := 95;
+  end;
+  with FQuarantineList.Columns.Add do
+  begin
+    Caption := 'Тип';
+    Width := 110;
+  end;
+  with FQuarantineList.Columns.Add do
+  begin
+    Caption := 'Объект';
+    Width := 270;
+  end;
+  with FQuarantineList.Columns.Add do
+  begin
+    Caption := 'Причина';
+    Width := 160;
+  end;
+  FQuarantineList.OnSelectItem := QuarantineSelectItem;
+  FQuarantineRestore := TButton.Create(Self);
+  FQuarantineRestore.Parent := FQuarantineBox;
+  FQuarantineRestore.SetBounds(12, 184, 160, 30);
+  FQuarantineRestore.Caption := 'Восстановить';
+  FQuarantineRestore.Enabled := False;
+  FQuarantineRestore.OnClick := QuarantineRestoreClick;
+  FQuarantinePurge := TButton.Create(Self);
+  FQuarantinePurge.Parent := FQuarantineBox;
+  FQuarantinePurge.SetBounds(180, 184, 180, 30);
+  FQuarantinePurge.Caption := 'Удалить навсегда…';
+  FQuarantinePurge.Enabled := False;
+  FQuarantinePurge.OnClick := QuarantinePurgeClick;
+  RefreshQuarantine;
+end;
+
+procedure TMainForm.RemediateClick(Sender: TObject);
+begin
+  RemediateSelected;
+end;
+
+function TMainForm.ExecuteRemediationStep(const AStep: TMHRemediationStep;
+  const AReason: string): TMHActionResult;
+var
+  LProcess: TMHProcessInfo;
+begin
+  case AStep.Kind of
+    rmStopProcess:
+      // Процесс проверяется по текущему снимку: PID мог освободиться.
+      if FindLiveProcess(AStep.Process, LProcess) then
+        Result := FServices.Actions.TerminateProcess(LProcess.Id, LProcess.Name)
+      else
+        Result := TMHActionResult.Create(arkNotFound, 'Процесс ' + AStep.ProcessName + ' уже не запущен');
+    rmQuarantineFile:
+      Result := FServices.Quarantine.QuarantineFile(AStep.Target, AReason);
+    rmRegistryValue:
+      Result := FServices.Quarantine.DisableRegistryValue(AStep.Target, AStep.ValueName, AReason);
+    rmService:
+      Result := FServices.Quarantine.DisableService(AStep.Target, AReason);
+    rmTask:
+      Result := FServices.Quarantine.DisableTask(AStep.Target, AReason);
+  else
+    Result := TMHActionResult.Create(arkUnavailable, 'Вручную: ' + AStep.Description);
+  end;
+end;
+
+procedure TMainForm.RemediateSelected;
+var
+  LRow: TMHFindingRow;
+  LSteps: TArray<TMHRemediationStep>;
+  LStep: TMHRemediationStep;
+  LResult: TMHActionResult;
+  LQuestion, LReport, LReason: string;
+  LDone, LFailed, I: Integer;
+begin
+  if not SelectedFinding(LRow) or not FHasLastSnapshot or (FServices.Quarantine = nil) then
+    Exit;
+  LSteps := MHBuildRemediationPlan(FLastSnapshot, LRow.Finding, FServices.Quarantine.WindowsDir);
+  if Length(LSteps) = 0 then
+  begin
+    lblCardStatus.Caption := 'Для этой находки нет автоматических шагов исправления — следуйте рекомендациям.';
+    Exit;
+  end;
+  LQuestion := 'Исправить находку «' + LRow.Finding.Title + '»?' + sLineBreak + sLineBreak +
+    'Будут выполнены шаги:' + sLineBreak;
+  for I := 0 to High(LSteps) do
+    LQuestion := LQuestion + Format('%d. %s', [I + 1, LSteps[I].Description]) + sLineBreak;
+  LQuestion := LQuestion + sLineBreak +
+    'Файлы не удаляются: они перемещаются в карантин, а значения реестра, службы и задания ' +
+    'сохраняются. Всё можно вернуть в «Настройки → Карантин». Файлы Windows не затрагиваются.';
+  if not FConfirm(LQuestion) then
+    Exit;
+
+  LReason := LRow.Finding.Title;
+  LReport := '';
+  LDone := 0;
+  LFailed := 0;
+  for LStep in LSteps do
+  begin
+    LResult := ExecuteRemediationStep(LStep, LReason);
+    if LResult.Succeeded then
+    begin
+      Inc(LDone);
+      LReport := LReport + '✔ ' + LResult.Message + sLineBreak;
+    end
+    else
+    begin
+      if LStep.Kind <> rmManual then
+        Inc(LFailed);
+      LReport := LReport + '✖ ' + LResult.Message;
+      if LResult.Details <> '' then
+        LReport := LReport + ' (' + LResult.Details + ')';
+      LReport := LReport + sLineBreak;
+    end;
+  end;
+  FServices.Logger.Log(llInfo, 'actions', 'Исправление «' + LRow.Finding.Title + '»:' + sLineBreak + LReport);
+  if LFailed = 0 then
+    lblCardStatus.Caption := Format('Исправление выполнено: %d из %d шагов. Отменить можно в «Настройки → Карантин».',
+      [LDone, Length(LSteps)])
+  else
+    lblCardStatus.Caption := Format('Исправление выполнено частично: успешно %d, с ошибками %d — подробности в журнале.',
+      [LDone, LFailed]);
+  lblCardStatus.Hint := LReport;
+  lblCardStatus.ShowHint := True;
+  UpdateEvents;
+  RefreshActionLog;
+  RefreshQuarantine;
+end;
+
+procedure TMainForm.RefreshQuarantine;
+var
+  LItem: TMHQuarantineItem;
+  LView: TListItem;
+begin
+  if (FQuarantineList = nil) or (FServices.Quarantine = nil) then
+    Exit;
+  try
+    FQuarantineItems := FServices.Quarantine.Items;
+  except
+    on E: Exception do
+    begin
+      FQuarantineItems := nil;
+      FServices.Logger.Log(llWarning, 'quarantine', 'Список карантина недоступен: ' + E.Message);
+    end;
+  end;
+  FQuarantineList.Items.BeginUpdate;
+  try
+    FQuarantineList.Items.Clear;
+    for LItem in FQuarantineItems do
+    begin
+      LView := FQuarantineList.Items.Add;
+      LView.Caption := FormatDateTime('dd.mm hh:nn', TTimeZone.Local.ToLocalTime(LItem.CreatedUtc));
+      LView.SubItems.Add(MHQuarantineKindToString(LItem.Kind));
+      LView.SubItems.Add(LItem.Description);
+      LView.SubItems.Add(LItem.Reason);
+    end;
+  finally
+    FQuarantineList.Items.EndUpdate;
+  end;
+  FQuarantineRestore.Enabled := False;
+  FQuarantinePurge.Enabled := False;
+  if Length(FQuarantineItems) = 0 then
+    FQuarantineBox.Caption := 'Карантин и откат исправлений — пусто'
+  else
+    FQuarantineBox.Caption := Format('Карантин и откат исправлений — %d', [Length(FQuarantineItems)]);
+end;
+
+procedure TMainForm.QuarantineSelectItem(Sender: TObject; Item: TListItem; Selected: Boolean);
+var
+  LHas: Boolean;
+begin
+  LHas := (FQuarantineList.Selected <> nil) and (FQuarantineList.Selected.Index <= High(FQuarantineItems));
+  FQuarantineRestore.Enabled := LHas;
+  // Удалять навсегда можно только файлы: записи реестра, службы и задания лишь отключены.
+  FQuarantinePurge.Enabled := LHas and (FQuarantineItems[FQuarantineList.Selected.Index].Kind = qkFile);
+end;
+
+procedure TMainForm.RestoreSelectedQuarantine;
+var
+  LItem: TMHQuarantineItem;
+begin
+  if (FQuarantineList.Selected = nil) or (FQuarantineList.Selected.Index > High(FQuarantineItems)) then
+    Exit;
+  LItem := FQuarantineItems[FQuarantineList.Selected.Index];
+  if not FConfirm('Восстановить из карантина?' + sLineBreak + LItem.Description + sLineBreak + sLineBreak +
+    'Объект вернётся на прежнее место и снова сможет запускаться.') then
+    Exit;
+  ShowActionResult(FServices.Quarantine.Restore(LItem.Id));
+  RefreshQuarantine;
+end;
+
+procedure TMainForm.PurgeSelectedQuarantine;
+var
+  LItem: TMHQuarantineItem;
+begin
+  if (FQuarantineList.Selected = nil) or (FQuarantineList.Selected.Index > High(FQuarantineItems)) then
+    Exit;
+  LItem := FQuarantineItems[FQuarantineList.Selected.Index];
+  if not FConfirm('Удалить навсегда файл из карантина?' + sLineBreak + LItem.Description + sLineBreak + sLineBreak +
+    'Это действие нельзя отменить.') then
+    Exit;
+  ShowActionResult(FServices.Quarantine.Purge(LItem.Id));
+  RefreshQuarantine;
+end;
+
+procedure TMainForm.QuarantineRestoreClick(Sender: TObject);
+begin
+  RestoreSelectedQuarantine;
+end;
+
+procedure TMainForm.QuarantinePurgeClick(Sender: TObject);
+begin
+  PurgeSelectedQuarantine;
 end;
 
 procedure TMainForm.RefreshActionLog;
