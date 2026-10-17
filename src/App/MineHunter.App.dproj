@@ -98,6 +98,10 @@
         <DCCReference Include="..\Core\MineHunter.Core.Inventory.pas"/>
         <DCCReference Include="..\Core\MineHunter.Core.CheckReport.pas"/>
         <DCCReference Include="..\Core\MineHunter.Analysis.Launches.pas"/>
+        <DCCReference Include="..\Core\MineHunter.Core.Updates.pas"/>
+        <DCCReference Include="..\Core\MineHunter.Core.Updates.WinApi.pas"/>
+        <DCCReference Include="MineHunter.App.Lang.pas"/>
+        <DCCReference Include="MineHunter.App.Theme.pas"/>
         <DCCReference Include="..\Core\Collectors\MineHunter.Collectors.ProcessEvents.pas"/>
         <DCCReference Include="..\Core\Collectors\MineHunter.Collectors.ProcessEvents.WinApi.pas"/>
         <DCCReference Include="..\Core\MineHunter.Core.SelfAutostart.WinApi.pas"/>
@@ -136,6 +140,9 @@
         </DCCReference>
         <RcCompile Include="MineHunter.App.Resources.rc">
             <Form>MineHunter.App.Resources.res</Form>
+        </RcCompile>
+        <RcCompile Include="MineHunter.App.Styles.rc">
+            <Form>MineHunter.App.Styles.res</Form>
         </RcCompile>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>

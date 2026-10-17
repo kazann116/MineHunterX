@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Снимок окна MineHunter X для проверки интерфейса: запускает приложение,
   ждёт заданное время, сохраняет PNG окна и штатно закрывает приложение.
@@ -33,6 +33,7 @@ public static class MHWin {
   [DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr h, int x, int y, int w, int ht, bool repaint);
   [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
   [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr h, uint msg, IntPtr w, IntPtr l);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern uint RegisterWindowMessage(string name);
 }
 '@
 
@@ -65,8 +66,8 @@ try {
 }
 finally {
     if (-not $proc.HasExited) {
-        # WM_CLOSE — штатное закрытие.
-        [MHWin]::PostMessage($proc.MainWindowHandle, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null
+        # «MineHunterX.Quit» — штатный выход (WM_CLOSE при включённом трее только скрывает окно).
+        [MHWin]::PostMessage($proc.MainWindowHandle, [MHWin]::RegisterWindowMessage('MineHunterX.Quit'), [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null
         if (-not $proc.WaitForExit(15000)) { $proc.Kill() }
     }
 }

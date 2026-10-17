@@ -80,9 +80,16 @@ end;
 | `network` | `TMHNetworkCollector` | `IMHNetworkApi` |
 | `files` | `TMHFileCollector` | `IMHFileApi` |
 | `context` | `TMHContextCollector` | `IMHContextApi` |
+| `processevents` | `TMHProcessEventCollector` | `IMHProcessEventSource` (ETW: `TMHEtwProcessSource`) |
+| `gpu` | `TMHGpuCollector` | `IMHGpuApi` (мощность — NVML, `mkGpuPowerWatts`) |
+| `sensors` | `TMHSensorCollector` | `IMHSensorApi` |
+| `tamper` | `TMHTamperCollector` | `IMHTamperApi` |
 | `self` | `TMHSelfMonitorCollector` | — |
 
-Порядок регистрации важен: `files` после `processes` и `autostart`, `context` после `processes`.
+Порядок регистрации важен: `files` после `processes`, `autostart` и `tamper`, `context` и
+`processevents` после `processes`. Коллекторы с кэшем (`autostart`, `tamper`) реализуют
+`IMHCacheInvalidation`; `TMHScanner.RequestRefresh` сбрасывает их кэш в следующем цикле
+(«Проверить сейчас»), номер этого цикла — `LastRefreshSequence`.
 
 ## Анализ (`MineHunter.Analysis.*`)
 
@@ -95,6 +102,9 @@ end;
   время» для процессов.
 - `TMHBaselineBuilder`, `TMHBaselineAccumulator` (построение порциями), `TMHBaselineManager`,
   `MHComparePeriods`, `MHCompareProcesses` — профиль нормы и сравнение.
+- `MHAnalyzeTamper` (`MineHunter.Analysis.Tamper`) — признаки вмешательства в защиту, группировка
+  по папке/команде/политике, связь с файлами-артефактами.
+- `MHAnalyzeLaunches` (`MineHunter.Analysis.Launches`) — частые короткие запуски по `TMHSnapshot.Launches`.
 
 ## Хранилище, настройки, отчёты, действия
 
@@ -104,3 +114,13 @@ end;
 - `TMHSafeActions` (`MineHunter.Core.Actions`) — открыть расположение, проверка Microsoft Defender
   (только отчёт), остановка процесса с проверкой идентичности; всё журналируется.
 - `TMHJson` (`MineHunter.Core.Serialization`) — JSON всех моделей (схема 2, читает схему 1).
+- `TMHQuarantine` (`MineHunter.Core.Quarantine`, ОС — `IMHQuarantineOps`) — карантин файлов,
+  отключение значений реестра, служб и заданий с откатом (`Restore`) и удалением (`Purge`);
+  `MHBuildRemediationPlan` — план исправления находки.
+- `TMHSelfAutostart` (`MineHunter.Core.SelfAutostart`, `IMHRunKeyOps`) — автозапуск самой программы.
+- `MHEstimateEnergy`, `MHEnergyCost` (`MineHunter.Core.Energy`) — энергия и стоимость по ряду мощности.
+- `IMHInventoryHistory`, `MHInventoryFromSnapshot` (`MineHunter.Core.Inventory`) — учёт «что изменилось»
+  (хранилище схемы 3).
+- `MHBuildCheckReport` (`MineHunter.Core.CheckReport`) — отчёт «Проверить сейчас».
+- `MHCheckForUpdate`, `MHCompareVersions` (`MineHunter.Core.Updates`, HTTP — `IMHHttpGet`) — проверка
+  новых версий на GitHub (по согласию пользователя).

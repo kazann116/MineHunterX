@@ -93,7 +93,7 @@ function MHComputeRange(const APoints: TArray<TMHMetric>; out ARange: TMHValueRa
 implementation
 
 uses
-  System.Math, System.DateUtils, System.Generics.Collections,
+  MineHunter.App.Theme, System.Math, System.DateUtils, System.Generics.Collections,
   Winapi.Windows;
 
 { TMHSeriesBuffer }
@@ -376,14 +376,14 @@ begin
   LRect := ClientRect;
   Canvas.Font := Font;
   Canvas.Brush.Style := bsSolid;
-  Canvas.Brush.Color := clWindow;
-  Canvas.Pen.Color := clBtnShadow;
+  Canvas.Brush.Color := MHThemeColor(clWindow);
+  Canvas.Pen.Color := MHThemeColor(clBtnShadow);
   Canvas.Pen.Width := 1;
   Canvas.Rectangle(LRect);
   LTextH := Canvas.TextHeight('Ag');
 
   // Заголовок и текущее значение — текстом.
-  Canvas.Font.Color := clWindowText;
+  Canvas.Font.Color := MHThemeColor(clWindowText);
   Canvas.Font.Style := [fsBold];
   Canvas.TextOut(LRect.Left + S(6), LRect.Top + S(4), FTitle);
   Canvas.Font.Style := [];
@@ -410,8 +410,8 @@ begin
     Exit;
 
   // Сетка и подписи оси Y.
-  Canvas.Pen.Color := clBtnFace;
-  Canvas.Font.Color := clGrayText;
+  Canvas.Pen.Color := MHThemeColor(clBtnFace);
+  Canvas.Font.Color := MHThemeColor(clGrayText);
   for I := 0 to 4 do
   begin
     J := LPlot.Bottom - Round(LPlot.Height * I / 4);
@@ -428,7 +428,7 @@ begin
   if not LHasData then
   begin
     LText := 'нет данных';
-    Canvas.Font.Color := clGrayText;
+    Canvas.Font.Color := MHThemeColor(clGrayText);
     Canvas.TextOut(LPlot.Left + (LPlot.Width - Canvas.TextWidth(LText)) div 2,
       LPlot.Top + (LPlot.Height - LTextH) div 2, LText);
     Exit;

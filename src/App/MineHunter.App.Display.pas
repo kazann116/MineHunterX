@@ -24,7 +24,7 @@ function MHFormatFileTimeLocal(AFileTime: UInt64): string;
 implementation
 
 uses
-  Winapi.Windows, System.SysUtils, System.DateUtils;
+  MineHunter.App.Lang, Winapi.Windows, System.SysUtils, System.DateUtils;
 
 function MHFormatBytes(ABytes: Double): string;
 const
@@ -70,7 +70,7 @@ function MHFormatSourceState(AState: TMHSourceState): string;
 const
   Marks: array[TMHSourceState] of string = ('○', '✔', '◐', '—', '✖');
 begin
-  Result := Marks[AState] + ' ' + MHSourceStateToString(AState);
+  Result := Marks[AState] + ' ' + MHTr(MHSourceStateToString(AState));
 end;
 
 function MHFormatUtcAsLocal(AUtc: TDateTime): string;

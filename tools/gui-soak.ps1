@@ -27,6 +27,7 @@ public static class MHGuiSoak {
  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
  [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetClassName(IntPtr h, StringBuilder s, int n);
  [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr h, uint m, IntPtr w, IntPtr l);
+ [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern uint RegisterWindowMessage(string name);
  [DllImport("user32.dll")] public static extern IntPtr SendMessageTimeout(IntPtr h, uint m, IntPtr w, IntPtr l, uint f, uint t, out IntPtr r);
  public static IntPtr FormOf(uint pid) { IntPtr found = IntPtr.Zero; EnumWindows((h,l)=>{ uint p; GetWindowThreadProcessId(h, out p); var c = new StringBuilder(64); GetClassName(h,c,64); if (p==pid && c.ToString()=="TMainForm") { found = h; return false; } return true; }, IntPtr.Zero); return found; }
  // Окно отвечает, если обработало WM_NULL за 5 секунд.
@@ -57,7 +58,8 @@ while (((Get-Date) - $started).TotalMinutes -lt $Minutes) {
 }
 $crashed = $process.HasExited
 if (-not $crashed) {
-    [void][MHGuiSoak]::PostMessage($form, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero)
+    # «MineHunterX.Quit» — штатный выход (WM_CLOSE при включённом трее только скрывает окно).
+    [void][MHGuiSoak]::PostMessage($form, [MHGuiSoak]::RegisterWindowMessage('MineHunterX.Quit'), [IntPtr]::Zero, [IntPtr]::Zero)
     $exited = $process.WaitForExit(30000)
 } else { $exited = $true }
 $exitCode = if ($exited) { $process.ExitCode } else { 'не завершилось' }

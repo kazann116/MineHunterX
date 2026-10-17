@@ -12,7 +12,7 @@ uses
   MineHunter.Core.Settings, MineHunter.Analysis.Engine, MineHunter.Analysis.Baseline,
   MineHunter.App.DashboardView, MineHunter.App.Tiles, MineHunter.Core.Quarantine,
   MineHunter.App.Notifier, MineHunter.Core.Inventory, MineHunter.Core.Energy,
-  MineHunter.Core.CheckReport;
+  MineHunter.Core.CheckReport, MineHunter.Core.Updates;
 
 type
   TMHPage = (pgDashboard, pgProcesses, pgFindings, pgHistory, pgSettings);
@@ -269,6 +269,29 @@ type
     FHistoryResultChanges: TArray<TMHInventoryItem>;
     FHistoryResultInventoryStart: TDateTime;
     FHistoryResultHours: Integer;
+    FAppearanceBox: TGroupBox;
+    FCbLanguage: TComboBox;
+    FCbTheme: TComboBox;
+    FChkUpdates: TCheckBox;
+    FBtnCheckUpdates: TButton;
+    FBtnExportSettings: TButton;
+    FBtnImportSettings: TButton;
+    FLblUpdate: TLabel;
+    FLblAppearanceNote: TLabel;
+    FUpdateHttp: IMHHttpGet;
+    FUpdateThread: TThread;
+    FUpdateResult: TMHUpdateInfo;
+    FUpdateRunning: Boolean;
+    FUpdateCount: Integer;
+    procedure CreateAppearanceControls;
+    procedure AppearanceChange(Sender: TObject);
+    procedure UpdatesClick(Sender: TObject);
+    procedure CheckUpdatesClick(Sender: TObject);
+    procedure UpdateFinished;
+    procedure UpdateLinkClick(Sender: TObject);
+    procedure ExportSettingsClick(Sender: TObject);
+    procedure ImportSettingsClick(Sender: TObject);
+    procedure ReloadSettingsControls;
     procedure CreateCheckAndChangesControls;
     procedure CheckNowClick(Sender: TObject);
     procedure CompleteCheck(const ASnapshot: TMHSnapshot; const AFindings: TMHFindings);
@@ -287,6 +310,10 @@ type
     procedure BackgroundSettingClick(Sender: TObject);
     procedure AutostartClick(Sender: TObject);
     procedure WMSysCommand(var AMessage: TWMSysCommand); message WM_SYSCOMMAND;
+    procedure WMQueryEndSession(var AMessage: TWMQueryEndSession); message WM_QUERYENDSESSION;
+  protected
+    procedure WndProc(var AMessage: TMessage); override;
+  private
     procedure CreateRemediationControls;
     procedure RemediateClick(Sender: TObject);
     function ExecuteRemediationStep(const AStep: TMHRemediationStep; const AReason: string): TMHActionResult;
@@ -398,6 +425,20 @@ type
     property PriceEdit: TEdit read FEdPrice;
     /// Применяет цену электроэнергии из поля ввода (False — некорректное значение).
     function ApplyPriceText: Boolean;
+    /// Проверка новых версий на GitHub в фоне (только по согласию или по кнопке).
+    procedure StartUpdateCheck;
+    property UpdateRunning: Boolean read FUpdateRunning;
+    property UpdateResult: TMHUpdateInfo read FUpdateResult;
+    property UpdateCount: Integer read FUpdateCount;
+    /// HTTP для проверки обновлений (по умолчанию — System.Net). Тесты подменяют.
+    property UpdateHttp: IMHHttpGet read FUpdateHttp write FUpdateHttp;
+    property LanguageCombo: TComboBox read FCbLanguage;
+    property ThemeCombo: TComboBox read FCbTheme;
+    property UpdatesCheckBox: TCheckBox read FChkUpdates;
+    /// Экспорт настроек в файл JSON (False и причина в AError).
+    function ExportSettingsTo(const AFileName: string; out AError: string): Boolean;
+    /// Импорт настроек из файла JSON: проверка, подтверждение, применение.
+    function ImportSettingsFrom(const AFileName: string; out AError: string): Boolean;
     property FindingsModel: TMHFindingsModel read FFindingsModel;
     /// Ключ выбранной находки ('' — не выбрана); запись выбирает находку в списке.
     property SelectedFindingKey: string read FSelectedFindingKey;
@@ -421,9 +462,14 @@ uses
   System.Math, System.DateUtils, System.UITypes, System.StrUtils,
   MineHunter.Core.Scanner, MineHunter.App.Display, MineHunter.Collectors.SelfMonitor,
   MineHunter.Collectors.Processes, MineHunter.Collectors.System, MineHunter.Core.Paths,
-  MineHunter.Core.SelfAutostart, MineHunter.Collectors.Processes.WinApi;
+  MineHunter.Core.SelfAutostart, MineHunter.Collectors.Processes.WinApi,
+  MineHunter.App.Lang, MineHunter.App.Theme, MineHunter.Core.Updates.WinApi, Winapi.ShellAPI,
+  System.IOUtils;
 
 function PercentText(AValue: Double): string; forward;
+
+var
+  MH_QUIT_MESSAGE: Cardinal;
 
 function CommandLineParams: TArray<string>;
 var
@@ -479,10 +525,14 @@ begin
     FServices := TMHAppServices.CreateDefault;
     FOwnsServices := True;
   end;
+  MHSetLanguage(FServices.Settings.Language);
+  // Стиль оформления глобален для процесса — меняется только в обычной работе приложения.
+  if FOwnsServices then
+    MHApplyTheme(FServices.Settings.Theme);
 
   lbNav.Items.Clear;
   for LPage := Low(TMHPage) to High(TMHPage) do
-    lbNav.Items.Add(PAGE_TITLES[LPage]);
+    lbNav.Items.Add(MHTr(PAGE_TITLES[LPage]));
   for I := 0 to pcMain.PageCount - 1 do
     pcMain.Pages[I].TabVisible := False;
 
@@ -515,11 +565,12 @@ begin
   CreateTray;
   CreateBackgroundSettings;
   CreateCheckAndChangesControls;
+  CreateAppearanceControls;
   cbHistoryPeriod.Items.Clear;
-  cbHistoryPeriod.Items.Add('1 час');
-  cbHistoryPeriod.Items.Add('6 часов');
-  cbHistoryPeriod.Items.Add('24 часа');
-  cbHistoryPeriod.Items.Add('7 дней');
+  cbHistoryPeriod.Items.Add(MHTr('1 час'));
+  cbHistoryPeriod.Items.Add(MHTr('6 часов'));
+  cbHistoryPeriod.Items.Add(MHTr('24 часа'));
+  cbHistoryPeriod.Items.Add(MHTr('7 дней'));
   cbHistoryPeriod.ItemIndex := 0;
   InitStorageSettings;
 
@@ -528,11 +579,11 @@ begin
   FCardChart.ShowHint := True;
   FCardChart.SetFixedRange(0, 100);
   FCardChart.Formatter := PercentText;
-  FCardChart.Title := 'Нагрузка (последний час)';
+  FCardChart.Title := MHTr('Нагрузка (последний час)');
   pnlCardChartResize(nil);
   cbFindingsMode.Items.Clear;
-  cbFindingsMode.Items.Add('Активные тревоги');
-  cbFindingsMode.Items.Add('История за 7 дней');
+  cbFindingsMode.Items.Add(MHTr('Активные тревоги'));
+  cbFindingsMode.Items.Add(MHTr('История за 7 дней'));
   cbFindingsMode.ItemIndex := 0;
   cbFindingsMinLevel.Items.Clear;
   cbFindingsMinLevel.Items.Add(MHRiskLevelToString(rlLow));
@@ -540,7 +591,7 @@ begin
   cbFindingsMinLevel.Items.Add(MHRiskLevelToString(rlSuspicious));
   cbFindingsMinLevel.Items.Add(MHRiskLevelToString(rlHighlySuspicious));
   cbFindingsMinLevel.ItemIndex := 0;
-  lblStorageNote.Caption := 'История и настройки хранятся только на этом компьютере ' +
+  lblStorageNote.Caption := MHTr('История и настройки хранятся только на этом компьютере ') +
     '(%LOCALAPPDATA%\MineHunterX) и никуда не передаются.';
   InitAnalysisSettings;
   RefreshFindingsList;
@@ -554,9 +605,12 @@ begin
       HandleCycle(ASnapshot, AFindings);
     end;
 
+  MHTranslateTree(Self);
   NavigateTo(pgDashboard);
   UpdateScanState;
   UpdateEvents;
+  if FOwnsServices and FServices.Settings.CheckForUpdates then
+    StartUpdateCheck;
   // Автоматический запуск — только в обычной работе приложения (не во встраивании и тестах).
   if FOwnsServices and FServices.Settings.StartScanOnLaunch then
     StartScan;
@@ -581,6 +635,8 @@ begin
   FreeAndNil(FHistoryLoader);
   // Проверка Defender отменяется (ACancel видит FDestroying) и дожидается завершения.
   FreeAndNil(FDefenderThread);
+  // Проверка обновлений ограничена тайм-аутом HTTP (TMHNetHttpGet.TimeoutMs).
+  FreeAndNil(FUpdateThread);
   if FServices <> nil then
   begin
     // Остановка потока отменяет недоставленные события до освобождения формы.
@@ -621,7 +677,7 @@ begin
   pcMain.ActivePageIndex := Ord(APage);
   if lbNav.ItemIndex <> Ord(APage) then
     lbNav.ItemIndex := Ord(APage);
-  Caption := 'MineHunter X — ' + PAGE_TITLES[APage];
+  Caption := 'MineHunter X — ' + MHTr(PAGE_TITLES[APage]);
   case APage of
     pgHistory:
       if not FHistoryRequested then
@@ -697,9 +753,9 @@ begin
       btnStart.SetFocus;
   end;
   if LRunning then
-    lblScanState.Caption := '● Сканирование выполняется'
+    lblScanState.Caption := MHTr('● Сканирование выполняется')
   else
-    lblScanState.Caption := '■ Сканирование остановлено';
+    lblScanState.Caption := MHTr('■ Сканирование остановлено');
   sbMain.Panels[0].Text := lblScanState.Caption;
 end;
 
@@ -711,7 +767,7 @@ begin
   UpdateSources(ASnapshot);
   UpdateProcesses(ASnapshot);
   UpdateEvents;
-  sbMain.Panels[1].Text := Format('Снимок №%d в %s · процессов: %d',
+  sbMain.Panels[1].Text := Format(MHTr('Снимок №%d в %s · процессов: %d'),
     [ASnapshot.Sequence, MHFormatUtcAsLocal(ASnapshot.TimestampUtc),
      FProcessModel.TotalCount]);
 end;
@@ -817,7 +873,7 @@ begin
   finally
     FUpdatingProcesses := False;
   end;
-  lblProcCount.Caption := Format('Показано %d из %d',
+  lblProcCount.Caption := Format(MHTr('Показано %d из %d'),
     [FProcessModel.Count, FProcessModel.TotalCount]);
   UpdateProcessDetails;
 end;
@@ -1189,7 +1245,7 @@ begin
   LHistory := FServices.MetricHistory;
   if LHistory = nil then
   begin
-    lblHistoryStatus.Caption := 'История недоступна: ' + FServices.StorageError;
+    lblHistoryStatus.Caption := MHTr('История недоступна: ') + FServices.StorageError;
     for I := Low(FHistoryCharts) to High(FHistoryCharts) do
       FHistoryCharts[I].SetPoints(nil);
     Exit;
@@ -1206,7 +1262,7 @@ begin
   LGeneration := FHistoryGeneration;
   LTo := FServices.Clock.NowUtc;
   LFrom := LTo - HISTORY_HOURS[Max(0, cbHistoryPeriod.ItemIndex)] / HoursPerDay;
-  lblHistoryStatus.Caption := 'Загрузка…';
+  lblHistoryStatus.Caption := MHTr('Загрузка…');
   if FHasLastSnapshot and FLastSnapshot.Context.Available and
      (FLastSnapshot.Context.WorkContext <> wcUnknown) then
     LContext := FLastSnapshot.Context.WorkContext
@@ -1306,7 +1362,7 @@ begin
   if AGeneration = FHistoryGeneration then
   begin
     if AError <> '' then
-      lblHistoryStatus.Caption := 'Не удалось загрузить историю: ' + AError
+      lblHistoryStatus.Caption := MHTr('Не удалось загрузить историю: ') + AError
     else
     begin
       LPoints := 0;
@@ -1319,7 +1375,7 @@ begin
             Inc(LPoints);
       end;
       if LPoints = 0 then
-        lblHistoryStatus.Caption := 'За выбранный период данных нет'
+        lblHistoryStatus.Caption := MHTr('За выбранный период данных нет')
       else
         lblHistoryStatus.Caption := Format('%s — %s',
           [MHFormatUtcAsLocal(AFromUtc), MHFormatUtcAsLocal(AToUtc)]);
@@ -1373,22 +1429,22 @@ begin
   if LStorage = nil then
   begin
     lblStoragePath.Caption := MH_NO_DATA;
-    lblStorageStats.Caption := 'История недоступна: ' + FServices.StorageError;
+    lblStorageStats.Caption := MHTr('История недоступна: ') + FServices.StorageError;
     Exit;
   end;
   lblStoragePath.Caption := LStorage.FileName;
   try
     LStats := LStorage.GetStats;
     if LStats.SnapshotCount = 0 then
-      lblStorageStats.Caption := Format('Записей нет · размер файла %s',
+      lblStorageStats.Caption := Format(MHTr('Записей нет · размер файла %s'),
         [MHFormatBytes(LStats.FileSizeBytes)])
     else
-      lblStorageStats.Caption := Format('Снимков: %d · размер файла %s · с %s',
+      lblStorageStats.Caption := Format(MHTr('Снимков: %d · размер файла %s · с %s'),
         [LStats.SnapshotCount, MHFormatBytes(LStats.FileSizeBytes),
          FormatDateTime('dd.mm.yyyy hh:nn', TTimeZone.Local.ToLocalTime(LStats.OldestUtc))]);
   except
     on E: Exception do
-      lblStorageStats.Caption := 'Не удалось прочитать сведения: ' + E.Message;
+      lblStorageStats.Caption := MHTr('Не удалось прочитать сведения: ') + E.Message;
   end;
 end;
 
@@ -1513,21 +1569,28 @@ begin
   LLow := FFindingsModel.ActiveAlertCount(rlLow) - LAlerts;
   if LAlerts > 0 then
   begin
-    lblAlerts.Caption := Format('⚠ Требуют проверки: %d', [LAlerts]);
+    lblAlerts.Caption := Format(MHTr('⚠ Требуют проверки: %d'), [LAlerts]);
     LState := tsAlert;
   end
   else if LLow > 0 then
   begin
-    lblAlerts.Caption := Format('✔ Угроз не обнаружено · под наблюдением: %d', [LLow]);
+    lblAlerts.Caption := Format(MHTr('✔ Угроз не обнаружено · под наблюдением: %d'), [LLow]);
     LState := tsOk;
   end
   else
   begin
-    lblAlerts.Caption := '✔ Признаков угроз не обнаружено';
+    lblAlerts.Caption := MHTr('✔ Признаков угроз не обнаружено');
     LState := tsOk;
   end;
   // Светлый фон цвета состояния, заголовок — насыщенным цветом (не только цвет: есть значок и текст).
-  if LState = tsAlert then
+  if MHIsDarkTheme then
+  begin
+    if LState = tsAlert then
+      pnlStatus.Color := TColor($00303050)
+    else
+      pnlStatus.Color := TColor($00303A30);
+  end
+  else if LState = tsAlert then
     pnlStatus.Color := TColor($00EAEBFD)
   else
     pnlStatus.Color := TColor($00ECF6EA);
@@ -1541,15 +1604,15 @@ begin
     if LStatus.State in [ssUnavailable, ssError] then
       LUnavailable := LUnavailable + LStatus.SourceId + ' ';
   if LAlerts > 0 then
-    LText := 'Объяснение и безопасные действия — в «Находках». '
+    LText := MHTr('Объяснение и безопасные действия — в «Находках». ')
   else
     LText := '';
   if ASnapshot.FindSource(TMHProcessCollector.SourceIdValue, LStatus) and LStatus.RequiresElevation then
-    LText := LText + 'Без прав администратора часть процессов видна не полностью.'
+    LText := LText + MHTr('Без прав администратора часть процессов видна не полностью.')
   else
-    LText := LText + 'Все доступные процессы анализируются.';
+    LText := LText + MHTr('Все доступные процессы анализируются.');
   if LUnavailable <> '' then
-    LText := LText + ' Недоступно: ' + Trim(LUnavailable) + ' (подробности ниже).';
+    LText := LText + MHTr(' Недоступно: ') + Trim(LUnavailable) + MHTr(' (подробности ниже).');
   lblRights.Caption := LText;
   lblRights.Hint := LText;
   lblRights.ShowHint := True;
@@ -1576,9 +1639,9 @@ begin
     FUpdatingFindings := False;
   end;
   if FFindingsModel.Mode = fmActive then
-    lblFindingsCount.Caption := Format('Активных: %d', [FFindingsModel.Count])
+    lblFindingsCount.Caption := Format(MHTr('Активных: %d'), [FFindingsModel.Count])
   else
-    lblFindingsCount.Caption := Format('В истории: %d', [FFindingsModel.Count]);
+    lblFindingsCount.Caption := Format(MHTr('В истории: %d'), [FFindingsModel.Count]);
   UpdateFindingCard;
 end;
 
@@ -1595,7 +1658,7 @@ begin
   if LRow.Finding.ProcessName <> '' then
     Item.SubItems.Add(LRow.Finding.ProcessName)
   else
-    Item.SubItems.Add('система');
+    Item.SubItems.Add(MHTr('система'));
   Item.SubItems.Add(MHFormatUtcAsLocal(LRow.LastSeenUtc));
   Item.SubItems.Add(IntToStr(LRow.Occurrences));
 end;
@@ -1724,7 +1787,7 @@ begin
       SetMemoText(mmCard, 'Выберите находку в списке, чтобы увидеть объяснение и доступные действия.');
     FCardSeriesKey := '';
     FCardChart.SetPoints(nil);
-    FCardChart.Title := 'Нагрузка (последний час)';
+    FCardChart.Title := MHTr('Нагрузка (последний час)');
   end
   else
   begin
@@ -1739,7 +1802,7 @@ begin
     if LRow.Finding.ProcessName <> '' then
       FCardChart.Title := 'CPU: ' + LRow.Finding.ProcessName + ' (час)'
     else
-      FCardChart.Title := 'CPU системы (час)';
+      FCardChart.Title := MHTr('CPU системы (час)');
   end;
   btnOpenLocation.Enabled := LHasFinding and (LRow.Finding.ImagePath <> '');
   btnDefender.Enabled := LHasFinding and (LRow.Finding.ImagePath <> '') and not DefenderRunning;
@@ -1795,7 +1858,7 @@ begin
   FDefenderDone := False;
   LPath := LRow.Finding.ImagePath;
   LActions := FServices.Actions;
-  lblCardStatus.Caption := 'Microsoft Defender проверяет файл… Это может занять несколько минут.';
+  lblCardStatus.Caption := MHTr('Microsoft Defender проверяет файл… Это может занять несколько минут.');
   btnDefender.Enabled := False;
   // Проверка выполняется в фоне; результат передаётся через очередь потока,
   // при закрытии окна проверка отменяется.
@@ -1888,7 +1951,7 @@ begin
     RefreshActionLog;
   end
   else
-    lblCardStatus.Caption := 'Эта программа уже есть в исключениях.';
+    lblCardStatus.Caption := MHTr('Эта программа уже есть в исключениях.');
 end;
 
 function TMainForm.ReportOptions: TMHReportOptions;
@@ -1961,10 +2024,10 @@ begin
     Exit;
   try
     ExportReport(LFile, LHtml);
-    lblCardStatus.Caption := 'Отчёт сохранён: ' + LFile;
+    lblCardStatus.Caption := MHTr('Отчёт сохранён: ') + LFile;
   except
     on E: Exception do
-      lblCardStatus.Caption := 'Не удалось сохранить отчёт: ' + E.Message;
+      lblCardStatus.Caption := MHTr('Не удалось сохранить отчёт: ') + E.Message;
   end;
 end;
 
@@ -1977,10 +2040,10 @@ begin
     Exit;
   try
     ExportFindingCard(LFile, LHtml);
-    lblCardStatus.Caption := 'Карточка сохранена: ' + LFile;
+    lblCardStatus.Caption := MHTr('Карточка сохранена: ') + LFile;
   except
     on E: Exception do
-      lblCardStatus.Caption := 'Не удалось сохранить карточку: ' + E.Message;
+      lblCardStatus.Caption := MHTr('Не удалось сохранить карточку: ') + E.Message;
   end;
 end;
 
@@ -2023,9 +2086,9 @@ begin
     begin
       LItem := lvComparison.Items.Add;
       case LComparison.Kind of
-        mkCpuPercent: LItem.Caption := 'Процессор';
-        mkMemoryLoadPercent: LItem.Caption := 'Память';
-        mkDiskActivePercent: LItem.Caption := 'Активность диска';
+        mkCpuPercent: LItem.Caption := MHTr('Процессор');
+        mkMemoryLoadPercent: LItem.Caption := MHTr('Память');
+        mkDiskActivePercent: LItem.Caption := MHTr('Активность диска');
       else
         LItem.Caption := '';
       end;
@@ -2053,7 +2116,7 @@ begin
     if lvDeviations.Items.Count = 0 then
     begin
       LItem := lvDeviations.Items.Add;
-      LItem.Caption := 'Программы работают в пределах нормы';
+      LItem.Caption := MHTr('Программы работают в пределах нормы');
     end;
   finally
     lvDeviations.Items.EndUpdate;
@@ -2064,11 +2127,11 @@ procedure TMainForm.btnRebuildBaselineClick(Sender: TObject);
 begin
   if FServices.BaselineScheduler = nil then
   begin
-    lblBaselineInfo.Caption := 'Профиль нормы недоступен без истории наблюдений.';
+    lblBaselineInfo.Caption := MHTr('Профиль нормы недоступен без истории наблюдений.');
     Exit;
   end;
   FServices.BaselineScheduler.RequestRebuild;
-  lblBaselineInfo.Caption := 'Профиль нормы перестраивается в фоне. Нажмите «Обновить» через минуту.';
+  lblBaselineInfo.Caption := MHTr('Профиль нормы перестраивается в фоне. Нажмите «Обновить» через минуту.');
 end;
 
 { Настройки }
@@ -2079,7 +2142,7 @@ var
 begin
   FServices.ApplySettings(ASettings);
   if not FServices.SaveSettings(LError) then
-    lblStorageStats.Caption := 'Настройки применены, но не сохранены: ' + LError;
+    lblStorageStats.Caption := MHTr('Настройки применены, но не сохранены: ') + LError;
   UpdateEvents;
 end;
 
@@ -2202,7 +2265,7 @@ begin
       LItem.Caption := LExclusion.Name;
       LItem.SubItems.Add(LExclusion.Key);
       if LExclusion.Sha256 = '' then
-        LItem.SubItems.Add('любой файл по этому пути')
+        LItem.SubItems.Add(MHTr('любой файл по этому пути'))
       else
         LItem.SubItems.Add(Copy(LExclusion.Sha256, 1, 16) + '…');
       LItem.SubItems.Add(MHFormatUtcAsLocal(LExclusion.CreatedUtc));
@@ -2237,8 +2300,8 @@ begin
   FRemediateButton := TButton.Create(Self);
   FRemediateButton.Parent := pnlCardButtons;
   FRemediateButton.SetBounds(btnOpenLocation.Left, btnOpenLocation.Top + btnOpenLocation.Height + 6, 320, 30);
-  FRemediateButton.Caption := 'Исправить (карантин с откатом)…';
-  FRemediateButton.Hint := 'Показывает план: остановить процесс, отключить автозапуск и признаки ' +
+  FRemediateButton.Caption := MHTr('Исправить (карантин с откатом)…');
+  FRemediateButton.Hint := MHTr('Показывает план: остановить процесс, отключить автозапуск и признаки ') +
     'вмешательства, переместить файлы в карантин. Каждый шаг можно отменить в «Настройки → Карантин».';
   FRemediateButton.ShowHint := True;
   FRemediateButton.Enabled := False;
@@ -2248,7 +2311,7 @@ begin
   FQuarantineBox := TGroupBox.Create(Self);
   FQuarantineBox.Parent := sbSettings;
   FQuarantineBox.SetBounds(gbActionLog.Left, gbActionLog.Top + gbActionLog.Height + 16, gbActionLog.Width, 230);
-  FQuarantineBox.Caption := 'Карантин и откат исправлений';
+  FQuarantineBox.Caption := MHTr('Карантин и откат исправлений');
   FQuarantineList := TListView.Create(Self);
   FQuarantineList.Parent := FQuarantineBox;
   FQuarantineList.SetBounds(12, 24, FQuarantineBox.Width - 24, 150);
@@ -2258,35 +2321,35 @@ begin
   FQuarantineList.HideSelection := False;
   with FQuarantineList.Columns.Add do
   begin
-    Caption := 'Когда';
+    Caption := MHTr('Когда');
     Width := 95;
   end;
   with FQuarantineList.Columns.Add do
   begin
-    Caption := 'Тип';
+    Caption := MHTr('Тип');
     Width := 110;
   end;
   with FQuarantineList.Columns.Add do
   begin
-    Caption := 'Объект';
+    Caption := MHTr('Объект');
     Width := 270;
   end;
   with FQuarantineList.Columns.Add do
   begin
-    Caption := 'Причина';
+    Caption := MHTr('Причина');
     Width := 160;
   end;
   FQuarantineList.OnSelectItem := QuarantineSelectItem;
   FQuarantineRestore := TButton.Create(Self);
   FQuarantineRestore.Parent := FQuarantineBox;
   FQuarantineRestore.SetBounds(12, 184, 160, 30);
-  FQuarantineRestore.Caption := 'Восстановить';
+  FQuarantineRestore.Caption := MHTr('Восстановить');
   FQuarantineRestore.Enabled := False;
   FQuarantineRestore.OnClick := QuarantineRestoreClick;
   FQuarantinePurge := TButton.Create(Self);
   FQuarantinePurge.Parent := FQuarantineBox;
   FQuarantinePurge.SetBounds(180, 184, 180, 30);
-  FQuarantinePurge.Caption := 'Удалить навсегда…';
+  FQuarantinePurge.Caption := MHTr('Удалить навсегда…');
   FQuarantinePurge.Enabled := False;
   FQuarantinePurge.OnClick := QuarantinePurgeClick;
   RefreshQuarantine;
@@ -2336,7 +2399,7 @@ begin
   LSteps := MHBuildRemediationPlan(FLastSnapshot, LRow.Finding, FServices.Quarantine.WindowsDir);
   if Length(LSteps) = 0 then
   begin
-    lblCardStatus.Caption := 'Для этой находки нет автоматических шагов исправления — следуйте рекомендациям.';
+    lblCardStatus.Caption := MHTr('Для этой находки нет автоматических шагов исправления — следуйте рекомендациям.');
     Exit;
   end;
   LQuestion := 'Исправить находку «' + LRow.Finding.Title + '»?' + sLineBreak + sLineBreak +
@@ -2373,10 +2436,10 @@ begin
   end;
   FServices.Logger.Log(llInfo, 'actions', 'Исправление «' + LRow.Finding.Title + '»:' + sLineBreak + LReport);
   if LFailed = 0 then
-    lblCardStatus.Caption := Format('Исправление выполнено: %d из %d шагов. Отменить можно в «Настройки → Карантин».',
+    lblCardStatus.Caption := Format(MHTr('Исправление выполнено: %d из %d шагов. Отменить можно в «Настройки → Карантин».'),
       [LDone, Length(LSteps)])
   else
-    lblCardStatus.Caption := Format('Исправление выполнено частично: успешно %d, с ошибками %d — подробности в журнале.',
+    lblCardStatus.Caption := Format(MHTr('Исправление выполнено частично: успешно %d, с ошибками %d — подробности в журнале.'),
       [LDone, LFailed]);
   lblCardStatus.Hint := LReport;
   lblCardStatus.ShowHint := True;
@@ -2418,9 +2481,9 @@ begin
   FQuarantineRestore.Enabled := False;
   FQuarantinePurge.Enabled := False;
   if Length(FQuarantineItems) = 0 then
-    FQuarantineBox.Caption := 'Карантин и откат исправлений — пусто'
+    FQuarantineBox.Caption := MHTr('Карантин и откат исправлений — пусто')
   else
-    FQuarantineBox.Caption := Format('Карантин и откат исправлений — %d', [Length(FQuarantineItems)]);
+    FQuarantineBox.Caption := Format(MHTr('Карантин и откат исправлений — %d'), [Length(FQuarantineItems)]);
 end;
 
 procedure TMainForm.QuarantineSelectItem(Sender: TObject; Item: TListItem; Selected: Boolean);
@@ -2477,7 +2540,7 @@ var
 begin
   FTrayMenu := TPopupMenu.Create(Self);
   LItem := TMenuItem.Create(FTrayMenu);
-  LItem.Caption := 'Открыть MineHunter X';
+  LItem.Caption := MHTr('Открыть MineHunter X');
   LItem.Default := True;
   LItem.OnClick := TrayOpenClick;
   FTrayMenu.Items.Add(LItem);
@@ -2485,7 +2548,7 @@ begin
   LItem.Caption := '-';
   FTrayMenu.Items.Add(LItem);
   LItem := TMenuItem.Create(FTrayMenu);
-  LItem.Caption := 'Выход';
+  LItem.Caption := MHTr('Выход');
   LItem.OnClick := TrayExitClick;
   FTrayMenu.Items.Add(LItem);
 
@@ -2533,21 +2596,21 @@ begin
   FBackgroundBox.Parent := sbSettings;
   FBackgroundBox.SetBounds(gbActionLog.Left, FQuarantineBox.Top + FQuarantineBox.Height + 16,
     gbActionLog.Width, 160);
-  FBackgroundBox.Caption := 'Работа в фоне и уведомления';
+  FBackgroundBox.Caption := MHTr('Работа в фоне и уведомления');
   LTop := 26;
   FInitializingSettings := True;
   try
-    FChkTray := AddCheck('Сворачивать и закрывать в область уведомлений (значок у часов)',
+    FChkTray := AddCheck(MHTr('Сворачивать и закрывать в область уведомлений (значок у часов)'),
       'Наблюдение продолжается, пока окно скрыто. Полный выход — «Выход» в меню значка.',
       FServices.Settings.MinimizeToTray);
-    FChkNotify := AddCheck('Уведомлять о новых тревогах (уровень «подозрительно» и выше)',
+    FChkNotify := AddCheck(MHTr('Уведомлять о новых тревогах (уровень «подозрительно» и выше)'),
       'Не чаще одного уведомления в минуту; об одной находке — один раз, повторно — если риск вырос.',
       FServices.Settings.NotifyAlerts);
-    FChkEconomy := AddCheck(Format('Экономный режим: пока окно скрыто, опрос раз в %d с',
+    FChkEconomy := AddCheck(Format(MHTr('Экономный режим: пока окно скрыто, опрос раз в %d с'),
       [TMHAppSettings.EconomyIntervalMs div 1000]),
       'Снижает нагрузку самого MineHunter X, когда вы не смотрите на окно.',
       FServices.Settings.EconomyWhenHidden);
-    FChkAutostart := AddCheck('Запускать MineHunter X вместе с Windows (свёрнутым)',
+    FChkAutostart := AddCheck(MHTr('Запускать MineHunter X вместе с Windows (свёрнутым)'),
       'Запись в HKCU\...\CurrentVersion\Run только для текущего пользователя; права администратора не нужны.',
       False);
   finally
@@ -2576,17 +2639,17 @@ begin
       sasEnabled:
         begin
           FChkAutostart.Checked := True;
-          FLblAutostart.Caption := 'Включено: ' + FServices.SelfAutostart.Command;
+          FLblAutostart.Caption := MHTr('Включено: ') + FServices.SelfAutostart.Command;
         end;
       sasStale:
         begin
           FChkAutostart.Checked := False;
-          FLblAutostart.Caption := 'Запись автозапуска указывает на другой файл (программу переместили) — ' +
+          FLblAutostart.Caption := MHTr('Запись автозапуска указывает на другой файл (программу переместили) — ') +
             'включите заново.';
         end;
     else
       FChkAutostart.Checked := False;
-      FLblAutostart.Caption := 'Выключено.';
+      FLblAutostart.Caption := MHTr('Выключено.');
     end;
   finally
     FInitializingSettings := False;
@@ -2676,11 +2739,11 @@ begin
     Exit;
   LAlerts := FFindingsModel.ActiveAlertCount(rlNeedsReview);
   if LAlerts > 0 then
-    FTray.Hint := Format('MineHunter X — требуют проверки: %d', [LAlerts])
+    FTray.Hint := Format(MHTr('MineHunter X — требуют проверки: %d'), [LAlerts])
   else if FServices.Scanner.IsRunning then
-    FTray.Hint := 'MineHunter X — угроз не обнаружено'
+    FTray.Hint := MHTr('MineHunter X — угроз не обнаружено')
   else
-    FTray.Hint := 'MineHunter X — наблюдение остановлено';
+    FTray.Hint := MHTr('MineHunter X — наблюдение остановлено');
 end;
 
 procedure TMainForm.HideToTray;
@@ -2694,8 +2757,8 @@ begin
     if not FTrayHintShown then
     begin
       FTrayHintShown := True;
-      FTray.BalloonTitle := 'MineHunter X работает в фоне';
-      FTray.BalloonHint := 'Наблюдение продолжается. Откройте окно щелчком по значку; выход — в меню значка.';
+      FTray.BalloonTitle := MHTr('MineHunter X работает в фоне');
+      FTray.BalloonHint := MHTr('Наблюдение продолжается. Откройте окно щелчком по значку; выход — в меню значка.');
       FTray.BalloonFlags := bfInfo;
       FTray.ShowBalloonHint;
     end;
@@ -2760,6 +2823,27 @@ begin
     inherited;
 end;
 
+procedure TMainForm.WMQueryEndSession(var AMessage: TWMQueryEndSession);
+begin
+  // Завершение сеанса Windows или Restart Manager (установщик): программа закрывается,
+  // а не прячется в трей — иначе она мешала бы выключению компьютера.
+  FQuitting := True;
+  inherited;
+end;
+
+procedure TMainForm.WndProc(var AMessage: TMessage);
+begin
+  // Сообщение «MineHunterX.Quit» (RegisterWindowMessage) — штатный выход для
+  // сценариев автоматизации: WM_CLOSE при включённом трее только скрывает окно.
+  if (MH_QUIT_MESSAGE <> 0) and (AMessage.Msg = MH_QUIT_MESSAGE) then
+  begin
+    Quit;
+    AMessage.Result := 1;
+  end
+  else
+    inherited WndProc(AMessage);
+end;
+
 procedure TMainForm.FormCloseQuery(Sender: TObject; var CanClose: Boolean);
 begin
   // Крестик окна при включённой настройке убирает программу в трей; выход — из меню значка.
@@ -2779,53 +2863,63 @@ begin
   FBtnCheckNow := TButton.Create(Self);
   FBtnCheckNow.Parent := pnlTop;
   FBtnCheckNow.SetBounds(lblScanState.Left + lblScanState.Width + 12, btnStart.Top, 170, btnStart.Height);
-  FBtnCheckNow.Caption := 'Проверить сейчас';
-  FBtnCheckNow.Hint := 'Внеочередная полная проверка (перечитываются автозапуск и признаки вмешательства) ' +
+  FBtnCheckNow.Caption := MHTr('Проверить сейчас');
+  FBtnCheckNow.Hint := MHTr('Внеочередная полная проверка (перечитываются автозапуск и признаки вмешательства) ') +
     'и понятный отчёт по её итогам.';
   FBtnCheckNow.ShowHint := True;
   FBtnCheckNow.OnClick := CheckNowClick;
 
-  // «Что изменилось» и электроэнергия — на странице «История», над сравнением с нормой.
+  // «Что изменилось» и электроэнергия — колонка справа от графиков на странице «История»
+  // (графики сохраняют высоту).
   FChangesPanel := TPanel.Create(Self);
   FChangesPanel.Parent := pnlBaseline.Parent;
   FChangesPanel.BevelOuter := bvNone;
-  FChangesPanel.Height := 190;
-  FChangesPanel.Top := pnlBaseline.Top - 1;
-  FChangesPanel.Align := alBottom;
+  FChangesPanel.Width := 440;
+  FChangesPanel.Align := alRight;
   FLblEnergy := TLabel.Create(Self);
   FLblEnergy.Parent := FChangesPanel;
-  FLblEnergy.SetBounds(8, 4, FChangesPanel.Width - 16, 30);
+  FLblEnergy.SetBounds(8, 4, FChangesPanel.Width - 16, 64);
   FLblEnergy.Anchors := [akLeft, akTop, akRight];
   FLblEnergy.AutoSize := False;
   FLblEnergy.WordWrap := True;
   FLblEnergy.ShowAccelChar := False;
-  FLblEnergy.Caption := 'Электроэнергия: загрузка…';
+  FLblEnergy.Caption := MHTr('Электроэнергия: загрузка…');
+  with TLabel.Create(Self) do
+  begin
+    Parent := FChangesPanel;
+    SetBounds(8, 74, FChangesPanel.Width - 16, 17);
+    Caption := MHTr('Что изменилось за 7 дней');
+    Font.Style := [fsBold];
+    Hint := MHTr('Впервые замеченные записи автозапуска, признаки вмешательства в защиту и программы. ' +
+      'Всё, что было на компьютере в первые 30 минут наблюдения, считается исходным состоянием.');
+    ShowHint := True;
+  end;
   FChangesList := TListView.Create(Self);
   FChangesList.Parent := FChangesPanel;
-  FChangesList.SetBounds(8, 38, FChangesPanel.Width - 16, FChangesPanel.Height - 44);
+  FChangesList.SetBounds(8, 94, FChangesPanel.Width - 16, Max(60, FChangesPanel.Height - 100));
   FChangesList.Anchors := [akLeft, akTop, akRight, akBottom];
   FChangesList.ViewStyle := vsReport;
   FChangesList.ReadOnly := True;
   FChangesList.RowSelect := True;
   with FChangesList.Columns.Add do
   begin
-    Caption := 'Впервые замечено';
-    Width := 120;
+    Caption := MHTr('Впервые замечено');
+    Width := 85;
   end;
   with FChangesList.Columns.Add do
   begin
-    Caption := 'Что изменилось';
-    Width := 230;
+    Caption := MHTr('Что изменилось');
+    Width := 150;
   end;
   with FChangesList.Columns.Add do
   begin
-    Caption := 'Объект';
-    Width := 180;
+    Caption := MHTr('Объект');
+    Width := 110;
   end;
   with FChangesList.Columns.Add do
   begin
-    Caption := 'Где';
-    Width := 260;
+    Caption := MHTr('Где');
+    Width := 300;
   end;
 
   // Цена электроэнергии — в настройках работы в фоне.
@@ -2833,12 +2927,12 @@ begin
   FLblPrice := TLabel.Create(Self);
   FLblPrice.Parent := FBackgroundBox;
   FLblPrice.SetBounds(16, FBackgroundBox.Height - 44, 260, 15);
-  FLblPrice.Caption := 'Цена электроэнергии, ₽ за кВт·ч:';
+  FLblPrice.Caption := MHTr('Цена электроэнергии, ₽ за кВт·ч:');
   FEdPrice := TEdit.Create(Self);
   FEdPrice.Parent := FBackgroundBox;
   FEdPrice.SetBounds(280, FBackgroundBox.Height - 48, 90, 23);
   FEdPrice.Text := FormatFloat('0.00', FServices.Settings.ElectricityPrice);
-  FEdPrice.Hint := 'Используется для оценки стоимости работы видеокарты (и скрытого майнера на ней).';
+  FEdPrice.Hint := MHTr('Используется для оценки стоимости работы видеокарты (и скрытого майнера на ней).');
   FEdPrice.ShowHint := True;
   FEdPrice.OnExit := PriceExit;
   FEdPrice.OnKeyPress := PriceKeyPress;
@@ -2890,7 +2984,7 @@ begin
   FCheckPending := True;
   FCheckBaseline := FServices.Scanner.LastRefreshSequence;
   FBtnCheckNow.Enabled := False;
-  FBtnCheckNow.Caption := 'Проверка…';
+  FBtnCheckNow.Caption := MHTr('Проверка…');
   FServices.Scanner.RequestRefresh;
   // Без запущенного наблюдения цикл выполняется здесь же: обработчики вызываются
   // в этом потоке, и отчёт будет готов к выходу из процедуры.
@@ -2907,7 +3001,7 @@ var
 begin
   FCheckPending := False;
   FBtnCheckNow.Enabled := True;
-  FBtnCheckNow.Caption := 'Проверить сейчас';
+  FBtnCheckNow.Caption := MHTr('Проверить сейчас');
   LInput := Default(TMHCheckReportInput);
   LInput.Snapshot := ASnapshot;
   LInput.Findings := AFindings;
@@ -2954,7 +3048,7 @@ begin
     // Окно скрыто в трей — итог показывается уведомлением.
     if (FTray <> nil) and FTray.Visible then
     begin
-      FTray.BalloonTitle := 'MineHunter X: проверка завершена';
+      FTray.BalloonTitle := MHTr('MineHunter X: проверка завершена');
       FTray.BalloonHint := AReport.Headline + '.';
       FTray.BalloonFlags := bfInfo;
       FTray.ShowBalloonHint;
@@ -2963,7 +3057,7 @@ begin
   end;
   LForm := TForm.Create(nil);
   try
-    LForm.Caption := 'MineHunter X — результат проверки';
+    LForm.Caption := MHTr('MineHunter X — результат проверки');
     LForm.Position := poOwnerFormCenter;
     LForm.Width := 860;
     LForm.Height := 640;
@@ -2997,12 +3091,12 @@ begin
     LSave := TButton.Create(LForm);
     LSave.Parent := LPanel;
     LSave.SetBounds(8, 8, 220, 30);
-    LSave.Caption := 'Сохранить подробный отчёт…';
+    LSave.Caption := MHTr('Сохранить подробный отчёт…');
     LSave.ModalResult := mrYes;
     LClose := TButton.Create(LForm);
     LClose.Parent := LPanel;
     LClose.SetBounds(236, 8, 120, 30);
-    LClose.Caption := 'Закрыть';
+    LClose.Caption := MHTr('Закрыть');
     LClose.ModalResult := mrCancel;
     LClose.Cancel := True;
     LClose.Default := True;
@@ -3012,6 +3106,14 @@ begin
   finally
     LForm.Free;
   end;
+end;
+
+function MeasuredText(AHours: Double): string;
+begin
+  if AHours < 1 then
+    Result := Format('%.0f мин', [AHours * 60])
+  else
+    Result := Format('%.1f ч', [AHours]);
 end;
 
 procedure TMainForm.ApplyChanges;
@@ -3025,9 +3127,9 @@ begin
     Exit;
   LEnergy := FHistoryResultEnergy;
   if LEnergy.HasData and (LEnergy.CoveredHours > 0) then
-    LText := Format('Электроэнергия видеокарты за %d ч (измерено %.1f ч): %s ≈ %s · в среднем %.0f Вт, ' +
+    LText := Format('Электроэнергия видеокарты за %d ч (измерено %s): %s ≈ %s · в среднем %.0f Вт, ' +
       'пик %.0f Вт · при такой нагрузке ≈ %s в месяц (цена %s за кВт·ч).',
-      [FHistoryResultHours, LEnergy.CoveredHours, MHFormatEnergy(LEnergy.KWh), MHFormatMoney(LEnergy.Cost),
+      [FHistoryResultHours, MeasuredText(LEnergy.CoveredHours), MHFormatEnergy(LEnergy.KWh), MHFormatMoney(LEnergy.Cost),
        LEnergy.AverageWatts, LEnergy.PeakWatts, MHFormatMoney(LEnergy.CostPerMonth),
        MHFormatMoney(FServices.Settings.ElectricityPrice)])
   else
@@ -3055,9 +3157,338 @@ begin
   if Length(FHistoryResultChanges) > 0 then
     FChangesList.Hint := ''
   else if FHistoryResultInventoryStart > 0 then
-    FChangesList.Hint := 'За 7 дней ничего нового не появилось. Наблюдение ведётся с ' +
+    FChangesList.Hint := MHTr('За 7 дней ничего нового не появилось. Наблюдение ведётся с ') +
       MHFormatUtcAsLocal(FHistoryResultInventoryStart) + '.';
   FChangesList.ShowHint := FChangesList.Hint <> '';
+end;
+
+procedure TMainForm.CreateAppearanceControls;
+var
+  LTop: Integer;
+begin
+  FUpdateHttp := TMHNetHttpGet.Create;
+  FAppearanceBox := TGroupBox.Create(Self);
+  FAppearanceBox.Parent := sbSettings;
+  FAppearanceBox.SetBounds(gbActionLog.Left, FBackgroundBox.Top + FBackgroundBox.Height + 16,
+    gbActionLog.Width, 196);
+  FAppearanceBox.Caption := MHTr('Внешний вид и обновления');
+  LTop := 26;
+  FInitializingSettings := True;
+  try
+    with TLabel.Create(Self) do
+    begin
+      Parent := FAppearanceBox;
+      SetBounds(16, LTop + 4, 150, 15);
+      Caption := MHTr('Язык интерфейса:');
+    end;
+    FCbLanguage := TComboBox.Create(Self);
+    FCbLanguage.Parent := FAppearanceBox;
+    FCbLanguage.Style := csDropDownList;
+    FCbLanguage.SetBounds(170, LTop, 150, 23);
+    FCbLanguage.Items.Add('Русский');
+    FCbLanguage.Items.Add('English');
+    FCbLanguage.ItemIndex := Ord(FServices.Settings.Language);
+    with TLabel.Create(Self) do
+    begin
+      Parent := FAppearanceBox;
+      SetBounds(340, LTop + 4, 60, 15);
+      Caption := MHTr('Тема:');
+    end;
+    FCbTheme := TComboBox.Create(Self);
+    FCbTheme.Parent := FAppearanceBox;
+    FCbTheme.Style := csDropDownList;
+    FCbTheme.SetBounds(400, LTop, 150, 23);
+    FCbTheme.Items.Add(MHTr('Светлая'));
+    FCbTheme.Items.Add(MHTr('Тёмная'));
+    FCbTheme.ItemIndex := Ord(FServices.Settings.Theme);
+    Inc(LTop, 30);
+    FLblAppearanceNote := TLabel.Create(Self);
+    FLblAppearanceNote.Parent := FAppearanceBox;
+    FLblAppearanceNote.SetBounds(16, LTop, FAppearanceBox.Width - 32, 15);
+    FLblAppearanceNote.AutoSize := False;
+    FLblAppearanceNote.ShowAccelChar := False;
+    FLblAppearanceNote.Font.Color := clGrayText;
+    FLblAppearanceNote.Caption := 'Interface language applies after restart; finding explanations are in Russian.';
+    Inc(LTop, 24);
+    FChkUpdates := TCheckBox.Create(Self);
+    FChkUpdates.Parent := FAppearanceBox;
+    FChkUpdates.SetBounds(16, LTop, FAppearanceBox.Width - 32, 19);
+    FChkUpdates.Caption := MHTr('Проверять новые версии на GitHub (раз в сутки)');
+    FChkUpdates.Hint := 'Запрос только к api.github.com (последний выпуск ' + MH_UPDATE_REPOSITORY +
+      '); сведения о компьютере не передаются, ничего не скачивается автоматически.';
+    FChkUpdates.ShowHint := True;
+    FChkUpdates.Checked := FServices.Settings.CheckForUpdates;
+    Inc(LTop, 28);
+    FBtnCheckUpdates := TButton.Create(Self);
+    FBtnCheckUpdates.Parent := FAppearanceBox;
+    FBtnCheckUpdates.SetBounds(16, LTop, 180, 28);
+    FBtnCheckUpdates.Caption := MHTr('Проверить обновления');
+    FBtnCheckUpdates.OnClick := CheckUpdatesClick;
+    FLblUpdate := TLabel.Create(Self);
+    FLblUpdate.Parent := FAppearanceBox;
+    FLblUpdate.SetBounds(206, LTop + 6, FAppearanceBox.Width - 222, 15);
+    FLblUpdate.AutoSize := False;
+    FLblUpdate.ShowAccelChar := False;
+    FLblUpdate.OnClick := UpdateLinkClick;
+    if FServices.Settings.CheckForUpdates then
+      FLblUpdate.Caption := ''
+    else
+      FLblUpdate.Caption := MHTr('Проверка обновлений выключена.');
+    Inc(LTop, 40);
+    FBtnExportSettings := TButton.Create(Self);
+    FBtnExportSettings.Parent := FAppearanceBox;
+    FBtnExportSettings.SetBounds(16, LTop, 180, 28);
+    FBtnExportSettings.Caption := MHTr('Экспорт настроек…');
+    FBtnExportSettings.Hint := 'Файл JSON с настройками и списком разрешённых программ (пути к файлам — внутри).';
+    FBtnExportSettings.ShowHint := True;
+    FBtnExportSettings.OnClick := ExportSettingsClick;
+    FBtnImportSettings := TButton.Create(Self);
+    FBtnImportSettings.Parent := FAppearanceBox;
+    FBtnImportSettings.SetBounds(204, LTop, 180, 28);
+    FBtnImportSettings.Caption := MHTr('Импорт настроек…');
+    FBtnImportSettings.OnClick := ImportSettingsClick;
+  finally
+    FInitializingSettings := False;
+  end;
+  FCbLanguage.OnChange := AppearanceChange;
+  FCbTheme.OnChange := AppearanceChange;
+  FChkUpdates.OnClick := UpdatesClick;
+  if not MHDarkThemeAvailable then
+  begin
+    FCbTheme.Enabled := False;
+    FCbTheme.Hint := 'Стиль тёмной темы не встроен в эту сборку.';
+    FCbTheme.ShowHint := True;
+  end;
+end;
+
+procedure TMainForm.AppearanceChange(Sender: TObject);
+var
+  LSettings: TMHAppSettings;
+begin
+  if FInitializingSettings then
+    Exit;
+  LSettings := FServices.Settings;
+  if FCbLanguage.ItemIndex >= 0 then
+    LSettings.Language := TMHUiLanguage(FCbLanguage.ItemIndex);
+  if FCbTheme.ItemIndex >= 0 then
+    LSettings.Theme := TMHUiTheme(FCbTheme.ItemIndex);
+  ChangeSettings(LSettings);
+  if Sender = FCbLanguage then
+    FLblAppearanceNote.Caption := 'Язык изменится после перезапуска MineHunter X. / ' +
+      'The language will change after MineHunter X restarts.'
+  else if (Sender = FCbTheme) and FOwnsServices then
+    MHApplyTheme(LSettings.Theme);
+end;
+
+procedure TMainForm.UpdatesClick(Sender: TObject);
+var
+  LSettings: TMHAppSettings;
+begin
+  if FInitializingSettings then
+    Exit;
+  LSettings := FServices.Settings;
+  LSettings.CheckForUpdates := FChkUpdates.Checked;
+  ChangeSettings(LSettings);
+  if LSettings.CheckForUpdates then
+    StartUpdateCheck
+  else
+    FLblUpdate.Caption := MHTr('Проверка обновлений выключена.');
+end;
+
+procedure TMainForm.CheckUpdatesClick(Sender: TObject);
+begin
+  StartUpdateCheck;
+end;
+
+procedure TMainForm.StartUpdateCheck;
+var
+  LHttp: IMHHttpGet;
+begin
+  if FUpdateRunning or (FUpdateHttp = nil) then
+    Exit;
+  FreeAndNil(FUpdateThread); // предыдущая проверка уже завершилась
+  FUpdateRunning := True;
+  FBtnCheckUpdates.Enabled := False;
+  FLblUpdate.Caption := MHTr('Проверка…');
+  LHttp := FUpdateHttp;
+  FUpdateThread := TThread.CreateAnonymousThread(
+    procedure
+    begin
+      FUpdateResult := MHCheckForUpdate(LHttp, MH_CORE_VERSION);
+      TThread.Queue(TThread.Current, UpdateFinished);
+    end);
+  FUpdateThread.FreeOnTerminate := False;
+  FUpdateThread.Start;
+end;
+
+procedure TMainForm.UpdateFinished;
+begin
+  if FDestroying then
+    Exit;
+  FUpdateRunning := False;
+  Inc(FUpdateCount);
+  FBtnCheckUpdates.Enabled := True;
+  FLblUpdate.Caption := FUpdateResult.Message;
+  if FUpdateResult.State = usAvailable then
+  begin
+    FLblUpdate.Font.Color := clHotLight;
+    FLblUpdate.Font.Style := [fsUnderline];
+    FLblUpdate.Cursor := crHandPoint;
+    FLblUpdate.Hint := FUpdateResult.ReleaseUrl;
+    FLblUpdate.ShowHint := True;
+    if (FTray <> nil) and FTray.Visible and FHiddenToTray then
+    begin
+      FTray.BalloonTitle := 'MineHunter X ' + FUpdateResult.LatestVersion;
+      FTray.BalloonHint := FUpdateResult.Message;
+      FTray.BalloonFlags := bfInfo;
+      FTray.ShowBalloonHint;
+    end;
+  end
+  else
+  begin
+    FLblUpdate.Font.Color := clWindowText;
+    FLblUpdate.Font.Style := [];
+    FLblUpdate.Cursor := crDefault;
+  end;
+  FServices.Logger.Log(llInfo, 'updates', FUpdateResult.Message);
+end;
+
+procedure TMainForm.UpdateLinkClick(Sender: TObject);
+begin
+  // Открывается только страница выпусков проекта (адрес проверен при разборе ответа).
+  if (FUpdateResult.State = usAvailable) and
+     FUpdateResult.ReleaseUrl.StartsWith('https://github.com/' + MH_UPDATE_REPOSITORY + '/', True) then
+    ShellExecute(Handle, 'open', PChar(FUpdateResult.ReleaseUrl), nil, nil, SW_SHOWNORMAL);
+end;
+
+function TMainForm.ExportSettingsTo(const AFileName: string; out AError: string): Boolean;
+begin
+  AError := '';
+  try
+    MHWriteTextFileAtomic(AFileName, MHSettingsToJson(FServices.Settings));
+    Result := True;
+  except
+    on E: Exception do
+    begin
+      AError := E.Message;
+      Result := False;
+    end;
+  end;
+end;
+
+function TMainForm.ImportSettingsFrom(const AFileName: string; out AError: string): Boolean;
+var
+  LText: string;
+  LSettings: TMHAppSettings;
+  LRecord: TMHActionRecord;
+begin
+  AError := '';
+  Result := False;
+  try
+    if not FileExists(AFileName) then
+      raise EMHSettingsError.Create('Файл не найден');
+    if TFile.GetSize(AFileName) > 4 * 1024 * 1024 then
+      raise EMHSettingsError.Create('Файл слишком большой для файла настроек');
+    LText := TFile.ReadAllText(AFileName, TEncoding.UTF8);
+    LSettings := MHSettingsFromJson(LText);
+  except
+    on E: Exception do
+    begin
+      AError := E.Message;
+      Exit;
+    end;
+  end;
+  if not FConfirm(Format('Заменить текущие настройки настройками из файла?' + sLineBreak + '%s' + sLineBreak +
+    sLineBreak + 'Разрешённых программ в файле: %d. Текущие настройки будут заменены.',
+    [AFileName, Length(LSettings.Exclusions)])) then
+  begin
+    AError := 'Отменено пользователем';
+    Exit;
+  end;
+  ChangeSettings(LSettings);
+  ReloadSettingsControls;
+  if FServices.ActionLog <> nil then
+  begin
+    LRecord.TimestampUtc := FServices.Clock.NowUtc;
+    LRecord.Action := 'settings-import';
+    LRecord.Target := AFileName;
+    LRecord.Result := 'Настройки импортированы';
+    LRecord.Success := True;
+    try
+      FServices.ActionLog.LogAction(LRecord);
+    except
+      on E: Exception do
+        FServices.Logger.Log(llWarning, 'actions', 'Журнал действий недоступен: ' + E.Message);
+    end;
+    RefreshActionLog;
+  end;
+  Result := True;
+end;
+
+procedure TMainForm.ReloadSettingsControls;
+var
+  I: Integer;
+begin
+  FInitializingSettings := True;
+  try
+    for I := Low(IntervalChoicesMs) to High(IntervalChoicesMs) do
+      if IntervalChoicesMs[I] = FServices.Settings.IntervalMs then
+        cbInterval.ItemIndex := I;
+    FChkTray.Checked := FServices.Settings.MinimizeToTray;
+    FChkNotify.Checked := FServices.Settings.NotifyAlerts;
+    FChkEconomy.Checked := FServices.Settings.EconomyWhenHidden;
+    FChkUpdates.Checked := FServices.Settings.CheckForUpdates;
+    FCbLanguage.ItemIndex := Ord(FServices.Settings.Language);
+    FCbTheme.ItemIndex := Ord(FServices.Settings.Theme);
+    FEdPrice.Text := FormatFloat('0.00', FServices.Settings.ElectricityPrice);
+  finally
+    FInitializingSettings := False;
+  end;
+  InitStorageSettings;
+  InitAnalysisSettings;
+  RefreshExclusions;
+end;
+
+procedure TMainForm.ExportSettingsClick(Sender: TObject);
+var
+  LDialog: TSaveDialog;
+  LError: string;
+begin
+  LDialog := TSaveDialog.Create(nil);
+  try
+    LDialog.Filter := 'Настройки MineHunter X (*.json)|*.json';
+    LDialog.DefaultExt := 'json';
+    LDialog.FileName := 'minehunter-settings.json';
+    LDialog.Options := [ofOverwritePrompt, ofHideReadOnly, ofPathMustExist, ofEnableSizing];
+    if not LDialog.Execute(Handle) then
+      Exit;
+    if ExportSettingsTo(LDialog.FileName, LError) then
+      lblStorageStats.Caption := 'Настройки сохранены: ' + LDialog.FileName
+    else
+      lblStorageStats.Caption := 'Не удалось сохранить настройки: ' + LError;
+  finally
+    LDialog.Free;
+  end;
+end;
+
+procedure TMainForm.ImportSettingsClick(Sender: TObject);
+var
+  LDialog: TOpenDialog;
+  LError: string;
+begin
+  LDialog := TOpenDialog.Create(nil);
+  try
+    LDialog.Filter := 'Настройки MineHunter X (*.json)|*.json';
+    LDialog.Options := [ofFileMustExist, ofHideReadOnly, ofEnableSizing];
+    if not LDialog.Execute(Handle) then
+      Exit;
+    if ImportSettingsFrom(LDialog.FileName, LError) then
+      lblStorageStats.Caption := 'Настройки импортированы: ' + LDialog.FileName
+    else if LError <> 'Отменено пользователем' then
+      MessageDlg('Настройки не импортированы: ' + LError, mtWarning, [mbOK], 0);
+  finally
+    LDialog.Free;
+  end;
 end;
 
 procedure TMainForm.RefreshActionLog;
@@ -3092,5 +3523,8 @@ begin
     lvActionLog.Items.EndUpdate;
   end;
 end;
+
+initialization
+  MH_QUIT_MESSAGE := RegisterWindowMessage('MineHunterX.Quit');
 
 end.

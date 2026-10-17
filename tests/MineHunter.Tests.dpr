@@ -9,6 +9,7 @@
 
 {$APPTYPE CONSOLE}
 {$STRONGLINKTYPES ON}
+{$R '..\src\App\MineHunter.App.Styles.res' '..\src\App\MineHunter.App.Styles.rc'}
 
 uses
   System.SysUtils,
@@ -38,6 +39,11 @@ uses
   MineHunter.Core.Inventory in '..\src\Core\MineHunter.Core.Inventory.pas',
   MineHunter.Core.CheckReport in '..\src\Core\MineHunter.Core.CheckReport.pas',
   MineHunter.Analysis.Launches in '..\src\Core\MineHunter.Analysis.Launches.pas',
+  MineHunter.Core.Updates in '..\src\Core\MineHunter.Core.Updates.pas',
+  MineHunter.Core.Updates.WinApi in '..\src\Core\MineHunter.Core.Updates.WinApi.pas',
+  MineHunter.App.Lang in '..\src\App\MineHunter.App.Lang.pas',
+  MineHunter.App.Theme in '..\src\App\MineHunter.App.Theme.pas',
+  MineHunter.Tests.Appearance in 'Unit\MineHunter.Tests.Appearance.pas',
   MineHunter.Collectors.ProcessEvents in '..\src\Core\Collectors\MineHunter.Collectors.ProcessEvents.pas',
   MineHunter.Collectors.ProcessEvents.WinApi in '..\src\Core\Collectors\MineHunter.Collectors.ProcessEvents.WinApi.pas',
   MineHunter.Tests.ProcessEvents in 'Unit\MineHunter.Tests.ProcessEvents.pas',

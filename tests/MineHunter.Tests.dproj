@@ -98,6 +98,11 @@
         <DCCReference Include="..\src\Core\MineHunter.Core.Inventory.pas"/>
         <DCCReference Include="..\src\Core\MineHunter.Core.CheckReport.pas"/>
         <DCCReference Include="..\src\Core\MineHunter.Analysis.Launches.pas"/>
+        <DCCReference Include="..\src\Core\MineHunter.Core.Updates.pas"/>
+        <DCCReference Include="..\src\Core\MineHunter.Core.Updates.WinApi.pas"/>
+        <DCCReference Include="..\src\App\MineHunter.App.Lang.pas"/>
+        <DCCReference Include="..\src\App\MineHunter.App.Theme.pas"/>
+        <DCCReference Include="Unit\MineHunter.Tests.Appearance.pas"/>
         <DCCReference Include="..\src\Core\Collectors\MineHunter.Collectors.ProcessEvents.pas"/>
         <DCCReference Include="..\src\Core\Collectors\MineHunter.Collectors.ProcessEvents.WinApi.pas"/>
         <DCCReference Include="Unit\MineHunter.Tests.ProcessEvents.pas"/>
@@ -175,6 +180,9 @@
         <DCCReference Include="Unit\MineHunter.Tests.Chart.pas"/>
         <DCCReference Include="Integration\MineHunter.Tests.Collectors.pas"/>
         <DCCReference Include="UI\MineHunter.Tests.UI.Smoke.pas"/>
+        <RcCompile Include="..\src\App\MineHunter.App.Styles.rc">
+            <Form>..\src\App\MineHunter.App.Styles.res</Form>
+        </RcCompile>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
         </BuildConfiguration>

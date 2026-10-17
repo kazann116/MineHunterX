@@ -61,6 +61,7 @@ type
     [Test] procedure Findings_Remediate_QuarantineAndRestore;
     [Test] procedure Background_TrayEconomyNotifyAndAutostart;
     [Test] procedure CheckNow_ReportChangesEnergyAndPrice;
+    [Test] procedure Appearance_SettingsExportImportAndUpdates;
   end;
 
 implementation
@@ -75,7 +76,8 @@ uses
   MineHunter.Collectors.Gpu, MineHunter.Collectors.Sensors, MineHunter.Tests.GpuSensors,
   MineHunter.App.DashboardView, MineHunter.Core.Actions, MineHunter.Core.Quarantine,
   MineHunter.Tests.Quarantine, MineHunter.Tests.SettingsReports, MineHunter.Tests.Background,
-  MineHunter.Core.SelfAutostart, MineHunter.Core.CheckReport,
+  MineHunter.Core.SelfAutostart, MineHunter.Core.CheckReport, MineHunter.Core.Updates,
+  MineHunter.Tests.Appearance,
   MineHunter.Tests.Fakes;
 
 var
@@ -1002,6 +1004,80 @@ begin
   Assert.AreEqual(7.5, FServices.Settings.ElectricityPrice, 0.0001);
   FForm.PriceEdit.Text := '-3';
   Assert.IsFalse(FForm.ApplyPriceText);
+end;
+
+procedure TMainFormSmokeTests.Appearance_SettingsExportImportAndUpdates;
+var
+  LPath, LError: string;
+  LHttp: TFakeHttpGet;
+  LWatch: TStopwatch;
+  LSettings: TMHAppSettings;
+  LAsked: Integer;
+begin
+  // Обновления по умолчанию не проверяются — без согласия запросов в интернет нет.
+  Assert.IsFalse(FForm.UpdatesCheckBox.Checked);
+  Assert.AreEqual(0, FForm.UpdateCount);
+
+  // Экспорт и импорт настроек.
+  LSettings := FServices.Settings;
+  LSettings.ElectricityPrice := 9.25;
+  LSettings.NotifyAlerts := False;
+  FServices.ApplySettings(LSettings);
+  LPath := TPath.Combine(FTempDir, 'exported-settings.json');
+  Assert.IsTrue(FForm.ExportSettingsTo(LPath, LError), LError);
+  LSettings := FServices.Settings;
+  LSettings.ElectricityPrice := 1;
+  LSettings.NotifyAlerts := True;
+  FServices.ApplySettings(LSettings);
+  LAsked := 0;
+  FForm.ConfirmAction :=
+    function(const AQuestion: string): Boolean
+    begin
+      Inc(LAsked);
+      Result := False;
+    end;
+  Assert.IsFalse(FForm.ImportSettingsFrom(LPath, LError), 'Без подтверждения настройки не меняются');
+  Assert.AreEqual(1.0, FServices.Settings.ElectricityPrice, 0.0001);
+  FForm.ConfirmAction :=
+    function(const AQuestion: string): Boolean
+    begin
+      Inc(LAsked);
+      Result := True;
+    end;
+  Assert.IsTrue(FForm.ImportSettingsFrom(LPath, LError), LError);
+  Assert.AreEqual(2, LAsked);
+  Assert.AreEqual(9.25, FServices.Settings.ElectricityPrice, 0.0001);
+  Assert.IsFalse(FServices.Settings.NotifyAlerts);
+  Assert.IsFalse(FForm.NotifyCheckBox.Checked, 'Элементы настроек обновлены');
+  Assert.AreEqual('settings-import', FServices.ActionLog.LoadActions(1)[0].Action);
+  // Повреждённый и отсутствующий файлы.
+  TFile.WriteAllText(TPath.Combine(FTempDir, 'broken.json'), '{"version":', TEncoding.UTF8);
+  Assert.IsFalse(FForm.ImportSettingsFrom(TPath.Combine(FTempDir, 'broken.json'), LError));
+  Assert.IsNotEmpty(LError);
+  Assert.IsFalse(FForm.ImportSettingsFrom(TPath.Combine(FTempDir, 'missing.json'), LError));
+  Assert.AreEqual(2, LAsked, 'Некорректный файл отклоняется до вопроса');
+
+  // Проверка обновлений через поддельный HTTP: результат приходит в главный поток.
+  LHttp := TFakeHttpGet.Create;
+  LHttp.Status := 200;
+  LHttp.Body := '{"tag_name":"v99.0.0","html_url":"https://github.com/kazann116/MineHunterX/releases/tag/v99.0.0"}';
+  FForm.UpdateHttp := LHttp;
+  FForm.StartUpdateCheck;
+  LWatch := TStopwatch.StartNew;
+  while FForm.UpdateRunning and (LWatch.ElapsedMilliseconds < 10000) do
+    CheckSynchronize(20);
+  Assert.IsFalse(FForm.UpdateRunning);
+  Assert.AreEqual(1, FForm.UpdateCount);
+  Assert.AreEqual(Ord(usAvailable), Ord(FForm.UpdateResult.State));
+  Assert.AreEqual(1, LHttp.Calls);
+
+  // Язык и тема сохраняются в настройках (язык применится после перезапуска).
+  FForm.LanguageCombo.ItemIndex := 1;
+  FForm.LanguageCombo.OnChange(FForm.LanguageCombo);
+  Assert.AreEqual(Ord(ulEnglish), Ord(FServices.Settings.Language));
+  FForm.ThemeCombo.ItemIndex := 1;
+  FForm.ThemeCombo.OnChange(FForm.ThemeCombo);
+  Assert.AreEqual(Ord(utDark), Ord(FServices.Settings.Theme));
 end;
 
 initialization

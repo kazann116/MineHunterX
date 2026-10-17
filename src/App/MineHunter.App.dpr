@@ -25,6 +25,10 @@ uses
   MineHunter.Core.Inventory in '..\Core\MineHunter.Core.Inventory.pas',
   MineHunter.Core.CheckReport in '..\Core\MineHunter.Core.CheckReport.pas',
   MineHunter.Analysis.Launches in '..\Core\MineHunter.Analysis.Launches.pas',
+  MineHunter.Core.Updates in '..\Core\MineHunter.Core.Updates.pas',
+  MineHunter.Core.Updates.WinApi in '..\Core\MineHunter.Core.Updates.WinApi.pas',
+  MineHunter.App.Lang in 'MineHunter.App.Lang.pas',
+  MineHunter.App.Theme in 'MineHunter.App.Theme.pas',
   MineHunter.Collectors.ProcessEvents in '..\Core\Collectors\MineHunter.Collectors.ProcessEvents.pas',
   MineHunter.Collectors.ProcessEvents.WinApi in '..\Core\Collectors\MineHunter.Collectors.ProcessEvents.WinApi.pas',
   MineHunter.Core.SelfAutostart.WinApi in '..\Core\MineHunter.Core.SelfAutostart.WinApi.pas',
@@ -60,6 +64,7 @@ uses
   MineHunter.App.MainForm in 'MineHunter.App.MainForm.pas' {MainForm};
 
 {$R 'MineHunter.App.Resources.res' 'MineHunter.App.Resources.rc'}
+{$R 'MineHunter.App.Styles.res' 'MineHunter.App.Styles.rc'}
 
 function LaunchParams: TArray<string>;
 var

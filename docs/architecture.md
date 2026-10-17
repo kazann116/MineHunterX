@@ -1,4 +1,4 @@
-# MineHunter X — архитектура (MVP, этапы 0–6)
+# MineHunter X — архитектура
 
 ## Слои
 
@@ -129,6 +129,24 @@ Composition root — `TMHAppServices.RegisterDefaults`. Тесты собира�
 | `sensors` | `MineHunter.Collectors.Sensors` (+ `.WinApi`) | Температура накопителей (`IOCTL_STORAGE_QUERY_PROPERTY`, `StorageDeviceTemperatureProperty`, без прав администратора; раз в минуту) и процессора из LibreHardwareMonitor/OpenHardwareMonitor (WMI, если запущены; раз в 10 с). |
 | `processes` | `MineHunter.Collectors.Processes` (+ `.WinApi`) | Все процессы: PID + время создания, PPID, имя, путь, CPU (дельта), рабочий набор, частная память, потоки, уровень доступа. |
 | `self` | `MineHunter.Collectors.SelfMonitor` | CPU, рабочий набор и приватная память самого MineHunter — для контроля требований «≤ 2% CPU» и «≤ 200 МБ». Первый замер — `ssPartial`: CPU считается по разнице двух замеров. |
+| `processevents` | `MineHunter.Collectors.ProcessEvents` (+ `.WinApi`) | Запуски и завершения процессов из ETW (провайдер Microsoft-Windows-Kernel-Process, сеанс реального времени, поля — через TDH). Сводка по программам за 30 минут (`TMHLaunchStat`): запуски, короткие запуски, родитель. Нужны права администратора, иначе — `ssUnavailable` с `RequiresElevation`. |
+| `tamper` | `MineHunter.Collectors.Tamper` (+ `.WinApi`) | Подписки WMI (`root\subscription`), исключения Defender (в т.ч. политики), IFEO/SilentProcessExit, hosts, ограничивающие политики; кэш 120 с, `IMHCacheInvalidation`. |
+
+## Исправление, фон, отчёт, интерфейс
+
+- **Карантин** (`MineHunter.Core.Quarantine`): каждая операция — запись в `<LOCALAPPDATA>\MineHunterX\Quarantine\<id>\manifest.json`
+  (атомарно) до изменения системы; при сбое изменения манифест удаляется. План исправления
+  (`MHBuildRemediationPlan`) строится из снимка и находки; UI выполняет шаги по одному и
+  показывает итог каждого.
+- **Фон** (`MineHunter.App.Notifier`, `TMHAppServices.EconomyMode`): уведомления о новых тревогах
+  с объединением и паузой; пока окно скрыто, интервал опроса — не меньше 30 с.
+- **«Что изменилось»** (`MineHunter.Core.Inventory`): хранилище раз в минуту обновляет таблицу
+  `inventory` (схема 3) — время первого и последнего наблюдения объектов.
+- **Отчёт «Проверить сейчас»** (`MineHunter.Core.CheckReport`) — чистая функция от снимка, находок,
+  изменений и оценки энергии.
+- **Язык и тема** (`MineHunter.App.Lang`, `MineHunter.App.Theme`): словарь подписей и обход
+  компонентов формы; стиль VCL «Windows10 Dark» — ресурс VCLSTYLE (нужен `Vcl.Styles`),
+  собственные элементы берут цвета через `MHThemeColor`.
 
 ### Коллектор процессов (этап 1)
 

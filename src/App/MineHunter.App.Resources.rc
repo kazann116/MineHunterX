@@ -1,8 +1,8 @@
 1 24 "MineHunter.App.manifest"
 
 1 VERSIONINFO
-FILEVERSION 0,1,0,0
-PRODUCTVERSION 0,1,0,0
+FILEVERSION 0,2,0,0
+PRODUCTVERSION 0,2,0,0
 FILEOS 0x40004
 FILETYPE 0x1
 {
@@ -12,11 +12,11 @@ FILETYPE 0x1
     {
       VALUE "CompanyName", "MineHunter X Project\0"
       VALUE "FileDescription", "MineHunter X\0"
-      VALUE "FileVersion", "0.1.0.0\0"
+      VALUE "FileVersion", "0.2.0.0\0"
       VALUE "InternalName", "MineHunter.App\0"
       VALUE "OriginalFilename", "MineHunter.App.exe\0"
       VALUE "ProductName", "MineHunter X\0"
-      VALUE "ProductVersion", "0.1.0\0"
+      VALUE "ProductVersion", "0.2.0\0"
     }
   }
   BLOCK "VarFileInfo"

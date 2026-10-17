@@ -64,7 +64,7 @@ function MHStateText(AState: TMHTileState): string;
 implementation
 
 uses
-  Winapi.Windows, System.Math;
+  MineHunter.App.Theme, MineHunter.App.Lang, Winapi.Windows, System.Math;
 
 function MHStateColor(AState: TMHTileState): TColor;
 begin
@@ -120,7 +120,7 @@ end;
 procedure TMHMetricTile.SetData(const AData: TMHTileData);
 begin
   FData := AData;
-  Hint := FData.Title + ': ' + FData.Value;
+  Hint := MHTr(FData.Title) + ': ' + MHTr(FData.Value);
   if FData.Detail <> '' then
     Hint := Hint + sLineBreak + FData.Detail;
   ShowHint := True;
@@ -138,8 +138,8 @@ begin
   LColor := MHStateColor(FData.State);
   LPad := S(10);
   Canvas.Brush.Style := bsSolid;
-  Canvas.Brush.Color := clWindow;
-  Canvas.Pen.Color := clBtnShadow;
+  Canvas.Brush.Color := MHThemeColor(clWindow);
+  Canvas.Pen.Color := MHThemeColor(clBtnShadow);
   Canvas.Pen.Width := 1;
   Canvas.Rectangle(LRect);
   // Полоса состояния слева.
@@ -149,10 +149,10 @@ begin
 
   // Заголовок и подпись состояния.
   Canvas.Font := Font;
-  Canvas.Font.Color := clGrayText;
+  Canvas.Font.Color := MHThemeColor(clGrayText);
   LY := LRect.Top + S(7);
-  Canvas.TextOut(LRect.Left + LPad + S(4), LY, FData.Title);
-  LState := MHStateText(FData.State);
+  Canvas.TextOut(LRect.Left + LPad + S(4), LY, MHTr(FData.Title));
+  LState := MHTr(MHStateText(FData.State));
   if LState <> '' then
   begin
     Canvas.Font.Color := LColor;
@@ -165,15 +165,15 @@ begin
   Canvas.Font.Size := Font.Size + 9;
   Canvas.Font.Style := [fsBold];
   if FData.State = tsNoData then
-    Canvas.Font.Color := clGrayText
+    Canvas.Font.Color := MHThemeColor(clGrayText)
   else
-    Canvas.Font.Color := clWindowText;
+    Canvas.Font.Color := MHThemeColor(clWindowText);
   LY := LY + S(18);
   Canvas.TextOut(LRect.Left + LPad + S(4), LY, FData.Value);
 
   // Пояснение — до двух строк с переносом.
   Canvas.Font := Font;
-  Canvas.Font.Color := clGrayText;
+  Canvas.Font.Color := MHThemeColor(clGrayText);
   LText := Rect(LRect.Left + LPad + S(4), LY + S(30), LRect.Right - LPad, LRect.Bottom - S(4));
   DrawText(Canvas.Handle, PChar(FData.Detail), Length(FData.Detail), LText,
     DT_LEFT or DT_WORDBREAK or DT_END_ELLIPSIS or DT_NOPREFIX);
@@ -242,7 +242,7 @@ begin
       Canvas.Font := Font;
       if LItem.State in [tsWarning, tsAlert] then
         Canvas.Font.Style := [fsBold];
-      Canvas.Font.Color := clWindowText;
+      Canvas.Font.Color := MHThemeColor(clWindowText);
       LRect := Rect(LMarkW, LY, Max(LMarkW + 10, AWidth - S(6)), LY + LTextH);
       DrawText(Canvas.Handle, PChar(LItem.Text), Length(LItem.Text), LRect,
         DT_LEFT or DT_WORDBREAK or DT_NOPREFIX);
@@ -256,7 +256,7 @@ end;
 procedure TMHReasonList.Paint;
 begin
   Canvas.Brush.Style := bsSolid;
-  Canvas.Brush.Color := Color;
+  Canvas.Brush.Color := MHThemeColor(Color);
   Canvas.FillRect(ClientRect);
   Canvas.Brush.Style := bsClear;
   LayoutHeight(ClientWidth, True);
