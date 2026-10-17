@@ -420,6 +420,8 @@ begin
     ADetails := ADetails + AResult.ProcessDetails;
   if Length(AResult.Sensors) > 0 then
     ASnapshot.Sensors := ASnapshot.Sensors + AResult.Sensors;
+  if Length(AResult.Tamper) > 0 then
+    ASnapshot.Tamper := ASnapshot.Tamper + AResult.Tamper;
   // Контекст — от первого источника, который его передал.
   if AResult.HasContext and not ASnapshot.Context.Available then
   begin

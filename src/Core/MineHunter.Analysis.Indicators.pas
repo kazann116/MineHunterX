@@ -24,7 +24,7 @@ type
   );
 
 const
-  MH_INDICATORS_VERSION = '2026.10.2';
+  MH_INDICATORS_VERSION = '2026.10.3';
 
 /// Имя (без учёта регистра) совпадает с известным майнером.
 function MHIsKnownMinerName(const AName: string): Boolean;
@@ -54,6 +54,21 @@ function MHFindObfuscatedCommand(const ACommand: string): string;
 /// Запуск сценария со скрытым окном или в обход политики выполнения ('' — нет).
 /// Слабее, чем обфускация: путь к сценарию виден, так часто делает и обычная автоматизация.
 function MHFindHiddenScriptLaunch(const ACommand: string): string;
+/// Домен антивируса, сервиса проверки файлов или обновлений Windows (с поддоменами).
+function MHIsSecurityDomain(const AHost: string): Boolean;
+/// Программа мониторинга или защиты, перехват запуска которой — признак вмешательства.
+function MHIsProtectedToolName(const AName: string): Boolean;
+/// Специальные возможности Windows, доступные на экране входа (sethc.exe и т.п.):
+/// их подмена даёт запуск команд без входа в систему.
+function MHIsAccessibilityBinary(const AName: string): Boolean;
+/// Расширение исполняемого файла или сценария (с точкой или без).
+function MHIsExecutableExtension(const AExtension: string): Boolean;
+/// Программа, которой пользователи заменяют диспетчер задач (Process Explorer, System Informer).
+function MHIsTaskManagerReplacement(const APath: string): Boolean;
+/// Файл, который приносят с собой майнеры (WinRing0x64.sys и т.п.), по имени.
+function MHIsMinerArtifact(const AFileName: string): Boolean;
+/// Системное имя Windows, но файл лежит не в системной папке.
+function MHIsMasqueradedSystemFile(const APath: string): Boolean;
 
 implementation
 
@@ -111,10 +126,36 @@ const
   /// Вычислительные ядра Folding@home: FahCore_22.exe, FahCore_a8.exe…
   COMPUTE_PREFIX = 'fahcore_';
 
-  SYSTEM_IN_SYSTEM32: array[0..16] of string = ('svchost.exe', 'csrss.exe', 'lsass.exe',
+  SYSTEM_IN_SYSTEM32: array[0..21] of string = ('svchost.exe', 'csrss.exe', 'lsass.exe',
     'winlogon.exe', 'services.exe', 'smss.exe', 'wininit.exe', 'dwm.exe', 'conhost.exe',
     'taskhostw.exe', 'runtimebroker.exe', 'spoolsv.exe', 'sihost.exe', 'ctfmon.exe',
-    'dllhost.exe', 'rundll32.exe', 'lsaiso.exe');
+    'dllhost.exe', 'rundll32.exe', 'lsaiso.exe', 'audiodg.exe', 'taskhost.exe', 'wermgr.exe',
+    'searchindexer.exe', 'taskmgr.exe');
+  /// Системные программы из папки wbem (WMI).
+  SYSTEM_IN_WBEM: array[0..1] of string = ('unsecapp.exe', 'wmiprvse.exe');
+  /// Файлы, которые приносят с собой майнеры: драйвер WinRing0 даёт XMRig доступ к регистрам процессора.
+  MINER_ARTIFACTS: array[0..3] of string = ('winring0x64.sys', 'winring0.sys', 'winring0x32.sys',
+    'xmrig.exe');
+
+  SECURITY_DOMAINS: array[0..37] of string = ('kaspersky.com', 'kaspersky.ru', 'kaspersky-labs.com',
+    'drweb.com', 'drweb.ru', 'eset.com', 'esetnod32.ru', 'avast.com', 'avg.com', 'bitdefender.com',
+    'malwarebytes.com', 'mcafee.com', 'norton.com', 'symantec.com', 'sophos.com', 'trendmicro.com',
+    'f-secure.com', 'avira.com', 'pandasecurity.com', 'comodo.com', 'emsisoft.com', 'gdata.de',
+    'zonealarm.com', 'virustotal.com', 'hybrid-analysis.com', 'any.run', 'virusinfo.info',
+    'windowsupdate.com', 'update.microsoft.com', 'windowsupdate.microsoft.com', 'wdcp.microsoft.com',
+    'wdcpalt.microsoft.com', 'definitionupdates.microsoft.com', 'smartscreen.microsoft.com',
+    'smartscreen-prod.microsoft.com', 'go.microsoft.com', 'malwareremoval.com', 'bleepingcomputer.com');
+  PROTECTED_TOOLS: array[0..21] of string = ('taskmgr.exe', 'procexp.exe', 'procexp64.exe',
+    'processhacker.exe', 'systeminformer.exe', 'perfmon.exe', 'resmon.exe', 'regedit.exe', 'mmc.exe',
+    'msmpeng.exe', 'mpcmdrun.exe', 'msascui.exe', 'securityhealthsystray.exe', 'mbam.exe', 'avp.exe',
+    'ekrn.exe', 'egui.exe', 'dwservice.exe', 'cureit.exe', 'autoruns.exe', 'autoruns64.exe',
+    'tcpview.exe');
+  ACCESSIBILITY_BINARIES: array[0..6] of string = ('sethc.exe', 'utilman.exe', 'osk.exe',
+    'magnify.exe', 'narrator.exe', 'displayswitch.exe', 'atbroker.exe');
+  EXECUTABLE_EXTENSIONS: array[0..13] of string = ('exe', 'dll', 'scr', 'com', 'pif', 'bat', 'cmd',
+    'ps1', 'vbs', 'vbe', 'js', 'jse', 'wsf', 'msi');
+  TASKMGR_REPLACEMENTS: array[0..4] of string = ('procexp.exe', 'procexp64.exe', 'procexp64a.exe',
+    'systeminformer.exe', 'processhacker.exe');
 
 function BaseName(const AName: string): string;
 begin
@@ -214,7 +255,9 @@ begin
   if LName = 'explorer.exe' then
     AExpectedDirs := ['\windows\', '\windows\syswow64\']
   else if InList(LName, SYSTEM_IN_SYSTEM32) then
-    AExpectedDirs := ['\windows\system32\', '\windows\syswow64\'];
+    AExpectedDirs := ['\windows\system32\', '\windows\syswow64\']
+  else if InList(LName, SYSTEM_IN_WBEM) then
+    AExpectedDirs := ['\windows\system32\wbem\', '\windows\syswow64\wbem\'];
   Result := Length(AExpectedDirs) > 0;
 end;
 
@@ -417,6 +460,67 @@ begin
   LPath := AImagePath.ToLower;
   Result := LPath.Contains(':\windows\') or LPath.Contains(':\program files\') or
     LPath.Contains(':\program files (x86)\');
+end;
+
+function MHIsSecurityDomain(const AHost: string): Boolean;
+var
+  LHost, LDomain: string;
+begin
+  LHost := AHost.Trim.ToLower;
+  if LHost.EndsWith('.') then
+    LHost := Copy(LHost, 1, Length(LHost) - 1);
+  for LDomain in SECURITY_DOMAINS do
+    if (LHost = LDomain) or LHost.EndsWith('.' + LDomain) then
+      Exit(True);
+  Result := False;
+end;
+
+function MHIsProtectedToolName(const AName: string): Boolean;
+begin
+  Result := InList(ExtractFileName(AName), PROTECTED_TOOLS);
+end;
+
+function MHIsAccessibilityBinary(const AName: string): Boolean;
+begin
+  Result := InList(ExtractFileName(AName), ACCESSIBILITY_BINARIES);
+end;
+
+function MHIsExecutableExtension(const AExtension: string): Boolean;
+var
+  LExt: string;
+begin
+  LExt := AExtension.Trim.ToLower;
+  if LExt.StartsWith('*.') then
+    LExt := Copy(LExt, 3, MaxInt)
+  else if LExt.StartsWith('.') then
+    LExt := Copy(LExt, 2, MaxInt);
+  Result := InList(LExt, EXECUTABLE_EXTENSIONS);
+end;
+
+function MHIsTaskManagerReplacement(const APath: string): Boolean;
+begin
+  Result := InList(ExtractFileName(APath.Trim.Trim(['"'])), TASKMGR_REPLACEMENTS);
+end;
+
+function MHIsMinerArtifact(const AFileName: string): Boolean;
+begin
+  Result := InList(ExtractFileName(AFileName), MINER_ARTIFACTS);
+end;
+
+function MHIsMasqueradedSystemFile(const APath: string): Boolean;
+var
+  LDirs: TArray<string>;
+  LDir, LActual: string;
+begin
+  Result := False;
+  if not MHIsSystemProcessName(APath, LDirs) then
+    Exit;
+  // Каталог без буквы диска: «C:\Windows\System32\» -> «\windows\system32\».
+  LActual := Copy(ExtractFilePath(APath), 3, MaxInt).ToLower;
+  for LDir in LDirs do
+    if LActual = LDir then
+      Exit(False);
+  Result := True;
 end;
 
 end.

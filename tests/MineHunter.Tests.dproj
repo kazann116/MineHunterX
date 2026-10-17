@@ -88,6 +88,9 @@
         <DCCReference Include="..\src\Core\Collectors\MineHunter.Collectors.Processes.WinApi.pas"/>
         <DCCReference Include="..\src\Core\Collectors\MineHunter.Collectors.System.pas"/>
         <DCCReference Include="..\src\Core\Collectors\MineHunter.Collectors.Pdh.pas"/>
+        <DCCReference Include="..\src\Core\Collectors\MineHunter.Collectors.Tamper.pas"/>
+        <DCCReference Include="..\src\Core\Collectors\MineHunter.Collectors.Tamper.WinApi.pas"/>
+        <DCCReference Include="..\src\Core\MineHunter.Analysis.Tamper.pas"/>
         <DCCReference Include="..\src\Core\Collectors\MineHunter.Collectors.Gpu.pas"/>
         <DCCReference Include="..\src\Core\Collectors\MineHunter.Collectors.Gpu.WinApi.pas"/>
         <DCCReference Include="..\src\Core\Collectors\MineHunter.Collectors.Sensors.pas"/>
@@ -95,6 +98,8 @@
         <DCCReference Include="Unit\MineHunter.Tests.GpuSensors.pas"/>
         <DCCReference Include="Unit\MineHunter.Tests.AnalyzerGpu.pas"/>
         <DCCReference Include="Unit\MineHunter.Tests.DashboardView.pas"/>
+        <DCCReference Include="Unit\MineHunter.Tests.Contracts.pas"/>
+        <DCCReference Include="Unit\MineHunter.Tests.Tamper.pas"/>
         <DCCReference Include="Integration\MineHunter.Tests.HardwareIntegration.pas"/>
         <DCCReference Include="..\src\Core\Collectors\MineHunter.Collectors.System.WinApi.pas"/>
         <DCCReference Include="..\src\Core\Collectors\MineHunter.Collectors.Autostart.pas"/>

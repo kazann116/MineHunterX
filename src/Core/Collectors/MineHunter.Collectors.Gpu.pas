@@ -60,7 +60,7 @@ type
   end;
 
   IMHGpuApi = interface
-    ['{6F0B7C1E-2E1A-4F57-9A0C-3D5B8E7A1C70}']
+    ['{6F0B7C1E-2E1A-4F57-9A0C-3D5B8E7A1C90}']
     /// Один замер счётчиков; загрузка доступна со второго вызова.
     function GetCounters: TMHGpuCounters;
     /// Датчики; реализация может обновлять их реже, чем каждый опрос.

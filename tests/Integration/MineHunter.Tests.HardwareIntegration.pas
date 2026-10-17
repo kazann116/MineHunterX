@@ -22,6 +22,7 @@ type
     [Test] procedure PrivateWorkingSet_IncludesOwnProcess;
     [Test] procedure Gpu_CountersAndSensors_InRangeOrReason;
     [Test] procedure Sensors_DiskAndCpu_InRangeOrReason;
+    [Test] procedure Tamper_RealSources_ReadOrExplain;
   end;
 
 implementation
@@ -31,7 +32,9 @@ uses
   MineHunter.Collectors.System, MineHunter.Collectors.System.WinApi,
   MineHunter.Collectors.Processes, MineHunter.Collectors.Processes.WinApi,
   MineHunter.Collectors.Gpu, MineHunter.Collectors.Gpu.WinApi,
-  MineHunter.Collectors.Sensors, MineHunter.Collectors.Sensors.WinApi;
+  MineHunter.Collectors.Sensors, MineHunter.Collectors.Sensors.WinApi,
+  MineHunter.Core.Types, MineHunter.Core.Interfaces, MineHunter.Collectors.Tamper,
+  MineHunter.Collectors.Tamper.WinApi, MineHunter.Tests.Fakes;
 
 procedure Log(const AText: string);
 begin
@@ -152,6 +155,23 @@ begin
     Log('CPU: ' + LReason);
     Assert.IsTrue(LReason <> '');
   end;
+end;
+
+procedure THardwareIntegrationTests.Tamper_RealSources_ReadOrExplain;
+var
+  LCollector: IMHCollector;
+  LResult: TMHCollectionResult;
+  LEntry: TMHTamperEntry;
+begin
+  LCollector := TMHTamperCollector.Create(TMHWinTamperApi.Create, TFakeClock.Create(FAKE_NOW));
+  LResult := LCollector.Collect(TMHSnapshot.Create(1, FAKE_NOW));
+  Log(Format('Вмешательство: состояние %s, записей %d; %s', [MHSourceStateToString(LResult.Status.State),
+    Length(LResult.Tamper), LResult.Status.Message]));
+  for LEntry in LResult.Tamper do
+    Log(Format('  %s: %s = %s (%s)', [MHTamperKindToString(LEntry.Kind), LEntry.Name,
+      Copy(LEntry.Value, 1, 120), LEntry.Location]));
+  Assert.AreNotEqual<TMHSourceState>(ssError, LResult.Status.State,
+    'Хотя бы реестр и hosts читаются без прав администратора');
 end;
 
 initialization

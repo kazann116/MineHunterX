@@ -93,6 +93,8 @@ const
     'cpuTemperatureCelsius', 'diskTemperatureCelsius', 'privateWorkingSetBytes');
   ACCESS_NAMES: array[TMHAccessLevel] of string = ('unknown', 'full', 'limited', 'denied');
   SENSOR_KIND_NAMES: array[TMHSensorKind] of string = ('cpu', 'gpu', 'disk');
+  TAMPER_KIND_NAMES: array[TMHTamperKind] of string = ('wmiSubscription', 'defenderExclusion',
+    'ifeoDebugger', 'silentExitMonitor', 'hostsRedirect', 'policyRestriction');
   SIGNATURE_NAMES: array[TMHSignatureState] of string = ('notChecked', 'signedTrusted',
     'signedUntrusted', 'unsigned', 'checkFailed');
   RISK_NAMES: array[TMHRiskLevel] of string = ('none', 'low', 'needsReview', 'suspicious',
@@ -529,6 +531,8 @@ end;
 
 function SensorToJson(const AReading: TMHSensorReading): TJSONObject; forward;
 function SensorFromJson(AJson: TJSONValue): TMHSensorReading; forward;
+function TamperToJson(const AEntry: TMHTamperEntry): TJSONObject; forward;
+function TamperFromJson(AJson: TJSONValue): TMHTamperEntry; forward;
 
 class function TMHJson.SnapshotToJson(const ASnapshot: TMHSnapshot): TJSONObject;
 var
@@ -581,6 +585,13 @@ begin
       for I := 0 to High(ASnapshot.Sensors) do
         LArray.AddElement(SensorToJson(ASnapshot.Sensors[I]));
     end;
+    if Length(ASnapshot.Tamper) > 0 then
+    begin
+      LArray := TJSONArray.Create;
+      Result.AddPair('tamper', LArray);
+      for I := 0 to High(ASnapshot.Tamper) do
+        LArray.AddElement(TamperToJson(ASnapshot.Tamper[I]));
+    end;
   except
     Result.Free;
     raise;
@@ -595,6 +606,33 @@ begin
   Result.AddPair('source', AReading.Source);
   Result.AddPair('celsius', TJSONNumber.Create(AReading.Celsius));
   Result.AddPair('limitCelsius', TJSONNumber.Create(AReading.LimitCelsius));
+end;
+
+function TamperToJson(const AEntry: TMHTamperEntry): TJSONObject;
+begin
+  Result := TJSONObject.Create;
+  Result.AddPair('kind', TAMPER_KIND_NAMES[AEntry.Kind]);
+  Result.AddPair('name', AEntry.Name);
+  Result.AddPair('value', AEntry.Value);
+  Result.AddPair('location', AEntry.Location);
+  Result.AddPair('imagePath', AEntry.ImagePath);
+  Result.AddPair('details', AEntry.Details);
+  Result.AddPair('managed', TJSONBool.Create(AEntry.ManagedComputer));
+end;
+
+function TamperFromJson(AJson: TJSONValue): TMHTamperEntry;
+var
+  LObj: TJSONObject;
+begin
+  if not (AJson is TJSONObject) then
+    raise EMHSerializationError.Create('Ожидается объект признака вмешательства');
+  LObj := TJSONObject(AJson);
+  Result := TMHTamperEntry.Create(
+    TMHTamperKind(NameToIndex(TAMPER_KIND_NAMES, GetString(LObj, 'kind'), 'kind')),
+    GetOptString(LObj, 'name'), GetOptString(LObj, 'value'), GetOptString(LObj, 'location'));
+  Result.ImagePath := GetOptString(LObj, 'imagePath');
+  Result.Details := GetOptString(LObj, 'details');
+  Result.ManagedComputer := GetOptBool(LObj, 'managed', False);
 end;
 
 function SensorFromJson(AJson: TJSONValue): TMHSensorReading;
@@ -668,6 +706,13 @@ begin
     SetLength(Result.Sensors, LArray.Count);
     for I := 0 to LArray.Count - 1 do
       Result.Sensors[I] := SensorFromJson(LArray.Items[I]);
+  end;
+  LArray := GetOptArray(LObj, 'tamper');
+  if LArray <> nil then
+  begin
+    SetLength(Result.Tamper, LArray.Count);
+    for I := 0 to LArray.Count - 1 do
+      Result.Tamper[I] := TamperFromJson(LArray.Items[I]);
   end;
 end;
 

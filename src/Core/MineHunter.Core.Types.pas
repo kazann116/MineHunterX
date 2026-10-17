@@ -105,6 +105,17 @@ type
   /// Устройство, к которому относится датчик температуры.
   TMHSensorKind = (skCpu, skGpu, skDisk);
 
+  /// Признак вмешательства в защиту системы (приёмы, которыми майнеры прячутся
+  /// и защищают себя).
+  TMHTamperKind = (
+    tpWmiSubscription,    // подписка WMI, запускающая команду или сценарий
+    tpDefenderExclusion,  // исключение Microsoft Defender (путь, процесс, расширение)
+    tpIfeoDebugger,       // перехват запуска программы (IFEO Debugger)
+    tpSilentExitMonitor,  // запуск программы при завершении другой (SilentProcessExit)
+    tpHostsRedirect,      // hosts перенаправляет сайт антивируса или обновлений
+    tpPolicyRestriction   // политика отключает диспетчер задач, реестр или защиту
+  );
+
   TMHAutostartKind = (akRegistryRun, akRegistryRunOnce, akStartupFolder, akService,
     akScheduledTask);
   TMHAutostartScope = (asMachine, asUser);
@@ -239,6 +250,25 @@ type
     State: string;
     OwningPid: Cardinal;
     function IsRemote: Boolean;
+  end;
+
+  /// Найденный признак вмешательства. Сам по себе — не диагноз: оценку даёт анализатор.
+  TMHTamperEntry = record
+  public
+    Kind: TMHTamperKind;
+    /// Имя подписки, исключённый путь/процесс/расширение, программа-цель, домен, политика.
+    Name: string;
+    /// Команда, значение исключения, отладчик, IP-адрес, значение политики.
+    Value: string;
+    /// Раздел реестра, пространство имён WMI, путь к hosts.
+    Location: string;
+    /// Нормализованный путь исполняемого файла, на который указывает запись ('' — нет).
+    ImagePath: string;
+    /// Дополнительно: тип подписки, запрос фильтра, вид исключения и т.п.
+    Details: string;
+    /// Компьютер входит в домен организации: там политики и исключения задаёт администратор.
+    ManagedComputer: Boolean;
+    class function Create(AKind: TMHTamperKind; const AName, AValue, ALocation: string): TMHTamperEntry; static;
   end;
 
   /// Показание датчика температуры.
@@ -431,6 +461,8 @@ type
     Context: TMHContextInfo;
     /// Показания датчиков температуры (GPU, накопители, процессор).
     Sensors: TArray<TMHSensorReading>;
+    /// Признаки вмешательства в защиту системы.
+    Tamper: TArray<TMHTamperEntry>;
     class function Create(ASequence: UInt64;
       ATimestampUtc: TDateTime): TMHSnapshot; static;
     function FindProcess(const AId: TMHProcessId; out AInfo: TMHProcessInfo): Boolean;
@@ -453,6 +485,7 @@ type
     Connections: TArray<TMHNetConnection>;
     ProcessDetails: TArray<TMHProcessDetail>;
     Sensors: TArray<TMHSensorReading>;
+    Tamper: TArray<TMHTamperEntry>;
     /// Контекст передаётся, только если HasContext = True.
     HasContext: Boolean;
     Context: TMHContextInfo;
@@ -465,6 +498,7 @@ function MHSignatureToString(AState: TMHSignatureState): string;
 function MHFindingCategoryToString(ACategory: TMHFindingCategory): string;
 function MHAutostartKindToString(AKind: TMHAutostartKind): string;
 function MHWorkContextToString(AContext: TMHWorkContext): string;
+function MHTamperKindToString(AKind: TMHTamperKind): string;
 /// Ключ программы для профиля нормы и исключений: путь в нижнем регистре
 /// (или имя, если путь неизвестен).
 function MHProgramKey(const AImagePath, AName: string): string;
@@ -572,6 +606,18 @@ begin
   Result.Gpu := TMHMetric.NoData(mkGpuPercent, 0);
   Result.GpuCompute := TMHMetric.NoData(mkGpuComputePercent, 0);
   Result.GpuMemory := TMHMetric.NoData(mkGpuMemoryBytes, 0);
+end;
+
+{ TMHTamperEntry }
+
+class function TMHTamperEntry.Create(AKind: TMHTamperKind; const AName, AValue,
+  ALocation: string): TMHTamperEntry;
+begin
+  Result := Default(TMHTamperEntry);
+  Result.Kind := AKind;
+  Result.Name := AName;
+  Result.Value := AValue;
+  Result.Location := ALocation;
 end;
 
 { TMHSensorReading }
@@ -938,6 +984,19 @@ begin
     akService:         Result := 'служба';
   else
     Result := 'планировщик заданий';
+  end;
+end;
+
+function MHTamperKindToString(AKind: TMHTamperKind): string;
+begin
+  case AKind of
+    tpWmiSubscription: Result := 'подписка WMI';
+    tpDefenderExclusion: Result := 'исключение Microsoft Defender';
+    tpIfeoDebugger: Result := 'перехват запуска программы (IFEO)';
+    tpSilentExitMonitor: Result := 'запуск при завершении программы (SilentProcessExit)';
+    tpHostsRedirect: Result := 'перенаправление в hosts';
+  else
+    Result := 'ограничивающая политика';
   end;
 end;
 

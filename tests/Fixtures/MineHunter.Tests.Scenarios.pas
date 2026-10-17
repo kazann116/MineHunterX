@@ -274,6 +274,24 @@ begin
   Result.Category := ACategory;
 end;
 
+/// Признаки вмешательства во всех снимках сценария.
+function WithTamper(const ASnapshots: TArray<TMHSnapshot>; const AEntries: TArray<TMHTamperEntry>): TArray<TMHSnapshot>;
+var
+  I: Integer;
+begin
+  Result := Copy(ASnapshots);
+  for I := 0 to High(Result) do
+    Result[I].Tamper := AEntries;
+end;
+
+function Tamper(AKind: TMHTamperKind; const AName, AValue, ADetails, AImagePath: string): TMHTamperEntry;
+begin
+  Result := TMHTamperEntry.Create(AKind, AName, AValue, 'scenario');
+  Result.Details := ADetails;
+  if AImagePath <> '' then
+    Result.ImagePath := MHNormalizePath(AImagePath);
+end;
+
 /// Фоновые обычные процессы, присутствующие во всех сценариях.
 function Background: TArray<TScenarioProcess>;
 begin
@@ -366,6 +384,31 @@ begin
     'Неподписанный фоновый процесс без окна: 3% CPU, 97% вычислений GPU, пользователь отошёл',
     'gpuupd.exe', True, rlSuspicious, rlHighlySuspicious,
     BuildSnapshots(Background + [P], 900, False, nil)), fcMining)];
+
+  // Майнер в папке, которую он исключил из проверки Microsoft Defender.
+  P := Proc(2008, 'svchelper.exe', 'C:\ProgramData\SvcHelper\svchelper.exe', sgUnsigned, '', [0, 45]);
+  Result := Result + [Scenario('av_excluded_miner_folder',
+    'Неподписанный процесс 45% CPU из папки, исключённой из проверки Microsoft Defender',
+    'svchelper.exe', True, rlSuspicious, rlHighlySuspicious,
+    WithTamper(BuildSnapshots(Background + [P], 900, False, nil),
+      [Tamper(tpDefenderExclusion, 'C:\ProgramData\SvcHelper', 'C:\ProgramData\SvcHelper', 'путь',
+        'C:\ProgramData\SvcHelper')]))];
+
+  // «Бесфайловый» автозапуск: подписка WMI запускает майнер.
+  Result := Result + [WithCategory(Scenario('wmi_persistence_miner',
+    'Подписка WMI запускает майнер из общей папки пользователей',
+    'w.exe', True, rlSuspicious, rlHighlySuspicious,
+    WithTamper(BuildSnapshots(Background, 10, False, nil),
+      [Tamper(tpWmiSubscription, 'SCM Updater', 'C:\Users\Public\svc\w.exe -o stratum+tcp://pool.example.invalid:3333',
+        'команда (CommandLineEventConsumer); срабатывает по запросу: SELECT * FROM __InstanceModificationEvent',
+        'C:\Users\Public\svc\w.exe')])), fcMining)];
+
+  // Запуск диспетчера задач перехвачен неизвестной программой.
+  Result := Result + [Scenario('taskmgr_hijack',
+    'Вместо диспетчера задач запускается неизвестная программа (IFEO Debugger)',
+    'kill.exe', True, rlSuspicious, rlHighlySuspicious,
+    WithTamper(BuildSnapshots(Background, 10, False, nil),
+      [Tamper(tpIfeoDebugger, 'taskmgr.exe', 'C:\ProgramData\k\kill.exe', '', 'C:\ProgramData\k\kill.exe')]))];
 
   // ===== Легальная нагрузка (проверка ложных срабатываний) =====
   P := Proc(3001, 'game.exe', 'C:\Program Files (x86)\Steam\steamapps\common\Game\game.exe', sgUnsigned, '', [0, 70]);
@@ -502,6 +545,28 @@ begin
     'OBS Project', [0, 12]);
   P.Gpu := 45;
   P.HasWindow := True;
+  // Process Explorer заменяет диспетчер задач — штатная настройка программы.
+  Result := Result + [Scenario('fp_procexp_replaces_taskmgr',
+    'Process Explorer назначен вместо диспетчера задач (IFEO, настройка самой программы)', 'procexp64.exe',
+    False, rlNone, rlNone, WithTamper(BuildSnapshots(Background, 10, False, nil),
+      [Tamper(tpIfeoDebugger, 'taskmgr.exe', '"C:\Tools\Sysinternals\procexp64.exe" /e', '',
+        'C:\Tools\Sysinternals\procexp64.exe')]))];
+
+  // Разработчик исключил папку проектов из проверки, компиляция идёт там же.
+  P := Proc(3016, 'dcc64.exe', 'C:\Program Files (x86)\Embarcadero\Studio\23.0\bin\dcc64.exe',
+    sgSignedTrusted, 'Embarcadero Technologies Inc', [0, 60]);
+  Result := Result + [Scenario('fp_developer_exclusion',
+    'Папка проектов исключена из проверки Defender, идёт компиляция', 'D:\Projects',
+    False, rlNone, rlLow, WithTamper(BuildSnapshots(Background + [P], 20, False, nil),
+      [Tamper(tpDefenderExclusion, 'D:\Projects', 'D:\Projects', 'путь', 'D:\Projects')]))];
+
+  // Обновления Windows намеренно отключены через hosts.
+  Result := Result + [Scenario('fp_hosts_updates_blocked',
+    'Пользователь отключил обновления Windows через hosts', 'hosts',
+    False, rlNone, rlLow, WithTamper(BuildSnapshots(Background, 10, False, nil),
+      [Tamper(tpHostsRedirect, 'windowsupdate.com', '0.0.0.0', 'windowsupdate.com → 0.0.0.0', ''),
+       Tamper(tpHostsRedirect, 'update.microsoft.com', '0.0.0.0', 'update.microsoft.com → 0.0.0.0', '')]))];
+
   Result := Result + [Scenario('fp_stream_encoding',
     'Запись или трансляция в OBS: кодирование на видеокарте (45%), окно открыто', 'obs64.exe',
     False, rlNone, rlLow, BuildSnapshots(Background + [P], 30, False, nil))];

@@ -28,7 +28,7 @@ uses
   MineHunter.Core.Types, MineHunter.Core.Interfaces, MineHunter.Analysis.Indicators;
 
 const
-  MH_RULESET_VERSION = 'MH-2026.10.2';
+  MH_RULESET_VERSION = 'MH-2026.10.3';
 
   // Коды признаков (стабильны: используются в отчётах и регрессионных тестах).
   EV_LOAD_SUSTAINED = 'LOAD_SUSTAINED';
@@ -169,7 +169,7 @@ implementation
 
 uses
   System.Math, System.StrUtils, System.Hash, System.DateUtils, System.Generics.Defaults,
-  MineHunter.Core.Paths;
+  MineHunter.Core.Paths, MineHunter.Analysis.Tamper;
 
 const
   MINUTE = 1 / MinsPerDay;
@@ -565,6 +565,12 @@ begin
         LSeen.Add(LFinding.Key, True);
         LList.Add(LFinding);
       end;
+    for LFinding in MHAnalyzeTamper(ASnapshot, LSettings.Thresholds,
+      function(const AKey, ASha256: string): Boolean
+      begin
+        Result := IsExcluded(AKey, ASha256);
+      end, GetRulesetVersion) do
+      LList.Add(LFinding);
     AnalyzeSystem(ASnapshot, ABaseline, LSettings, LList);
     // Сначала самые серьёзные; при равенстве — по ключу (детерминированно).
     LList.Sort(TComparer<TMHFinding>.Construct(
@@ -636,6 +642,9 @@ var
   LGpuFirst: TDateTime;
   LGpuCovered, LGpuSustained, LComputeBackground: Boolean;
   LGpuMetric: TMHMetric;
+  LTamperEvidence: TArray<TMHEvidence>;
+  LTamperItem: TMHEvidence;
+  LAvExcluded: Boolean;
 begin
   Result := False;
   AFinding := Default(TMHFinding);
@@ -833,6 +842,18 @@ begin
         LThreatSignal := True;
       end;
       Break;
+    end;
+
+  // --- Признаки вмешательства, связанные с программой ---
+  // Исключение антивируса учитывается только вместе с другими сигналами: иначе
+  // каждая программа в папке проектов разработчика стала бы находкой.
+  LTamperEvidence := MHTamperEvidenceFor(ASnapshot, LPath, AInfo.Name, LAvExcluded);
+  for LTamperItem in LTamperEvidence do
+    if (LTamperItem.Code <> EV_AV_EXCLUDED) or LSustained or LGpuSustained or LComputeBackground or
+       LMinerSignal or LThreatSignal then
+    begin
+      LEvidence := LEvidence + [LTamperItem];
+      LThreatSignal := True;
     end;
 
   // --- Отклонение от нормы этого компьютера ---

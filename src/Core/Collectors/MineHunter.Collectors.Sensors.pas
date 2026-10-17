@@ -34,7 +34,7 @@ type
   end;
 
   IMHSensorApi = interface
-    ['{6F0B7C1E-2E1A-4F57-9A0C-3D5B8E7A1C80}']
+    ['{6F0B7C1E-2E1A-4F57-9A0C-3D5B8E7A1CA0}']
     /// Температуры накопителей; пустой массив и AReason — данных нет.
     function ReadDiskTemperatures(out AReason: string): TArray<TMHTemperatureReading>;
     /// Температуры процессора из LibreHardwareMonitor/OpenHardwareMonitor.

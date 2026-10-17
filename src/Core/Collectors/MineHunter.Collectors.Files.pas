@@ -3,9 +3,9 @@
 {
   Инспектор исполняемых файлов: SHA-256 и цифровая подпись Authenticode.
 
-  Пути берутся из снимка текущего цикла (TMHSnapshot.Processes[].ImagePath и
-  TMHSnapshot.Autostart[].ImagePath), поэтому коллектор регистрируется ПОСЛЕ
-  коллекторов процессов и автозапуска.
+  Пути берутся из снимка текущего цикла (TMHSnapshot.Processes[].ImagePath,
+  TMHSnapshot.Autostart[].ImagePath и TMHSnapshot.Tamper[].ImagePath), поэтому
+  коллектор регистрируется ПОСЛЕ коллекторов процессов, автозапуска и tamper.
 
   Проверка подписи и хеширование дорогие, поэтому:
     - результаты кешируются по пути (без учёта регистра); запись действительна,
@@ -205,6 +205,9 @@ begin
       AddPath(ASnapshot.Processes[I].ImagePath);
     for I := 0 to High(ASnapshot.Autostart) do
       AddPath(ASnapshot.Autostart[I].ImagePath);
+    // Программы, на которые указывают признаки вмешательства (WMI, IFEO и т.п.).
+    for I := 0 to High(ASnapshot.Tamper) do
+      AddPath(ASnapshot.Tamper[I].ImagePath);
     Result := LList.ToArray;
   finally
     LList.Free;

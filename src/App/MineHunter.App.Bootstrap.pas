@@ -122,6 +122,7 @@ uses
   MineHunter.Collectors.Context, MineHunter.Collectors.Context.WinApi,
   MineHunter.Collectors.Gpu, MineHunter.Collectors.Gpu.WinApi,
   MineHunter.Collectors.Sensors, MineHunter.Collectors.Sensors.WinApi,
+  MineHunter.Collectors.Tamper, MineHunter.Collectors.Tamper.WinApi,
   MineHunter.Core.Actions.WinApi;
 
 const
@@ -245,6 +246,16 @@ begin
     begin
       LApi := TMHWinAutostartApi.Create;
       Result := TMHAutostartCollector.Create(LApi, AContainer.Resolve<IMHClock>);
+    end);
+
+  // Признаки вмешательства в защиту; до инспектора файлов (он проверяет их программы).
+  AContainer.RegisterSingleton<IMHCollector>(
+    function: IMHCollector
+    var
+      LApi: IMHTamperApi;
+    begin
+      LApi := TMHWinTamperApi.Create;
+      Result := TMHTamperCollector.Create(LApi, AContainer.Resolve<IMHClock>);
     end);
 
   AContainer.RegisterSingleton<IMHCollector>(
