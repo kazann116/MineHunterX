@@ -5,12 +5,13 @@ interface
 uses
   Winapi.Windows, Winapi.Messages, System.SysUtils, System.Classes, System.Actions,
   Vcl.Graphics, Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.StdCtrls, Vcl.ExtCtrls,
-  Vcl.ComCtrls, Vcl.ActnList,
+  Vcl.ComCtrls, Vcl.ActnList, Vcl.Menus,
   MineHunter.Core.Types, MineHunter.Core.Interfaces, MineHunter.App.Bootstrap,
   MineHunter.App.ProcessView, MineHunter.App.Chart, MineHunter.Storage.SQLite,
   MineHunter.App.FindingsView, MineHunter.Core.Reports, MineHunter.Core.Actions,
   MineHunter.Core.Settings, MineHunter.Analysis.Engine, MineHunter.Analysis.Baseline,
-  MineHunter.App.DashboardView, MineHunter.App.Tiles, MineHunter.Core.Quarantine;
+  MineHunter.App.DashboardView, MineHunter.App.Tiles, MineHunter.Core.Quarantine,
+  MineHunter.App.Notifier;
 
 type
   TMHPage = (pgDashboard, pgProcesses, pgFindings, pgHistory, pgSettings);
@@ -133,6 +134,7 @@ type
     sbMain: TStatusBar;
     procedure FormCreate(Sender: TObject);
     procedure FormDestroy(Sender: TObject);
+    procedure FormCloseQuery(Sender: TObject; var CanClose: Boolean);
     procedure actStartExecute(Sender: TObject);
     procedure actStopExecute(Sender: TObject);
     procedure actNavExecute(Sender: TObject);
@@ -235,6 +237,31 @@ type
     FQuarantineRestore: TButton;
     FQuarantinePurge: TButton;
     FQuarantineItems: TArray<TMHQuarantineItem>;
+    FTray: TTrayIcon;
+    FTrayMenu: TPopupMenu;
+    FNotifier: TMHAlertNotifier;
+    FLastNotice: TMHAlertNotice;
+    FNoticeCount: Integer;
+    FQuitting: Boolean;
+    FHiddenToTray: Boolean;
+    FTrayHintShown: Boolean;
+    FBackgroundBox: TGroupBox;
+    FChkTray: TCheckBox;
+    FChkNotify: TCheckBox;
+    FChkEconomy: TCheckBox;
+    FChkAutostart: TCheckBox;
+    FLblAutostart: TLabel;
+    procedure CreateTray;
+    procedure CreateBackgroundSettings;
+    procedure UpdateTray;
+    procedure UpdateAutostartState;
+    procedure TrayClick(Sender: TObject);
+    procedure TrayBalloonClick(Sender: TObject);
+    procedure TrayOpenClick(Sender: TObject);
+    procedure TrayExitClick(Sender: TObject);
+    procedure BackgroundSettingClick(Sender: TObject);
+    procedure AutostartClick(Sender: TObject);
+    procedure WMSysCommand(var AMessage: TWMSysCommand); message WM_SYSCOMMAND;
     procedure CreateRemediationControls;
     procedure RemediateClick(Sender: TObject);
     function ExecuteRemediationStep(const AStep: TMHRemediationStep; const AReason: string): TMHActionResult;
@@ -317,6 +344,22 @@ type
     /// Восстановить / удалить навсегда выделенный в списке объект карантина.
     procedure RestoreSelectedQuarantine;
     procedure PurgeSelectedQuarantine;
+    /// Убрать окно в область уведомлений (опрос замедляется, если включён экономный режим).
+    procedure HideToTray;
+    /// Показать окно из области уведомлений.
+    procedure ShowFromTray;
+    /// Учитывает находки цикла для уведомлений; True — показано уведомление (LastNotice).
+    function NotifyAlerts(const AFindings: TMHFindings; ANowUtc: TDateTime): Boolean;
+    property LastNotice: TMHAlertNotice read FLastNotice;
+    property NoticeCount: Integer read FNoticeCount;
+    property HiddenToTray: Boolean read FHiddenToTray;
+    property TrayIcon: TTrayIcon read FTray;
+    property TrayCheckBox: TCheckBox read FChkTray;
+    property NotifyCheckBox: TCheckBox read FChkNotify;
+    property EconomyCheckBox: TCheckBox read FChkEconomy;
+    property AutostartCheckBox: TCheckBox read FChkAutostart;
+    /// Выход из программы (а не сворачивание в трей) при закрытии окна.
+    procedure Quit;
     property FindingsModel: TMHFindingsModel read FFindingsModel;
     /// Ключ выбранной находки ('' — не выбрана); запись выбирает находку в списке.
     property SelectedFindingKey: string read FSelectedFindingKey;
@@ -339,9 +382,19 @@ implementation
 uses
   System.Math, System.DateUtils, System.UITypes, System.StrUtils,
   MineHunter.Core.Scanner, MineHunter.App.Display, MineHunter.Collectors.SelfMonitor,
-  MineHunter.Collectors.Processes, MineHunter.Collectors.System, MineHunter.Core.Paths;
+  MineHunter.Collectors.Processes, MineHunter.Collectors.System, MineHunter.Core.Paths,
+  MineHunter.Core.SelfAutostart;
 
 function PercentText(AValue: Double): string; forward;
+
+function CommandLineParams: TArray<string>;
+var
+  I: Integer;
+begin
+  SetLength(Result, ParamCount);
+  for I := 1 to ParamCount do
+    Result[I - 1] := ParamStr(I);
+end;
 
 /// Меняет текст только при изменении: иначе обновление раз в цикл сбрасывало бы
 /// прокрутку, пока пользователь читает объяснение.
@@ -420,6 +473,9 @@ begin
   FConfirm := DefaultConfirm;
   CreateCharts;
   CreateRemediationControls;
+  FNotifier := TMHAlertNotifier.Create(rlSuspicious, 60);
+  CreateTray;
+  CreateBackgroundSettings;
   cbHistoryPeriod.Items.Clear;
   cbHistoryPeriod.Items.Add('1 час');
   cbHistoryPeriod.Items.Add('6 часов');
@@ -506,6 +562,9 @@ begin
   FreeAndNil(FLiveMem);
   FreeAndNil(FLiveDisk);
   FreeAndNil(FLiveGpu);
+  if FTray <> nil then
+    FTray.Visible := False;
+  FreeAndNil(FNotifier);
 end;
 
 function TMainForm.HistoryChart(AIndex: Integer): TMHLineChart;
@@ -1365,6 +1424,8 @@ begin
   HandleSnapshot(ASnapshot);
   RefreshFindingsList;
   UpdateProtection(ASnapshot);
+  NotifyAlerts(AFindings, ASnapshot.TimestampUtc);
+  UpdateTray;
 end;
 
 procedure TMainForm.UpdateProtection(const ASnapshot: TMHSnapshot);
@@ -2335,6 +2396,306 @@ end;
 procedure TMainForm.QuarantinePurgeClick(Sender: TObject);
 begin
   PurgeSelectedQuarantine;
+end;
+
+procedure TMainForm.CreateTray;
+var
+  LItem: TMenuItem;
+begin
+  FTrayMenu := TPopupMenu.Create(Self);
+  LItem := TMenuItem.Create(FTrayMenu);
+  LItem.Caption := 'Открыть MineHunter X';
+  LItem.Default := True;
+  LItem.OnClick := TrayOpenClick;
+  FTrayMenu.Items.Add(LItem);
+  LItem := TMenuItem.Create(FTrayMenu);
+  LItem.Caption := '-';
+  FTrayMenu.Items.Add(LItem);
+  LItem := TMenuItem.Create(FTrayMenu);
+  LItem.Caption := 'Выход';
+  LItem.OnClick := TrayExitClick;
+  FTrayMenu.Items.Add(LItem);
+
+  FTray := TTrayIcon.Create(Self);
+  FTray.Icon.Assign(Application.Icon);
+  FTray.Hint := 'MineHunter X';
+  FTray.PopupMenu := FTrayMenu;
+  FTray.OnClick := TrayClick;
+  FTray.OnDblClick := TrayClick;
+  FTray.OnBalloonClick := TrayBalloonClick;
+  // Значок показывается только в обычной работе приложения: тесты и встраивание
+  // не добавляют значков в область уведомлений пользователя.
+  if FOwnsServices then
+  begin
+    FTray.Visible := FServices.Settings.MinimizeToTray or FServices.Settings.NotifyAlerts;
+    if MHHasMinimizedSwitch(CommandLineParams) then
+    begin
+      // Запуск вместе с Windows: окно не показывается (Application.ShowMainForm = False).
+      FTray.Visible := True;
+      FHiddenToTray := True;
+      FTrayHintShown := True;
+      FServices.EconomyMode := True;
+    end;
+  end;
+end;
+
+procedure TMainForm.CreateBackgroundSettings;
+var
+  LTop: Integer;
+
+  function AddCheck(const ACaption, AHint: string; AChecked: Boolean): TCheckBox;
+  begin
+    Result := TCheckBox.Create(Self);
+    Result.Parent := FBackgroundBox;
+    Result.SetBounds(16, LTop, FBackgroundBox.Width - 32, 19);
+    Result.Caption := ACaption;
+    Result.Hint := AHint;
+    Result.ShowHint := True;
+    Result.Checked := AChecked;
+    Inc(LTop, 26);
+  end;
+
+begin
+  FBackgroundBox := TGroupBox.Create(Self);
+  FBackgroundBox.Parent := sbSettings;
+  FBackgroundBox.SetBounds(gbActionLog.Left, FQuarantineBox.Top + FQuarantineBox.Height + 16,
+    gbActionLog.Width, 160);
+  FBackgroundBox.Caption := 'Работа в фоне и уведомления';
+  LTop := 26;
+  FInitializingSettings := True;
+  try
+    FChkTray := AddCheck('Сворачивать и закрывать в область уведомлений (значок у часов)',
+      'Наблюдение продолжается, пока окно скрыто. Полный выход — «Выход» в меню значка.',
+      FServices.Settings.MinimizeToTray);
+    FChkNotify := AddCheck('Уведомлять о новых тревогах (уровень «подозрительно» и выше)',
+      'Не чаще одного уведомления в минуту; об одной находке — один раз, повторно — если риск вырос.',
+      FServices.Settings.NotifyAlerts);
+    FChkEconomy := AddCheck(Format('Экономный режим: пока окно скрыто, опрос раз в %d с',
+      [TMHAppSettings.EconomyIntervalMs div 1000]),
+      'Снижает нагрузку самого MineHunter X, когда вы не смотрите на окно.',
+      FServices.Settings.EconomyWhenHidden);
+    FChkAutostart := AddCheck('Запускать MineHunter X вместе с Windows (свёрнутым)',
+      'Запись в HKCU\...\CurrentVersion\Run только для текущего пользователя; права администратора не нужны.',
+      False);
+  finally
+    FInitializingSettings := False;
+  end;
+  FChkTray.OnClick := BackgroundSettingClick;
+  FChkNotify.OnClick := BackgroundSettingClick;
+  FChkEconomy.OnClick := BackgroundSettingClick;
+  FChkAutostart.OnClick := AutostartClick;
+  FLblAutostart := TLabel.Create(Self);
+  FLblAutostart.Parent := FBackgroundBox;
+  FLblAutostart.SetBounds(34, LTop - 4, FBackgroundBox.Width - 50, 15);
+  FLblAutostart.AutoSize := False;
+  FLblAutostart.ShowAccelChar := False;
+  FLblAutostart.Font.Color := clGrayText;
+  UpdateAutostartState;
+end;
+
+procedure TMainForm.UpdateAutostartState;
+begin
+  if (FChkAutostart = nil) or (FServices.SelfAutostart = nil) then
+    Exit;
+  FInitializingSettings := True;
+  try
+    case FServices.SelfAutostart.State of
+      sasEnabled:
+        begin
+          FChkAutostart.Checked := True;
+          FLblAutostart.Caption := 'Включено: ' + FServices.SelfAutostart.Command;
+        end;
+      sasStale:
+        begin
+          FChkAutostart.Checked := False;
+          FLblAutostart.Caption := 'Запись автозапуска указывает на другой файл (программу переместили) — ' +
+            'включите заново.';
+        end;
+    else
+      FChkAutostart.Checked := False;
+      FLblAutostart.Caption := 'Выключено.';
+    end;
+  finally
+    FInitializingSettings := False;
+  end;
+end;
+
+procedure TMainForm.BackgroundSettingClick(Sender: TObject);
+var
+  LSettings: TMHAppSettings;
+begin
+  if FInitializingSettings then
+    Exit;
+  LSettings := FServices.Settings;
+  LSettings.MinimizeToTray := FChkTray.Checked;
+  LSettings.NotifyAlerts := FChkNotify.Checked;
+  LSettings.EconomyWhenHidden := FChkEconomy.Checked;
+  ChangeSettings(LSettings);
+  if FOwnsServices and (FTray <> nil) then
+    FTray.Visible := FHiddenToTray or LSettings.MinimizeToTray or LSettings.NotifyAlerts;
+end;
+
+procedure TMainForm.AutostartClick(Sender: TObject);
+var
+  LError: string;
+  LEnable: Boolean;
+  LRecord: TMHActionRecord;
+begin
+  if FInitializingSettings or (FServices.SelfAutostart = nil) then
+    Exit;
+  LEnable := FChkAutostart.Checked;
+  LRecord.TimestampUtc := FServices.Clock.NowUtc;
+  if LEnable then
+    LRecord.Action := 'self-autostart-on'
+  else
+    LRecord.Action := 'self-autostart-off';
+  LRecord.Target := FServices.SelfAutostart.Command;
+  LRecord.Success := FServices.SelfAutostart.SetEnabled(LEnable, LError);
+  if LRecord.Success then
+    LRecord.Result := 'Готово'
+  else
+    LRecord.Result := 'Не удалось изменить автозапуск: ' + LError;
+  if FServices.ActionLog <> nil then
+    try
+      FServices.ActionLog.LogAction(LRecord);
+    except
+      on E: Exception do
+        FServices.Logger.Log(llWarning, 'actions', 'Журнал действий недоступен: ' + E.Message);
+    end;
+  if not LRecord.Success then
+    FServices.Logger.Log(llWarning, 'app', LRecord.Result);
+  UpdateAutostartState;
+  if not LRecord.Success then
+    FLblAutostart.Caption := LRecord.Result;
+  RefreshActionLog;
+end;
+
+function TMainForm.NotifyAlerts(const AFindings: TMHFindings; ANowUtc: TDateTime): Boolean;
+var
+  LNotice: TMHAlertNotice;
+begin
+  Result := False;
+  if (FNotifier = nil) or not FServices.Settings.NotifyAlerts then
+    Exit;
+  if not FNotifier.Process(AFindings, ANowUtc, LNotice) then
+    Exit;
+  FLastNotice := LNotice;
+  Inc(FNoticeCount);
+  Result := True;
+  // Пока окно открыто и активно, тревога и так видна на «Обзоре».
+  if (FTray <> nil) and FTray.Visible and (FHiddenToTray or not Application.Active) then
+  begin
+    FTray.BalloonTitle := LNotice.Title;
+    FTray.BalloonHint := LNotice.Text;
+    if LNotice.Level >= rlHighlySuspicious then
+      FTray.BalloonFlags := bfError
+    else
+      FTray.BalloonFlags := bfWarning;
+    FTray.ShowBalloonHint;
+  end;
+end;
+
+procedure TMainForm.UpdateTray;
+var
+  LAlerts: Integer;
+begin
+  if FTray = nil then
+    Exit;
+  LAlerts := FFindingsModel.ActiveAlertCount(rlNeedsReview);
+  if LAlerts > 0 then
+    FTray.Hint := Format('MineHunter X — требуют проверки: %d', [LAlerts])
+  else if FServices.Scanner.IsRunning then
+    FTray.Hint := 'MineHunter X — угроз не обнаружено'
+  else
+    FTray.Hint := 'MineHunter X — наблюдение остановлено';
+end;
+
+procedure TMainForm.HideToTray;
+begin
+  FHiddenToTray := True;
+  FServices.EconomyMode := True;
+  if FOwnsServices then
+  begin
+    FTray.Visible := True;
+    Hide;
+    if not FTrayHintShown then
+    begin
+      FTrayHintShown := True;
+      FTray.BalloonTitle := 'MineHunter X работает в фоне';
+      FTray.BalloonHint := 'Наблюдение продолжается. Откройте окно щелчком по значку; выход — в меню значка.';
+      FTray.BalloonFlags := bfInfo;
+      FTray.ShowBalloonHint;
+    end;
+  end;
+end;
+
+procedure TMainForm.ShowFromTray;
+begin
+  FHiddenToTray := False;
+  FServices.EconomyMode := False;
+  if FOwnsServices then
+  begin
+    FTray.Visible := FServices.Settings.MinimizeToTray or FServices.Settings.NotifyAlerts;
+    Show;
+    if WindowState = wsMinimized then
+      WindowState := wsNormal;
+    Application.Restore;
+    Application.BringToFront;
+    SetForegroundWindow(Handle);
+  end;
+end;
+
+procedure TMainForm.Quit;
+begin
+  FQuitting := True;
+  Close;
+end;
+
+procedure TMainForm.TrayClick(Sender: TObject);
+begin
+  ShowFromTray;
+end;
+
+procedure TMainForm.TrayBalloonClick(Sender: TObject);
+begin
+  ShowFromTray;
+  if FLastNotice.FindingKey <> '' then
+  begin
+    NavigateTo(pgFindings);
+    SelectFinding(FLastNotice.FindingKey);
+  end;
+end;
+
+procedure TMainForm.TrayOpenClick(Sender: TObject);
+begin
+  ShowFromTray;
+end;
+
+procedure TMainForm.TrayExitClick(Sender: TObject);
+begin
+  Quit;
+end;
+
+procedure TMainForm.WMSysCommand(var AMessage: TWMSysCommand);
+begin
+  if ((AMessage.CmdType and $FFF0) = SC_MINIMIZE) and FOwnsServices and FServices.Settings.MinimizeToTray then
+  begin
+    HideToTray;
+    AMessage.Result := 0;
+  end
+  else
+    inherited;
+end;
+
+procedure TMainForm.FormCloseQuery(Sender: TObject; var CanClose: Boolean);
+begin
+  // Крестик окна при включённой настройке убирает программу в трей; выход — из меню значка.
+  if not FQuitting and FOwnsServices and FServices.Settings.MinimizeToTray and
+     not Application.Terminated then
+  begin
+    CanClose := False;
+    HideToTray;
+  end;
 end;
 
 procedure TMainForm.RefreshActionLog;

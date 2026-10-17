@@ -542,6 +542,7 @@ var
   LInfo: TMHProcessInfo;
   LEntry: TMHAutostartEntry;
   LFinding: TMHFinding;
+  LSelfImage: string;
 begin
   LSettings := Settings;
   UpdateHistory(ASnapshot, LSettings, LMonitorAppeared);
@@ -549,8 +550,11 @@ begin
   LList := TList<TMHFinding>.Create;
   LSeen := TDictionary<string, Boolean>.Create;
   try
+    LSelfImage := '';
     for LInfo in ASnapshot.Processes do
     begin
+      if LInfo.Id.Pid = FSelfPid then
+        LSelfImage := LInfo.ImagePath;
       if (LInfo.Id.Pid = FSelfPid) or LSeen.ContainsKey(StateKey(LInfo)) then
         Continue;
       LSeen.Add(StateKey(LInfo), True);
@@ -559,7 +563,10 @@ begin
     end;
     LSeen.Clear;
     for LEntry in ASnapshot.Autostart do
-      if AnalyzeAutostart(ASnapshot, LEntry, LSettings, LFinding) and
+      // Собственный автозапуск MineHunter X (включается пользователем в настройках).
+      if (LSelfImage <> '') and SameText(LEntry.ImagePath, LSelfImage) then
+        Continue
+      else if AnalyzeAutostart(ASnapshot, LEntry, LSettings, LFinding) and
          not LSeen.ContainsKey(LFinding.Key) then
       begin
         LSeen.Add(LFinding.Key, True);

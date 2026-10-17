@@ -59,12 +59,13 @@ type
     [Test] procedure Settings_AnalysisAreAppliedAndPersisted;
     [Test] procedure History_ComparisonWithBaseline;
     [Test] procedure Findings_Remediate_QuarantineAndRestore;
+    [Test] procedure Background_TrayEconomyNotifyAndAutostart;
   end;
 
 implementation
 
 uses
-  System.SysUtils, System.Classes, System.Diagnostics, Winapi.Windows,
+  System.SysUtils, System.Classes, System.Diagnostics, Winapi.Windows, System.DateUtils,
   MineHunter.Core.Types, MineHunter.Core.Interfaces, MineHunter.Core.Container,
   MineHunter.Core.Logging, MineHunter.Core.Scanner, MineHunter.App.Display,
   System.IOUtils, System.JSON, MineHunter.App.ProcessView, MineHunter.App.FindingsView,
@@ -72,13 +73,15 @@ uses
   MineHunter.Collectors.SelfMonitor, MineHunter.Collectors.System, MineHunter.Storage.SQLite,
   MineHunter.Collectors.Gpu, MineHunter.Collectors.Sensors, MineHunter.Tests.GpuSensors,
   MineHunter.App.DashboardView, MineHunter.Core.Actions, MineHunter.Core.Quarantine,
-  MineHunter.Tests.Quarantine, MineHunter.Tests.SettingsReports,
+  MineHunter.Tests.Quarantine, MineHunter.Tests.SettingsReports, MineHunter.Tests.Background,
+  MineHunter.Core.SelfAutostart,
   MineHunter.Tests.Fakes;
 
 var
   // Подмена операций ОС для тестов действий (nil — настоящие операции).
   GTestQuarantineOps: IMHQuarantineOps;
   GTestSystemOps: IMHSystemOps;
+  GTestRunKeyOps: IMHRunKeyOps;
 
 function NewTempDir: string;
 begin
@@ -136,6 +139,8 @@ begin
     LContainer.RegisterInstance<IMHQuarantineOps>(GTestQuarantineOps);
   if GTestSystemOps <> nil then
     LContainer.RegisterInstance<IMHSystemOps>(GTestSystemOps);
+  if GTestRunKeyOps <> nil then
+    LContainer.RegisterInstance<IMHRunKeyOps>(GTestRunKeyOps);
   LContainer.RegisterSingleton<IMHRepository>(
     function: IMHRepository
     begin
@@ -874,6 +879,80 @@ begin
   finally
     GTestQuarantineOps := nil;
     GTestSystemOps := nil;
+    CheckSynchronize(0);
+  end;
+end;
+
+procedure TMainFormSmokeTests.Background_TrayEconomyNotifyAndAutostart;
+var
+  LServices: TMHAppServices;
+  LForm: TMainForm;
+  LProc: TFakeProcessApi;
+  LSys: TFakeSystemMetricsApi;
+  LRun: TFakeRunKeyOps;
+  LFinding: TMHFinding;
+  LNormal: Cardinal;
+begin
+  LRun := TFakeRunKeyOps.Create;
+  GTestRunKeyOps := LRun;
+  try
+    LServices := NewTestServices(LProc, LSys, TPath.Combine(FTempDir, 'background.db'));
+    try
+      LForm := TMainForm.CreateWithServices(nil, LServices);
+      try
+        Assert.IsNotNull(LForm.TrayIcon);
+        Assert.IsFalse(LForm.TrayIcon.Visible, 'Тесты не добавляют значок в область уведомлений');
+        Assert.IsTrue(LForm.TrayCheckBox.Checked);
+        Assert.IsTrue(LForm.NotifyCheckBox.Checked);
+        Assert.IsTrue(LForm.EconomyCheckBox.Checked);
+        Assert.IsFalse(LForm.AutostartCheckBox.Checked);
+
+        // Экономный режим: скрытое окно опрашивает реже, открытое — как в настройках.
+        LNormal := LServices.Settings.IntervalMs;
+        LForm.HideToTray;
+        Assert.IsTrue(LForm.HiddenToTray);
+        Assert.AreEqual(TMHAppSettings.EconomyIntervalMs, LServices.Scanner.Options.IntervalMs);
+        LForm.ShowFromTray;
+        Assert.AreEqual(LNormal, LServices.Scanner.Options.IntervalMs);
+        LForm.EconomyCheckBox.Checked := False; // OnClick сохраняет настройку
+        Assert.IsFalse(LServices.Settings.EconomyWhenHidden);
+        LForm.HideToTray;
+        Assert.AreEqual(LNormal, LServices.Scanner.Options.IntervalMs, 'Экономный режим выключен');
+        LForm.ShowFromTray;
+
+        // Уведомления о новых тревогах.
+        LFinding := Default(TMHFinding);
+        LFinding.Key := 'notify:test';
+        LFinding.Title := 'Скрытый майнер';
+        LFinding.Level := rlHighlySuspicious;
+        LFinding.Score := 95;
+        Assert.IsTrue(LForm.NotifyAlerts([LFinding], Now));
+        Assert.AreEqual(1, LForm.NoticeCount);
+        Assert.AreEqual('notify:test', LForm.LastNotice.FindingKey);
+        Assert.IsFalse(LForm.NotifyAlerts([LFinding], Now), 'Повтор не уведомляет');
+        LForm.NotifyCheckBox.Checked := False;
+        Assert.IsFalse(LServices.Settings.NotifyAlerts);
+        LFinding.Key := 'notify:other';
+        Assert.IsFalse(LForm.NotifyAlerts([LFinding], IncMinute(Now, 5)), 'Уведомления выключены');
+
+        // Автозапуск самого MineHunter X — запись в ветке Run и журнал действий.
+        LForm.AutostartCheckBox.Checked := True;
+        Assert.IsTrue(LRun.Values.ContainsKey(TMHSelfAutostart.ValueName));
+        Assert.IsTrue(LRun.Values[TMHSelfAutostart.ValueName].EndsWith('--minimized'));
+        Assert.AreEqual('self-autostart-on', LServices.ActionLog.LoadActions(1)[0].Action);
+        LForm.AutostartCheckBox.Checked := False;
+        Assert.IsFalse(LRun.Values.ContainsKey(TMHSelfAutostart.ValueName));
+        LRun.WriteFails := True;
+        LForm.AutostartCheckBox.Checked := True;
+        Assert.IsFalse(LForm.AutostartCheckBox.Checked, 'Флажок отражает фактическое состояние');
+      finally
+        LForm.Free;
+      end;
+    finally
+      LServices.Free;
+    end;
+  finally
+    GTestRunKeyOps := nil;
     CheckSynchronize(0);
   end;
 end;

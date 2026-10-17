@@ -20,6 +20,9 @@ uses
   MineHunter.Analysis.Tamper in '..\Core\MineHunter.Analysis.Tamper.pas',
   MineHunter.Core.Quarantine in '..\Core\MineHunter.Core.Quarantine.pas',
   MineHunter.Core.Quarantine.WinApi in '..\Core\MineHunter.Core.Quarantine.WinApi.pas',
+  MineHunter.Core.SelfAutostart in '..\Core\MineHunter.Core.SelfAutostart.pas',
+  MineHunter.Core.SelfAutostart.WinApi in '..\Core\MineHunter.Core.SelfAutostart.WinApi.pas',
+  MineHunter.App.Notifier in 'MineHunter.App.Notifier.pas',
   MineHunter.Collectors.Gpu in '..\Core\Collectors\MineHunter.Collectors.Gpu.pas',
   MineHunter.Collectors.Gpu.WinApi in '..\Core\Collectors\MineHunter.Collectors.Gpu.WinApi.pas',
   MineHunter.Collectors.Sensors in '..\Core\Collectors\MineHunter.Collectors.Sensors.pas',
@@ -52,6 +55,15 @@ uses
 
 {$R 'MineHunter.App.Resources.res' 'MineHunter.App.Resources.rc'}
 
+function LaunchParams: TArray<string>;
+var
+  I: Integer;
+begin
+  SetLength(Result, ParamCount);
+  for I := 1 to ParamCount do
+    Result[I - 1] := ParamStr(I);
+end;
+
 begin
   {$IFDEF DEBUG}
   ReportMemoryLeaksOnShutdown := True;
@@ -59,6 +71,8 @@ begin
   Application.Initialize;
   Application.MainFormOnTaskbar := True;
   Application.Title := 'MineHunter X';
+  // Автозапуск с Windows (--minimized): окно не показывается, значок — в области уведомлений.
+  Application.ShowMainForm := not MHHasMinimizedSwitch(LaunchParams);
   Application.CreateForm(TMainForm, MainForm);
   Application.Run;
 end.

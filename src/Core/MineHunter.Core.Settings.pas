@@ -30,6 +30,11 @@ type
   /// Ошибка атомарной записи текстового файла (MHWriteTextFileAtomic).
   EMHFileWriteError = class(EMHError);
 
+  /// Язык интерфейса.
+  TMHUiLanguage = (ulRussian, ulEnglish);
+  /// Цветовая тема интерфейса.
+  TMHUiTheme = (utLight, utDark);
+
   TMHAppSettings = record
   public const
     MinRetentionDays = 1;
@@ -38,6 +43,10 @@ type
     MaxDatabaseSizeMB = 102400;
     MinLearningDays = 1;
     MaxLearningDays = 90;
+    MaxElectricityPrice = 1000.0;
+    DefaultElectricityPrice = 6.0;
+    /// Интервал опроса, пока окно скрыто (экономный режим), мс.
+    EconomyIntervalMs = 30000;
   public
     /// Интервал опроса, мс (TMHScannerOptions.MinIntervalMs..MaxIntervalMs).
     IntervalMs: Cardinal;
@@ -55,6 +64,18 @@ type
     Exclusions: TArray<TMHExclusion>;
     /// Скрывать в отчётах имя пользователя, компьютера и путь профиля.
     RedactPathsInReports: Boolean;
+    /// Закрытие и сворачивание окна убирают MineHunter X в область уведомлений.
+    MinimizeToTray: Boolean;
+    /// Всплывающие уведомления о новых тревогах (уровень «подозрительно» и выше).
+    NotifyAlerts: Boolean;
+    /// Пока окно скрыто, опрос не чаще одного раза в TMHAppSettings.EconomyIntervalMs.
+    EconomyWhenHidden: Boolean;
+    /// Цена электроэнергии за кВт·ч (в рублях) для оценки стоимости нагрузки.
+    ElectricityPrice: Double;
+    /// Проверять новые версии на GitHub (по умолчанию выключено: без запросов в интернет).
+    CheckForUpdates: Boolean;
+    Language: TMHUiLanguage;
+    Theme: TMHUiTheme;
     class function Default: TMHAppSettings; static;
     /// Копия с приведёнными к допустимым диапазонам значениями; исключения
     /// с пустым ключом или некорректным SHA-256 отбрасываются, повторы
@@ -167,6 +188,13 @@ begin
   Result.LearningDays := 3;
   Result.Exclusions := nil;
   Result.RedactPathsInReports := True;
+  Result.MinimizeToTray := True;
+  Result.NotifyAlerts := True;
+  Result.EconomyWhenHidden := True;
+  Result.ElectricityPrice := DefaultElectricityPrice;
+  Result.CheckForUpdates := False;
+  Result.Language := ulRussian;
+  Result.Theme := utLight;
 end;
 
 function TMHAppSettings.Normalized: TMHAppSettings;
@@ -183,6 +211,14 @@ begin
   Result.MaxDatabaseMB := EnsureRange(MaxDatabaseMB, MinDatabaseSizeMB, MaxDatabaseSizeMB);
   Result.Analyzer := Analyzer.Normalized;
   Result.LearningDays := EnsureRange(LearningDays, MinLearningDays, MaxLearningDays);
+  if IsNan(ElectricityPrice) or IsInfinite(ElectricityPrice) or (ElectricityPrice < 0) then
+    Result.ElectricityPrice := DefaultElectricityPrice
+  else
+    Result.ElectricityPrice := Min(ElectricityPrice, MaxElectricityPrice);
+  if not (Language in [Low(TMHUiLanguage)..High(TMHUiLanguage)]) then
+    Result.Language := ulRussian;
+  if not (Theme in [Low(TMHUiTheme)..High(TMHUiTheme)]) then
+    Result.Theme := utLight;
 
   LList := nil;
   for LItem in Exclusions do
@@ -316,6 +352,10 @@ begin
     Result := TJSONString.Create(DateToISO8601(AUtc, True));
 end;
 
+const
+  LANGUAGE_CODES: array[TMHUiLanguage] of string = ('ru', 'en');
+  THEME_CODES: array[TMHUiTheme] of string = ('light', 'dark');
+
 function MHSettingsToJson(const ASettings: TMHAppSettings): string;
 var
   LRoot, LAnalyzer, LThresholds, LItem: TJSONObject;
@@ -332,6 +372,13 @@ begin
     LRoot.AddPair('storeProcessPaths', TJSONBool.Create(ASettings.StoreProcessPaths));
     LRoot.AddPair('learningDays', TJSONNumber.Create(ASettings.LearningDays));
     LRoot.AddPair('redactPathsInReports', TJSONBool.Create(ASettings.RedactPathsInReports));
+    LRoot.AddPair('minimizeToTray', TJSONBool.Create(ASettings.MinimizeToTray));
+    LRoot.AddPair('notifyAlerts', TJSONBool.Create(ASettings.NotifyAlerts));
+    LRoot.AddPair('economyWhenHidden', TJSONBool.Create(ASettings.EconomyWhenHidden));
+    LRoot.AddPair('electricityPrice', TJSONNumber.Create(ASettings.ElectricityPrice));
+    LRoot.AddPair('checkForUpdates', TJSONBool.Create(ASettings.CheckForUpdates));
+    LRoot.AddPair('language', LANGUAGE_CODES[ASettings.Language]);
+    LRoot.AddPair('theme', THEME_CODES[ASettings.Theme]);
 
     LAnalyzer := TJSONObject.Create;
     LRoot.AddPair('analyzer', LAnalyzer);
@@ -398,6 +445,15 @@ begin
     Result.LearningDays := ReadInt(LRoot, 'learningDays', LDefaults.LearningDays);
     Result.RedactPathsInReports := ReadBool(LRoot, 'redactPathsInReports',
       LDefaults.RedactPathsInReports);
+    Result.MinimizeToTray := ReadBool(LRoot, 'minimizeToTray', LDefaults.MinimizeToTray);
+    Result.NotifyAlerts := ReadBool(LRoot, 'notifyAlerts', LDefaults.NotifyAlerts);
+    Result.EconomyWhenHidden := ReadBool(LRoot, 'economyWhenHidden', LDefaults.EconomyWhenHidden);
+    Result.ElectricityPrice := ReadDouble(LRoot, 'electricityPrice', LDefaults.ElectricityPrice);
+    Result.CheckForUpdates := ReadBool(LRoot, 'checkForUpdates', LDefaults.CheckForUpdates);
+    if SameText(ReadString(LRoot, 'language'), LANGUAGE_CODES[ulEnglish]) then
+      Result.Language := ulEnglish;
+    if SameText(ReadString(LRoot, 'theme'), THEME_CODES[utDark]) then
+      Result.Theme := utDark;
 
     LValue := LRoot.GetValue('analyzer');
     if LValue is TJSONObject then

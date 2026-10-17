@@ -17,7 +17,7 @@ uses
   MineHunter.Core.Types, MineHunter.Core.Interfaces, MineHunter.Core.Container,
   MineHunter.Core.Scanner, MineHunter.Storage.SQLite, MineHunter.Analysis.Engine,
   MineHunter.Analysis.Baseline, MineHunter.Core.Settings, MineHunter.Core.Actions,
-  MineHunter.Core.Quarantine;
+  MineHunter.Core.Quarantine, MineHunter.Core.SelfAutostart;
 
 type
   /// Периодически перестраивает профили нормы в фоновом потоке.
@@ -64,6 +64,10 @@ type
     FSettingsLoadedOk: Boolean;
     FActions: TMHSafeActions;
     FQuarantine: TMHQuarantine;
+    FSelfAutostart: TMHSelfAutostart;
+    FEconomyMode: Boolean;
+    procedure SetEconomyMode(AValue: Boolean);
+    procedure ApplyScanInterval;
   public
     /// Путь базы истории для стандартной конфигурации ('' — MHDefaultHistoryPath).
     /// Позволяет тестам не трогать историю пользователя.
@@ -111,6 +115,13 @@ type
     property Actions: TMHSafeActions read FActions;
     /// Карантин и откат исправлений (хранилище — рядом с базой истории).
     property Quarantine: TMHQuarantine read FQuarantine;
+    /// Автозапуск MineHunter X вместе с Windows (ветка Run текущего пользователя).
+    property SelfAutostart: TMHSelfAutostart read FSelfAutostart;
+    /// Окно скрыто: при включённой настройке EconomyWhenHidden опрос замедляется
+    /// до TMHAppSettings.EconomyIntervalMs (если обычный интервал короче).
+    property EconomyMode: Boolean read FEconomyMode write SetEconomyMode;
+    /// Интервал опроса с учётом экономного режима, мс.
+    function EffectiveIntervalMs: Cardinal;
   end;
 
 implementation
@@ -127,7 +138,8 @@ uses
   MineHunter.Collectors.Gpu, MineHunter.Collectors.Gpu.WinApi,
   MineHunter.Collectors.Sensors, MineHunter.Collectors.Sensors.WinApi,
   MineHunter.Collectors.Tamper, MineHunter.Collectors.Tamper.WinApi,
-  MineHunter.Core.Actions.WinApi, MineHunter.Core.Quarantine.WinApi, System.IOUtils;
+  MineHunter.Core.Actions.WinApi, MineHunter.Core.Quarantine.WinApi, System.IOUtils,
+  MineHunter.Core.SelfAutostart.WinApi;
 
 const
   BASELINE_FIRST_DELAY_MS = 60 * 1000;
@@ -340,6 +352,7 @@ var
   LQuarantineDir: string;
   LQuarantineOps: IMHQuarantineOps;
   LSystemOps: IMHSystemOps;
+  LRunKeyOps: IMHRunKeyOps;
 begin
   inherited Create;
   if AContainer = nil then
@@ -406,6 +419,9 @@ begin
     LQuarantineOps := TMHWinQuarantineOps.Create;
   FQuarantine := TMHQuarantine.Create(LQuarantineOps, FActionLog, FClock,
     TPath.Combine(ExtractFileDir(LQuarantineDir), 'Quarantine'));
+  if not FContainer.TryResolve<IMHRunKeyOps>(LRunKeyOps) then
+    LRunKeyOps := TMHWinRunKeyOps.Create;
+  FSelfAutostart := TMHSelfAutostart.Create(LRunKeyOps, ParamStr(0));
 
   // Настройки: повреждённый файл заменяется значениями по умолчанию (с копией .bad).
   FSettings := TMHAppSettings.Default;
@@ -421,15 +437,43 @@ begin
   ApplySettings(FSettings);
 end;
 
-procedure TMHAppServices.ApplySettings(const ASettings: TMHAppSettings);
+function TMHAppServices.EffectiveIntervalMs: Cardinal;
+begin
+  Result := FSettings.IntervalMs;
+  if FEconomyMode and FSettings.EconomyWhenHidden and (Result < TMHAppSettings.EconomyIntervalMs) then
+    Result := TMHAppSettings.EconomyIntervalMs;
+end;
+
+procedure TMHAppServices.ApplyScanInterval;
 var
   LOptions: TMHScannerOptions;
+begin
+  LOptions := FScanner.Options;
+  if LOptions.IntervalMs <> EffectiveIntervalMs then
+  begin
+    LOptions.IntervalMs := EffectiveIntervalMs;
+    FScanner.Options := LOptions;
+  end;
+end;
+
+procedure TMHAppServices.SetEconomyMode(AValue: Boolean);
+begin
+  if FEconomyMode = AValue then
+    Exit;
+  FEconomyMode := AValue;
+  ApplyScanInterval;
+  if AValue then
+    FLogger.Log(llInfo, 'app', Format('Окно скрыто: интервал опроса %d с', [EffectiveIntervalMs div 1000]))
+  else
+    FLogger.Log(llInfo, 'app', Format('Окно открыто: интервал опроса %d с', [EffectiveIntervalMs div 1000]));
+end;
+
+procedure TMHAppServices.ApplySettings(const ASettings: TMHAppSettings);
+var
   LStorage: TMHStorageOptions;
 begin
   FSettings := ASettings.Normalized;
-  LOptions := FScanner.Options;
-  LOptions.IntervalMs := FSettings.IntervalMs;
-  FScanner.Options := LOptions;
+  ApplyScanInterval;
   if FStorage <> nil then
   begin
     LStorage := FStorage.Options;
@@ -470,6 +514,7 @@ begin
   // Сначала фоновые потоки: они используют сервисы контейнера.
   FreeAndNil(FScheduler);
   FScanner.Free;
+  FreeAndNil(FSelfAutostart);
   FreeAndNil(FQuarantine);
   FreeAndNil(FActions);
   FreeAndNil(FSettingsStore);
