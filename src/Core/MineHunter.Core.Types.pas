@@ -289,6 +289,27 @@ type
       ACelsius, ALimitCelsius: Double): TMHSensorReading; static;
   end;
 
+  /// Сводка запусков одной программы за окно наблюдения (события запуска и
+  /// завершения процессов ETW). Позволяет увидеть программы, которые живут
+  /// меньше интервала опроса и поэтому не попадают в список процессов.
+  TMHLaunchStat = record
+  public
+    ImagePath: string;
+    Name: string;
+    /// Запусков за окно.
+    Starts: Integer;
+    /// Из них завершились быстрее ShortLivedSeconds.
+    ShortLived: Integer;
+    /// Завершившихся за окно (для средней продолжительности).
+    Exited: Integer;
+    AverageLifetimeSeconds: Double;
+    LastParentPid: Cardinal;
+    LastParentName: string;
+    LastStartUtc: TDateTime;
+    WindowMinutes: Integer;
+    ShortLivedSeconds: Integer;
+  end;
+
   /// Контекст работы пользователя на момент снимка.
   TMHContextInfo = record
   public
@@ -465,6 +486,8 @@ type
     Sensors: TArray<TMHSensorReading>;
     /// Признаки вмешательства в защиту системы.
     Tamper: TArray<TMHTamperEntry>;
+    /// Сводка запусков программ (ETW; пусто без прав администратора).
+    Launches: TArray<TMHLaunchStat>;
     class function Create(ASequence: UInt64;
       ATimestampUtc: TDateTime): TMHSnapshot; static;
     function FindProcess(const AId: TMHProcessId; out AInfo: TMHProcessInfo): Boolean;
@@ -488,6 +511,7 @@ type
     ProcessDetails: TArray<TMHProcessDetail>;
     Sensors: TArray<TMHSensorReading>;
     Tamper: TArray<TMHTamperEntry>;
+    Launches: TArray<TMHLaunchStat>;
     /// Контекст передаётся, только если HasContext = True.
     HasContext: Boolean;
     Context: TMHContextInfo;

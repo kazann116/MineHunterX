@@ -139,7 +139,8 @@ uses
   MineHunter.Collectors.Sensors, MineHunter.Collectors.Sensors.WinApi,
   MineHunter.Collectors.Tamper, MineHunter.Collectors.Tamper.WinApi,
   MineHunter.Core.Actions.WinApi, MineHunter.Core.Quarantine.WinApi, System.IOUtils,
-  MineHunter.Core.SelfAutostart.WinApi;
+  MineHunter.Core.SelfAutostart.WinApi, MineHunter.Collectors.ProcessEvents,
+  MineHunter.Collectors.ProcessEvents.WinApi;
 
 const
   BASELINE_FIRST_DELAY_MS = 60 * 1000;
@@ -234,6 +235,15 @@ begin
     begin
       LApi := TMHWinProcessApi.Create;
       Result := TMHProcessCollector.Create(LApi, AContainer.Resolve<IMHClock>);
+    end);
+
+  // События запуска процессов (ETW, нужны права администратора): программы, которые
+  // живут меньше интервала опроса. После процессов — для имён родителей.
+  AContainer.RegisterSingleton<IMHCollector>(
+    function: IMHCollector
+    begin
+      Result := TMHProcessEventCollector.Create(TMHEtwProcessSource.Create as IMHProcessEventSource,
+        AContainer.Resolve<IMHClock>);
     end);
 
   // После процессов: сопоставляет счётчики GPU с процессами снимка по PID.

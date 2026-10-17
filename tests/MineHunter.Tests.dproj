@@ -97,6 +97,10 @@
         <DCCReference Include="..\src\Core\MineHunter.Core.Energy.pas"/>
         <DCCReference Include="..\src\Core\MineHunter.Core.Inventory.pas"/>
         <DCCReference Include="..\src\Core\MineHunter.Core.CheckReport.pas"/>
+        <DCCReference Include="..\src\Core\MineHunter.Analysis.Launches.pas"/>
+        <DCCReference Include="..\src\Core\Collectors\MineHunter.Collectors.ProcessEvents.pas"/>
+        <DCCReference Include="..\src\Core\Collectors\MineHunter.Collectors.ProcessEvents.WinApi.pas"/>
+        <DCCReference Include="Unit\MineHunter.Tests.ProcessEvents.pas"/>
         <DCCReference Include="Unit\MineHunter.Tests.Insights.pas"/>
         <DCCReference Include="..\src\Core\MineHunter.Core.SelfAutostart.WinApi.pas"/>
         <DCCReference Include="..\src\App\MineHunter.App.Notifier.pas"/>

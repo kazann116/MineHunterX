@@ -433,6 +433,8 @@ begin
     ASnapshot.Sensors := ASnapshot.Sensors + AResult.Sensors;
   if Length(AResult.Tamper) > 0 then
     ASnapshot.Tamper := ASnapshot.Tamper + AResult.Tamper;
+  if Length(AResult.Launches) > 0 then
+    ASnapshot.Launches := ASnapshot.Launches + AResult.Launches;
   // Контекст — от первого источника, который его передал.
   if AResult.HasContext and not ASnapshot.Context.Available then
   begin

@@ -28,7 +28,7 @@ uses
   MineHunter.Core.Types, MineHunter.Core.Interfaces, MineHunter.Analysis.Indicators;
 
 const
-  MH_RULESET_VERSION = 'MH-2026.10.3';
+  MH_RULESET_VERSION = 'MH-2026.10.4';
 
   // Коды признаков (стабильны: используются в отчётах и регрессионных тестах).
   EV_LOAD_SUSTAINED = 'LOAD_SUSTAINED';
@@ -169,7 +169,7 @@ implementation
 
 uses
   System.Math, System.StrUtils, System.Hash, System.DateUtils, System.Generics.Defaults,
-  MineHunter.Core.Paths, MineHunter.Analysis.Tamper;
+  MineHunter.Core.Paths, MineHunter.Analysis.Tamper, MineHunter.Analysis.Launches;
 
 const
   MINUTE = 1 / MinsPerDay;
@@ -573,6 +573,12 @@ begin
         LList.Add(LFinding);
       end;
     for LFinding in MHAnalyzeTamper(ASnapshot, LSettings.Thresholds,
+      function(const AKey, ASha256: string): Boolean
+      begin
+        Result := IsExcluded(AKey, ASha256);
+      end, GetRulesetVersion) do
+      LList.Add(LFinding);
+    for LFinding in MHAnalyzeLaunches(ASnapshot, LSettings.Thresholds,
       function(const AKey, ASha256: string): Boolean
       begin
         Result := IsExcluded(AKey, ASha256);

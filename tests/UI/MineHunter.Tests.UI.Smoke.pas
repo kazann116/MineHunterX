@@ -296,19 +296,20 @@ begin
     Assert.IsNotNull(LForm.Services);
     LForm.Services.Scanner.ScanOnce;
     Assert.AreEqual(1, LForm.SnapshotCount);
-    Assert.AreEqual(11, LForm.lvSources.Items.Count);
+    Assert.AreEqual(12, LForm.lvSources.Items.Count);
     Assert.AreEqual('system', LForm.lvSources.Items[0].Caption);
     Assert.AreEqual('processes', LForm.lvSources.Items[1].Caption);
-    Assert.AreEqual('gpu', LForm.lvSources.Items[2].Caption);
-    Assert.AreEqual('sensors', LForm.lvSources.Items[3].Caption);
-    Assert.AreEqual('autostart', LForm.lvSources.Items[4].Caption);
-    Assert.AreEqual('tamper', LForm.lvSources.Items[5].Caption);
-    Assert.AreEqual('network', LForm.lvSources.Items[6].Caption);
-    Assert.AreEqual('files', LForm.lvSources.Items[7].Caption);
-    Assert.AreEqual('context', LForm.lvSources.Items[8].Caption);
-    Assert.AreEqual('self', LForm.lvSources.Items[9].Caption);
-    Assert.AreEqual('storage', LForm.lvSources.Items[10].Caption);
-    Assert.AreEqual(MHFormatSourceState(ssSuccess), LForm.lvSources.Items[10].SubItems[0],
+    Assert.AreEqual('processevents', LForm.lvSources.Items[2].Caption);
+    Assert.AreEqual('gpu', LForm.lvSources.Items[3].Caption);
+    Assert.AreEqual('sensors', LForm.lvSources.Items[4].Caption);
+    Assert.AreEqual('autostart', LForm.lvSources.Items[5].Caption);
+    Assert.AreEqual('tamper', LForm.lvSources.Items[6].Caption);
+    Assert.AreEqual('network', LForm.lvSources.Items[7].Caption);
+    Assert.AreEqual('files', LForm.lvSources.Items[8].Caption);
+    Assert.AreEqual('context', LForm.lvSources.Items[9].Caption);
+    Assert.AreEqual('self', LForm.lvSources.Items[10].Caption);
+    Assert.AreEqual('storage', LForm.lvSources.Items[11].Caption);
+    Assert.AreEqual(MHFormatSourceState(ssSuccess), LForm.lvSources.Items[11].SubItems[0],
       'История стандартной конфигурации записывается');
     Assert.IsNotNull(LForm.Services.Analyzer, 'Стандартный анализатор угроз подключён');
     Assert.IsNotNull(LForm.Services.Baselines, 'Профиль нормы подключён');
