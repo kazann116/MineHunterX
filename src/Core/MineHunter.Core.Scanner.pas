@@ -167,7 +167,7 @@ implementation
 
 uses
   System.Math, System.Generics.Collections,
-  MineHunter.Core.Paths;
+  MineHunter.Core.Paths, MineHunter.Core.Lang;
 
 const
   SOURCE_SCANNER = 'scanner';
@@ -239,7 +239,7 @@ begin
       on E: Exception do
       begin
         // Сюда попадают только непредвиденные сбои самого сканера.
-        FOwner.Log(llError, 'Сбой цикла сканирования: ' + E.Message);
+        FOwner.Log(llError, MHL('Сбой цикла сканирования: ', 'Scan cycle failure: ') + E.Message);
         LSnapshot := Default(TMHSnapshot);
       end;
     end;
@@ -272,7 +272,8 @@ var
 begin
   inherited Create;
   if Length(ACollectors) = 0 then
-    raise EArgumentException.Create('Нужен хотя бы один коллектор');
+    raise EArgumentException.Create(MHL('Нужен хотя бы один коллектор',
+      'At least one collector is required'));
   if AClock = nil then
     raise EArgumentNilException.Create('AClock');
   if ALogger = nil then
@@ -367,7 +368,7 @@ begin
     Exit;
   Inc(FDispatchEpoch);
   FWorker := TWorker.Create(Self, FDispatchEpoch);
-  Log(llInfo, 'Сканирование запущено');
+  Log(llInfo, MHL('Сканирование запущено', 'Monitoring started'));
 end;
 
 procedure TMHScanner.Stop;
@@ -386,7 +387,7 @@ begin
   // Destroy ждёт завершения потока и отменяет недоставленные события.
   LWorker.Free;
   FWorker := nil;
-  Log(llInfo, 'Сканирование остановлено');
+  Log(llInfo, MHL('Сканирование остановлено', 'Monitoring stopped'));
 end;
 
 procedure TMHScanner.MergeResult(var ASnapshot: TMHSnapshot;
@@ -414,8 +415,10 @@ begin
       if not FDuplicateMetricLogged then
       begin
         FDuplicateMetricLogged := True;
-        Log(llWarning, Format('Источник %s повторно передал системную метрику вида %d; ' +
-          'используется значение первого источника', [AResult.Status.SourceId, Ord(LMetric.Kind)]));
+        Log(llWarning, Format(MHL('Источник %s повторно передал системную метрику вида %d; ' +
+          'используется значение первого источника',
+          'Source %s sent a duplicate system metric of kind %d; the value from the first ' +
+          'source is used'), [AResult.Status.SourceId, Ord(LMetric.Kind)]));
       end;
       Continue;
     end;
@@ -502,7 +505,8 @@ begin
   begin
     Dec(AState.SkipCycles);
     Result := TMHSourceStatus.Create(LSourceId, ssUnavailable,
-      Format('Источник временно отключён после %d ошибок подряд; повтор через %d цикл(ов)',
+      Format(MHL('Источник временно отключён после %d ошибок подряд; повтор через %d цикл(ов)',
+        'Source temporarily disabled after %d consecutive errors; retry in %d cycle(s)'),
         [AState.ConsecutiveFailures, AState.SkipCycles + 1]), ASnapshot.TimestampUtc);
     Exit;
   end;
@@ -525,7 +529,7 @@ begin
       Result := TMHSourceStatus.Create(LSourceId, ssError,
         E.ClassName + ': ' + E.Message, ASnapshot.TimestampUtc);
       Inc(AState.ConsecutiveFailures);
-      Log(llWarning, Format('Источник %s: %s', [LSourceId, Result.Message]));
+      Log(llWarning, Format(MHL('Источник %s: %s', 'Source %s: %s'), [LSourceId, Result.Message]));
       if AState.ConsecutiveFailures >= LOptions.MaxConsecutiveFailures then
       begin
         if AState.BackoffCycles = 0 then
@@ -533,8 +537,8 @@ begin
         else
           AState.BackoffCycles := Min(AState.BackoffCycles * 2, LOptions.MaxBackoffCycles);
         AState.SkipCycles := AState.BackoffCycles;
-        Log(llWarning, Format('Источник %s временно отключён на %d цикл(ов)',
-          [LSourceId, AState.SkipCycles]));
+        Log(llWarning, Format(MHL('Источник %s временно отключён на %d цикл(ов)',
+          'Source %s temporarily disabled for %d cycle(s)'), [LSourceId, AState.SkipCycles]));
       end;
     end;
   end;
@@ -619,13 +623,13 @@ begin
     if FStorageFailing then
     begin
       FStorageFailing := False;
-      Log(llInfo, 'Запись истории восстановлена');
+      Log(llInfo, MHL('Запись истории восстановлена', 'History recording resumed'));
     end;
   except
     on E: Exception do
     begin
       LStatus := TMHSourceStatus.Create(StorageSourceId, ssError,
-        'История не сохраняется: ' + E.Message, ASnapshot.TimestampUtc);
+        MHL('История не сохраняется: ', 'History is not being saved: ') + E.Message, ASnapshot.TimestampUtc);
       // Журналируем только смену состояния, чтобы не засорять журнал каждые N секунд.
       if not FStorageFailing then
       begin
@@ -655,7 +659,7 @@ begin
     except
       on E: Exception do
       begin
-        Log(llWarning, 'Профиль нормы недоступен: ' + E.Message);
+        Log(llWarning, MHL('Профиль нормы недоступен: ', 'Baseline unavailable: ') + E.Message);
         LBaseline := TMHBaseline.Empty;
       end;
     end;
@@ -664,7 +668,7 @@ begin
   except
     on E: Exception do
     begin
-      Log(llError, 'Сбой анализатора: ' + E.Message);
+      Log(llError, MHL('Сбой анализатора: ', 'Analyzer failure: ') + E.Message);
       Result := nil;
     end;
   end;
@@ -684,7 +688,7 @@ begin
       if not FStorageFailing then
       begin
         FStorageFailing := True;
-        Log(llError, 'Находки не сохранены: ' + E.Message);
+        Log(llError, MHL('Находки не сохранены: ', 'Findings were not saved: ') + E.Message);
       end;
   end;
 end;
@@ -719,7 +723,7 @@ begin
       FOnSnapshot(ASnapshot);
     except
       on E: Exception do
-        Log(llError, 'Ошибка обработчика OnSnapshot: ' + E.Message);
+        Log(llError, MHL('Ошибка обработчика OnSnapshot: ', 'OnSnapshot handler error: ') + E.Message);
     end;
   if Assigned(FOnFinding) then
     for I := 0 to High(AFindings) do
@@ -727,14 +731,14 @@ begin
         FOnFinding(AFindings[I]);
       except
         on E: Exception do
-          Log(llError, 'Ошибка обработчика OnFinding: ' + E.Message);
+          Log(llError, MHL('Ошибка обработчика OnFinding: ', 'OnFinding handler error: ') + E.Message);
       end;
   if Assigned(FOnCycle) then
     try
       FOnCycle(ASnapshot, AFindings);
     except
       on E: Exception do
-        Log(llError, 'Ошибка обработчика OnCycle: ' + E.Message);
+        Log(llError, MHL('Ошибка обработчика OnCycle: ', 'OnCycle handler error: ') + E.Message);
     end;
 end;
 

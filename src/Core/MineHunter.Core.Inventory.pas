@@ -60,7 +60,7 @@ function MHInventoryKindTitle(AKind: TMHInventoryKind): string;
 implementation
 
 uses
-  System.Generics.Collections;
+  System.Generics.Collections, MineHunter.Core.Lang;
 
 const
   KIND_NAMES: array[TMHInventoryKind] of string = ('autostart', 'tamper', 'program');
@@ -87,10 +87,10 @@ end;
 function MHInventoryKindTitle(AKind: TMHInventoryKind): string;
 begin
   case AKind of
-    ikAutostart: Result := 'Новая запись автозапуска';
-    ikTamper: Result := 'Новый признак вмешательства в защиту';
+    ikAutostart: Result := MHL('Новая запись автозапуска', 'New autostart entry');
+    ikTamper: Result := MHL('Новый признак вмешательства в защиту', 'New security tampering sign');
   else
-    Result := 'Впервые запущена программа';
+    Result := MHL('Впервые запущена программа', 'Program started for the first time');
   end;
 end;
 
@@ -131,10 +131,10 @@ begin
   try
     for LEntry in ASnapshot.Autostart do
       Add(ikAutostart, MHAutostartKindToString(LEntry.Kind) + '|' + LEntry.Location + '|' + LEntry.Name,
-        LEntry.Name, MHAutostartKindToString(LEntry.Kind) + ': ' + LEntry.Location, LEntry.ImagePath);
+        LEntry.Name, MHAutostartKindTitle(LEntry.Kind) + ': ' + LEntry.Location, LEntry.ImagePath);
     for LTamper in ASnapshot.Tamper do
       Add(ikTamper, MHTamperKindToString(LTamper.Kind) + '|' + LTamper.Location + '|' + LTamper.Name + '|' +
-        LTamper.Value, LTamper.Name, MHTamperKindToString(LTamper.Kind) + ': ' + LTamper.Value,
+        LTamper.Value, LTamper.Name, MHTamperKindTitle(LTamper.Kind) + ': ' + LTamper.Value,
         LTamper.ImagePath);
     for LInfo in ASnapshot.Processes do
       // Процессы без пути (System, защищённые) не дают устойчивого ключа.

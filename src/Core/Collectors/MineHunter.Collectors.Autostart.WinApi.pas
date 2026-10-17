@@ -80,7 +80,7 @@ uses
   Winapi.Windows, Winapi.WinSvc, Winapi.ActiveX, Winapi.ShlObj, Winapi.KnownFolders,
   System.SysUtils, System.Classes, System.Variants, System.Win.Registry, System.Win.ComObj,
   System.Generics.Collections,
-  MineHunter.Core.Paths;
+  MineHunter.Core.Paths, MineHunter.Core.Lang;
 
 const
   /// Task Scheduler 2.0, taskschd.h: CLSID_TaskScheduler.
@@ -281,33 +281,33 @@ end;
 function ServiceStartTypeText(AStartType: DWORD; ADelayed, ATriggered: Boolean): string;
 begin
   case AStartType of
-    SERVICE_BOOT_START:   Result := 'при загрузке ядра (boot)';
-    SERVICE_SYSTEM_START: Result := 'при инициализации системы (system)';
+    SERVICE_BOOT_START:   Result := MHL('при загрузке ядра (boot)', 'at kernel boot (boot)');
+    SERVICE_SYSTEM_START: Result := MHL('при инициализации системы (system)', 'at system initialization (system)');
     SERVICE_AUTO_START:
       if ADelayed then
-        Result := 'автоматически (отложенный запуск)'
+        Result := MHL('автоматически (отложенный запуск)', 'automatic (delayed start)')
       else
-        Result := 'автоматически';
-    SERVICE_DEMAND_START: Result := 'вручную';
+        Result := MHL('автоматически', 'automatic');
+    SERVICE_DEMAND_START: Result := MHL('вручную', 'manual');
   else
-    Result := Format('тип %d', [AStartType]);
+    Result := Format(MHL('тип %d', 'type %d'), [AStartType]);
   end;
   if ATriggered then
-    Result := Result + ', запуск по триггеру';
+    Result := Result + MHL(', запуск по триггеру', ', trigger start');
 end;
 
 function ServiceStateText(AState: DWORD): string;
 begin
   case AState of
-    SERVICE_STOPPED:          Result := 'остановлена';
-    SERVICE_START_PENDING:    Result := 'запускается';
-    SERVICE_STOP_PENDING:     Result := 'останавливается';
-    SERVICE_RUNNING:          Result := 'работает';
-    SERVICE_CONTINUE_PENDING: Result := 'возобновляется';
-    SERVICE_PAUSE_PENDING:    Result := 'приостанавливается';
-    SERVICE_PAUSED:           Result := 'приостановлена';
+    SERVICE_STOPPED:          Result := MHL('остановлена', 'stopped');
+    SERVICE_START_PENDING:    Result := MHL('запускается', 'starting');
+    SERVICE_STOP_PENDING:     Result := MHL('останавливается', 'stopping');
+    SERVICE_RUNNING:          Result := MHL('работает', 'running');
+    SERVICE_CONTINUE_PENDING: Result := MHL('возобновляется', 'resuming');
+    SERVICE_PAUSE_PENDING:    Result := MHL('приостанавливается', 'pausing');
+    SERVICE_PAUSED:           Result := MHL('приостановлена', 'paused');
   else
-    Result := Format('состояние %d', [AState]);
+    Result := Format(MHL('состояние %d', 'state %d'), [AState]);
   end;
 end;
 
@@ -315,20 +315,20 @@ function TaskTriggerText(AType: Integer): string;
 begin
   // taskschd.h: TASK_TRIGGER_TYPE2.
   case AType of
-    0:  Result := 'по событию';
-    1:  Result := 'однократно по времени';
-    2:  Result := 'ежедневно';
-    3:  Result := 'еженедельно';
-    4:  Result := 'ежемесячно';
-    5:  Result := 'ежемесячно по дням недели';
-    6:  Result := 'при простое';
-    7:  Result := 'при создании или изменении задания';
-    8:  Result := 'при загрузке системы';
-    9:  Result := 'при входе в систему';
-    11: Result := 'при изменении состояния сеанса';
-    12: Result := 'особый триггер';
+    0:  Result := MHL('по событию', 'on event');
+    1:  Result := MHL('однократно по времени', 'once at a set time');
+    2:  Result := MHL('ежедневно', 'daily');
+    3:  Result := MHL('еженедельно', 'weekly');
+    4:  Result := MHL('ежемесячно', 'monthly');
+    5:  Result := MHL('ежемесячно по дням недели', 'monthly on days of the week');
+    6:  Result := MHL('при простое', 'on idle');
+    7:  Result := MHL('при создании или изменении задания', 'on task creation or modification');
+    8:  Result := MHL('при загрузке системы', 'at system startup');
+    9:  Result := MHL('при входе в систему', 'at logon');
+    11: Result := MHL('при изменении состояния сеанса', 'on session state change');
+    12: Result := MHL('особый триггер', 'custom trigger');
   else
-    Result := Format('триггер типа %d', [AType]);
+    Result := Format(MHL('триггер типа %d', 'trigger of type %d'), [AType]);
   end;
 end;
 
@@ -484,7 +484,8 @@ begin
           LEntry.Location := LSpec.Display;
           LEntry.Enabled := not NameInList(LDisabled, LName);
           if not LEntry.Enabled then
-            LEntry.Details := 'Отключено в Диспетчере задач (StartupApproved)';
+            LEntry.Details := MHL('Отключено в Диспетчере задач (StartupApproved)',
+              'Disabled in Task Manager (StartupApproved)');
           LList.Add(LEntry);
         end;
       finally
@@ -494,13 +495,13 @@ begin
 
     if LOpened = 0 then
     begin
-      AError := 'нет доступа ни к одному разделу Run/RunOnce';
+      AError := MHL('нет доступа ни к одному разделу Run/RunOnce', 'no access to any Run/RunOnce key');
       Exit(False);
     end;
     if LDenied > 0 then
-      AError := Format('нет доступа к %d разделам реестра', [LDenied]);
+      AError := Format(MHL('нет доступа к %d разделам реестра', 'no access to %d registry keys'), [LDenied]);
     if LBadValues > 0 then
-      AError := Trim(AError + Format(' не прочитано значений: %d', [LBadValues]));
+      AError := Trim(AError + Format(MHL(' не прочитано значений: %d', ' values not read: %d'), [LBadValues]));
     AEntries := LList.ToArray;
     Result := True;
   finally
@@ -526,18 +527,19 @@ begin
   if Failed(LHr) then
   begin
     ACreateFailed := True;
-    AError := 'не удалось создать объект ShellLink: ' + SysErrorMessage(Cardinal(LHr));
+    AError := MHL('не удалось создать объект ShellLink: ', 'could not create the ShellLink object: ') +
+      SysErrorMessage(Cardinal(LHr));
     Exit(False);
   end;
   if not Supports(LLink, IPersistFile, LFile) then
   begin
-    AError := 'объект ShellLink не поддерживает IPersistFile';
+    AError := MHL('объект ShellLink не поддерживает IPersistFile', 'the ShellLink object does not support IPersistFile');
     Exit(False);
   end;
   LHr := LFile.Load(PWideChar(ALinkPath), STGM_READ);
   if Failed(LHr) then
   begin
-    AError := 'не удалось прочитать ярлык: ' + SysErrorMessage(Cardinal(LHr));
+    AError := MHL('не удалось прочитать ярлык: ', 'could not read the shortcut: ') + SysErrorMessage(Cardinal(LHr));
     Exit(False);
   end;
   SetLength(LBuffer, MAX_LONG_PATH);
@@ -650,7 +652,7 @@ begin
               begin
                 LEntry.Command := Trim(QuoteIfNeeded(LTarget) + ' ' + LArgs);
                 LEntry.ImagePath := MHNormalizePath(ExpandEnvironment(LTarget), FWindowsDir);
-                LEntry.Details := 'Ярлык: ' + LFull;
+                LEntry.Details := MHL('Ярлык: ', 'Shortcut: ') + LFull;
               end
               else
               begin
@@ -659,9 +661,10 @@ begin
                 LEntry.Command := QuoteIfNeeded(LFull);
                 LEntry.ImagePath := LFull;
                 if LLinkError <> '' then
-                  LEntry.Details := 'Ярлык не прочитан: ' + LLinkError
+                  LEntry.Details := MHL('Ярлык не прочитан: ', 'Shortcut not read: ') + LLinkError
                 else
-                  LEntry.Details := 'Ярлык без пути к файлу (объект оболочки или ярлык установщика)';
+                  LEntry.Details := MHL('Ярлык без пути к файлу (объект оболочки или ярлык установщика)',
+                    'Shortcut without a file path (shell object or installer shortcut)');
               end;
             end
             else
@@ -670,7 +673,7 @@ begin
               LEntry.ImagePath := LFull;
             end;
             if not LEntry.Enabled then
-              LEntry.Details := Trim(LEntry.Details + '; отключено в Диспетчере задач');
+              LEntry.Details := Trim(LEntry.Details + MHL('; отключено в Диспетчере задач', '; disabled in Task Manager'));
             LList.Add(LEntry);
           until FindNext(LSearch) <> 0;
         finally
@@ -679,11 +682,12 @@ begin
       end;
       if LFound = 0 then
       begin
-        AError := 'не удалось определить расположение папок автозагрузки';
+        AError := MHL('не удалось определить расположение папок автозагрузки',
+          'could not determine the location of the startup folders');
         Exit(False);
       end;
       if LBadLinks > 0 then
-        AError := Format('не прочитано ярлыков: %d', [LBadLinks]);
+        AError := Format(MHL('не прочитано ярлыков: %d', 'shortcuts not read: %d'), [LBadLinks]);
       AEntries := LList.ToArray;
       Result := True;
     finally
@@ -768,7 +772,7 @@ begin
         // Одна запись не помещается в буфер — увеличиваем его.
         if LNeeded <= DWORD(Length(LBuffer)) then
         begin
-          AError := 'EnumServicesStatusEx: некорректный размер буфера';
+          AError := MHL('EnumServicesStatusEx: некорректный размер буфера', 'EnumServicesStatusEx: invalid buffer size');
           Exit(False);
         end;
         SetLength(LBuffer, LNeeded);
@@ -843,8 +847,9 @@ begin
         LEntry.Enabled := True;
         LAccount := string(LConfig.lpServiceStartName);
         if LAccount = '' then
-          LAccount := 'не указана';
-        LEntry.Details := Format('%s; запуск: %s; учётная запись: %s; состояние: %s',
+          LAccount := MHL('не указана', 'not specified');
+        LEntry.Details := Format(MHL('%s; запуск: %s; учётная запись: %s; состояние: %s',
+          '%s; start: %s; account: %s; state: %s'),
           [LItem.DisplayName, ServiceStartTypeText(LConfig.dwStartType, LIsDelayed, LTriggered),
            LAccount, ServiceStateText(LItem.State)]);
 
@@ -878,11 +883,12 @@ begin
 
     if (LItems.Count > 0) and (LDenied = LItems.Count) then
     begin
-      AError := 'нет доступа к настройкам служб';
+      AError := MHL('нет доступа к настройкам служб', 'no access to service settings');
       Exit(False);
     end;
     if LDenied > 0 then
-      AError := Format('нет доступа к настройкам %d из %d служб', [LDenied, LItems.Count]);
+      AError := Format(MHL('нет доступа к настройкам %d из %d служб', 'no access to settings of %d of %d services'),
+        [LDenied, LItems.Count]);
     AEntries := LList.ToArray;
     Result := True;
   finally
@@ -975,22 +981,23 @@ var
       LTriggerTexts := LTriggerTexts + [TaskTriggerText(Integer(DispProp(LTrigger, 'Type')))];
     end;
     if Length(LTriggerTexts) > 0 then
-      LDetails := 'Триггеры: ' + string.Join(', ', LTriggerTexts)
+      LDetails := MHL('Триггеры: ', 'Triggers: ') + string.Join(', ', LTriggerTexts)
     else
-      LDetails := 'Триггеров нет (запуск вручную или другим заданием)';
+      LDetails := MHL('Триггеров нет (запуск вручную или другим заданием)',
+        'No triggers (started manually or by another task)');
 
     LPrincipal := LDefinition.Principal;
     LUser := OleToStr(LPrincipal.UserId);
     if LUser = '' then
       LUser := OleToStr(LPrincipal.GroupId);
     if LUser <> '' then
-      LDetails := LDetails + '; учётная запись: ' + LUser;
+      LDetails := LDetails + MHL('; учётная запись: ', '; account: ') + LUser;
     // TASK_RUNLEVEL_HIGHEST = 1.
     if Integer(LPrincipal.RunLevel) = 1 then
-      LDetails := LDetails + '; наивысшие права';
+      LDetails := LDetails + MHL('; наивысшие права', '; highest privileges');
     LSettings := LDefinition.Settings;
     if Boolean(LSettings.Hidden) then
-      LDetails := LDetails + '; скрытое';
+      LDetails := LDetails + MHL('; скрытое', '; hidden');
 
     LAdded := 0;
     LActions := LDefinition.Actions;
@@ -1009,7 +1016,7 @@ var
               LPath := Trim(Copy(LPath, 2, Length(LPath) - 2));
             LEntry.Command := Trim(QuoteIfNeeded(LPath) + ' ' + Trim(OleToStr(LAction.Arguments)));
             if OleToStr(LAction.WorkingDirectory) <> '' then
-              LEntry.Details := LEntry.Details + '; рабочая папка: ' +
+              LEntry.Details := LEntry.Details + MHL('; рабочая папка: ', '; working folder: ') +
                 OleToStr(LAction.WorkingDirectory);
           end;
         TASK_ACTION_COM_HANDLER:
@@ -1020,7 +1027,7 @@ var
             begin
               // Путь сервера разбирается коллектором как обычная команда.
               LEntry.Command := LServer;
-              LEntry.Details := LEntry.Details + '; COM-обработчик ' + LClassId;
+              LEntry.Details := LEntry.Details + MHL('; COM-обработчик ', '; COM handler ') + LClassId;
             end
             else
             begin
@@ -1028,7 +1035,8 @@ var
               // пустым — из «COM-обработчик {CLSID}» путь не извлекается.
               LEntry.Command := 'COM-обработчик ' + LClassId;
               LEntry.Details := LEntry.Details +
-                '; сервер COM-обработчика не зарегистрирован в CLSID (размещён в службе)';
+                MHL('; сервер COM-обработчика не зарегистрирован в CLSID (размещён в службе)',
+                  '; COM handler server is not registered in CLSID (hosted in a service)');
             end;
           end;
       else
@@ -1041,7 +1049,7 @@ var
     if LAdded = 0 then
     begin
       LEntry := LBase;
-      LEntry.Details := LDetails + '; нет действий запуска программ';
+      LEntry.Details := LDetails + MHL('; нет действий запуска программ', '; no program launch actions');
       LList.Add(LEntry);
     end;
   end;
@@ -1099,18 +1107,20 @@ begin
       on E: EOleSysError do
       begin
         if E.ErrorCode = HR_ACCESS_DENIED then
-          AError := 'нет доступа к службе планировщика заданий'
+          AError := MHL('нет доступа к службе планировщика заданий', 'no access to the Task Scheduler service')
         else
-          AError := 'служба планировщика заданий недоступна: ' + E.Message;
+          AError := MHL('служба планировщика заданий недоступна: ', 'the Task Scheduler service is unavailable: ') +
+            E.Message;
         Exit(False);
       end;
     end;
     Walk(LRoot);
     if LDeniedFolders > 0 then
-      AError := Format('нет доступа к %d папкам планировщика (нужны права администратора)',
+      AError := Format(MHL('нет доступа к %d папкам планировщика (нужны права администратора)',
+        'no access to %d Task Scheduler folders (administrator rights required)'),
         [LDeniedFolders]);
     if LFailedTasks > 0 then
-      AError := Trim(AError + Format(' не прочитано заданий: %d', [LFailedTasks]));
+      AError := Trim(AError + Format(MHL(' не прочитано заданий: %d', ' tasks not read: %d'), [LFailedTasks]));
     AEntries := LList.ToArray;
     Result := True;
   finally

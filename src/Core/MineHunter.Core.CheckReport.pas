@@ -44,7 +44,7 @@ implementation
 
 uses
   System.Math, System.Generics.Collections, System.Generics.Defaults, System.DateUtils,
-  MineHunter.Analysis.Engine;
+  MineHunter.Analysis.Engine, MineHunter.Core.Lang;
 
 function LocalTime(AUtc: TDateTime): string;
 begin
@@ -102,29 +102,33 @@ begin
     if LHigh > 0 then
     begin
       Result.Verdict := cvThreat;
-      Result.Headline := Format('Найдены признаки угрозы: %d (всего требуют проверки — %d)', [LHigh, LAlerts.Count]);
+      Result.Headline := Format(MHL('Найдены признаки угрозы: %d (всего требуют проверки — %d)',
+        'Signs of a threat found: %d (total needing review — %d)'), [LHigh, LAlerts.Count]);
     end
     else if LAlerts.Count > 0 then
     begin
       Result.Verdict := cvAttention;
-      Result.Headline := Format('Угроз не найдено, но %d объект(а) стоит проверить', [LAlerts.Count]);
+      Result.Headline := Format(MHL('Угроз не найдено, но %d объект(а) стоит проверить',
+        'No threats found, but %d item(s) are worth reviewing'), [LAlerts.Count]);
     end
     else
     begin
       Result.Verdict := cvClean;
-      Result.Headline := 'Угроз не обнаружено';
+      Result.Headline := MHL('Угроз не обнаружено', 'No threats detected');
     end;
 
-    LText.AppendLine('ПРОВЕРКА MINEHUNTER X — ' + LocalTime(AInput.Snapshot.TimestampUtc));
-    LText.AppendLine('ИТОГ: ' + Result.Headline + '.');
-    LText.AppendLine('Высокая нагрузка или отсутствие подписи сами по себе не доказывают заражение: ' +
-      'каждая оценка ниже объяснена признаками.');
+    LText.AppendLine(MHL('ПРОВЕРКА MINEHUNTER X — ', 'MINEHUNTER X CHECK — ') + LocalTime(AInput.Snapshot.TimestampUtc));
+    LText.AppendLine(MHL('ИТОГ: ', 'RESULT: ') + Result.Headline + '.');
+    LText.AppendLine(MHL('Высокая нагрузка или отсутствие подписи сами по себе не доказывают заражение: ',
+      'High load or a missing signature alone do not prove an infection: ') +
+      MHL('каждая оценка ниже объяснена признаками.', 'every assessment below is explained by evidence.'));
     LText.AppendLine;
 
     // 1. Тревоги.
-    LText.AppendLine('1. ТРЕВОГИ');
+    LText.AppendLine(MHL('1. ТРЕВОГИ', '1. ALERTS'));
     if LAlerts.Count = 0 then
-      LText.AppendLine('   Нет находок уровня «требует проверки» и выше.')
+      LText.AppendLine(MHL('   Нет находок уровня «требует проверки» и выше.',
+        '   No findings at the "needs review" level or above.'))
     else
       for LFinding in LAlerts do
       begin
@@ -133,7 +137,7 @@ begin
           LLine := LLine + ' — ' + LFinding.ProcessName;
         LText.AppendLine(LLine);
         if LFinding.ImagePath <> '' then
-          LText.AppendLine('     Файл: ' + LFinding.ImagePath);
+          LText.AppendLine(MHL('     Файл: ', '     File: ') + LFinding.ImagePath);
         LShown := 0;
         for LEvidence in LFinding.PositiveEvidence do
         begin
@@ -151,21 +155,21 @@ begin
           Break;
         end;
         if Length(LFinding.Recommendations) > 0 then
-          LText.AppendLine('     Что сделать: ' + LFinding.Recommendations[0]);
+          LText.AppendLine(MHL('     Что сделать: ', '     What to do: ') + LFinding.Recommendations[0]);
       end;
     LText.AppendLine;
 
     // 2. Нагрузка и нагрев.
-    LText.AppendLine('2. ПОЧЕМУ КОМПЬЮТЕР МОЖЕТ ТОРМОЗИТЬ ИЛИ ГРЕТЬСЯ');
-    LLine := '   Сейчас:';
+    LText.AppendLine(MHL('2. ПОЧЕМУ КОМПЬЮТЕР МОЖЕТ ТОРМОЗИТЬ ИЛИ ГРЕТЬСЯ', '2. WHY THE COMPUTER MAY BE SLOW OR HOT'));
+    LLine := MHL('   Сейчас:', '   Now:');
     if MetricText(AInput.Snapshot, mkCpuPercent, LValue) then
-      LLine := LLine + Format(' процессор %.0f%%;', [LValue]);
+      LLine := LLine + Format(MHL(' процессор %.0f%%;', ' CPU %.0f%%;'), [LValue]);
     if MetricText(AInput.Snapshot, mkMemoryLoadPercent, LValue) then
-      LLine := LLine + Format(' память %.0f%%;', [LValue]);
+      LLine := LLine + Format(MHL(' память %.0f%%;', ' memory %.0f%%;'), [LValue]);
     if MetricText(AInput.Snapshot, mkDiskActivePercent, LValue) then
-      LLine := LLine + Format(' диск %.0f%%;', [LValue]);
+      LLine := LLine + Format(MHL(' диск %.0f%%;', ' disk %.0f%%;'), [LValue]);
     if MetricText(AInput.Snapshot, mkGpuPercent, LValue) then
-      LLine := LLine + Format(' видеокарта %.0f%%;', [LValue]);
+      LLine := LLine + Format(MHL(' видеокарта %.0f%%;', ' GPU %.0f%%;'), [LValue]);
     LText.AppendLine(LLine);
     for LReason in MHExplainLoad(AInput.Snapshot, Max(1, AInput.CpuCount)) do
       if LReason.IsHigh then
@@ -173,38 +177,43 @@ begin
       else
         LText.AppendLine('   • ' + LReason.Text);
     if MetricText(AInput.Snapshot, mkCpuPerformanceLimitPercent, LValue) and (LValue < 95) then
-      LText.AppendLine(Format('   ⚠ Процессор ограничивает производительность до %.0f%% — обычно из-за ' +
-        'перегрева или режима питания.', [LValue]));
+      LText.AppendLine(Format(MHL('   ⚠ Процессор ограничивает производительность до %.0f%% — обычно из-за ',
+        '   ⚠ The CPU limits its performance to %.0f%% — usually due to ') +
+        MHL('перегрева или режима питания.', 'overheating or the power plan.'), [LValue]));
     LAnyLimit := False;
     for LReading in AInput.Snapshot.Sensors do
     begin
       LLimit := MHTemperatureLimit(LReading);
-      LLine := Format('   Температура: %s — %.0f °C', [LReading.Device, LReading.Celsius]);
+      LLine := Format(MHL('   Температура: %s — %.0f °C', '   Temperature: %s — %.0f °C'), [LReading.Device, LReading.Celsius]);
       if (LLimit > 0) and (LReading.Celsius >= LLimit) then
       begin
-        LLine := LLine + Format(' (выше порога %.0f °C — устройство перегревается)', [LLimit]);
+        LLine := LLine + Format(MHL(' (выше порога %.0f °C — устройство перегревается)',
+          ' (above the %.0f °C threshold — the device is overheating)'), [LLimit]);
         LAnyLimit := True;
       end
       else if LLimit > 0 then
-        LLine := LLine + Format(' (порог %.0f °C)', [LLimit]);
+        LLine := LLine + Format(MHL(' (порог %.0f °C)', ' (threshold %.0f °C)'), [LLimit]);
       LText.AppendLine(LLine);
     end;
     if Length(AInput.Snapshot.Sensors) = 0 then
-      LText.AppendLine('   Температура: датчики недоступны без драйвера производителя ' +
-        '(см. «Источники данных»).')
+      LText.AppendLine(MHL('   Температура: датчики недоступны без драйвера производителя ',
+        '   Temperature: sensors are unavailable without the vendor driver ') +
+        MHL('(см. «Источники данных»).', '(see "Data sources").'))
     else if not LAnyLimit then
-      LText.AppendLine('   Перегрева не обнаружено.');
+      LText.AppendLine(MHL('   Перегрева не обнаружено.', '   No overheating detected.'));
     LText.AppendLine;
 
     // 3. Что изменилось.
-    LText.AppendLine(Format('3. ЧТО ИЗМЕНИЛОСЬ ЗА %d ДН.', [Max(1, AInput.ChangesDays)]));
+    LText.AppendLine(Format(MHL('3. ЧТО ИЗМЕНИЛОСЬ ЗА %d ДН.', '3. WHAT CHANGED IN %d DAY(S)'), [Max(1, AInput.ChangesDays)]));
     if not AInput.ChangesAvailable then
-      LText.AppendLine('   История недоступна — изменения не отслеживаются.')
+      LText.AppendLine(MHL('   История недоступна — изменения не отслеживаются.',
+        '   History is unavailable — changes are not tracked.'))
     else if Length(AInput.Changes) = 0 then
     begin
-      LText.AppendLine('   Новых записей автозапуска, признаков вмешательства и программ не появилось.');
+      LText.AppendLine(MHL('   Новых записей автозапуска, признаков вмешательства и программ не появилось.',
+        '   No new autostart entries, tampering signs or programs have appeared.'));
       if AInput.InventoryStartUtc > 0 then
-        LText.AppendLine('   Наблюдение ведётся с ' + LocalTime(AInput.InventoryStartUtc) + '.');
+        LText.AppendLine(MHL('   Наблюдение ведётся с ', '   Monitoring since ') + LocalTime(AInput.InventoryStartUtc) + '.');
     end
     else
       for LKind := Low(TMHInventoryKind) to High(TMHInventoryKind) do
@@ -222,7 +231,8 @@ begin
           begin
             if LShown = 10 then
             begin
-              LText.AppendLine(Format('     … и ещё %d (полный список — на странице «История»)', [LKindCount - LShown]));
+              LText.AppendLine(Format(MHL('     … и ещё %d (полный список — на странице «История»)',
+                '     … and %d more (full list on the "History" page)'), [LKindCount - LShown]));
               Break;
             end;
             LLine := '     ' + LocalTime(LItem.FirstSeenUtc) + '  ' + LItem.Name;
@@ -237,22 +247,26 @@ begin
     LText.AppendLine;
 
     // 4. Электроэнергия.
-    LText.AppendLine('4. ЭЛЕКТРОЭНЕРГИЯ (ВИДЕОКАРТА)');
+    LText.AppendLine(MHL('4. ЭЛЕКТРОЭНЕРГИЯ (ВИДЕОКАРТА)', '4. ELECTRICITY (GPU)'));
     if MetricText(AInput.Snapshot, mkGpuPowerWatts, LValue) then
-      LText.AppendLine(Format('   Сейчас: %.0f Вт — %s в час, %s в сутки при такой нагрузке (цена %s за кВт·ч).',
+      LText.AppendLine(Format(MHL('   Сейчас: %.0f Вт — %s в час, %s в сутки при такой нагрузке (цена %s за кВт·ч).',
+        '   Now: %.0f W — %s per hour, %s per day at this load (price %s per kWh).'),
         [LValue, MHFormatMoney(MHEnergyCost(LValue, 1, AInput.ElectricityPrice)),
          MHFormatMoney(MHEnergyCost(LValue, 24, AInput.ElectricityPrice)), MHFormatMoney(AInput.ElectricityPrice)]))
     else
-      LText.AppendLine('   Видеокарта не сообщает мощность (датчик есть у видеокарт NVIDIA через драйвер).');
+      LText.AppendLine(MHL('   Видеокарта не сообщает мощность (датчик есть у видеокарт NVIDIA через драйвер).',
+        '   The GPU does not report its power draw (NVIDIA GPUs provide this sensor via the driver).'));
     if AInput.Energy.HasData and (AInput.Energy.CoveredHours > 0) then
-      LText.AppendLine(Format('   За последние сутки (измерено %.1f ч): %s ≈ %s; в среднем %.0f Вт, пик %.0f Вт. ' +
-        'Скрытый майнер на видеокарте обычно добавляет 100–300 Вт.',
+      LText.AppendLine(Format(MHL('   За последние сутки (измерено %.1f ч): %s ≈ %s; в среднем %.0f Вт, пик %.0f Вт. ',
+        '   Over the last 24 hours (measured %.1f h): %s ≈ %s; average %.0f W, peak %.0f W. ') +
+        MHL('Скрытый майнер на видеокарте обычно добавляет 100–300 Вт.',
+        'A hidden GPU miner usually adds 100–300 W.'),
         [AInput.Energy.CoveredHours, MHFormatEnergy(AInput.Energy.KWh), MHFormatMoney(AInput.Energy.Cost),
          AInput.Energy.AverageWatts, AInput.Energy.PeakWatts]));
     LText.AppendLine;
 
     // 5. Ограничения.
-    LText.AppendLine('5. ОГРАНИЧЕНИЯ ПРОВЕРКИ');
+    LText.AppendLine(MHL('5. ОГРАНИЧЕНИЯ ПРОВЕРКИ', '5. CHECK LIMITATIONS'));
     LShown := 0;
     for LStatus in AInput.Snapshot.Sources do
       if LStatus.State in [ssUnavailable, ssError, ssPartial] then
@@ -264,13 +278,16 @@ begin
         Inc(LShown);
       end;
     if LShown = 0 then
-      LText.AppendLine('   Все источники данных работают.');
+      LText.AppendLine(MHL('   Все источники данных работают.', '   All data sources are working.'));
     if not AInput.IsElevated then
-      LText.AppendLine('   Запуск от имени администратора даст полные данные о службах, ' +
-        'защищённых процессах и сетевых соединениях.');
+      LText.AppendLine(MHL('   Запуск от имени администратора даст полные данные о службах, ',
+        '   Running as administrator gives complete data on services, ') +
+        MHL('защищённых процессах и сетевых соединениях.', 'protected processes and network connections.'));
     LText.AppendLine;
-    LText.AppendLine('MineHunter X ничего не удаляет и не останавливает без вашего подтверждения. ' +
-      'Анализ выполнен локально, данные никуда не передавались.');
+    LText.AppendLine(MHL('MineHunter X ничего не удаляет и не останавливает без вашего подтверждения. ',
+      'MineHunter X does not delete or stop anything without your confirmation. ') +
+      MHL('Анализ выполнен локально, данные никуда не передавались.',
+      'The analysis was performed locally; no data was sent anywhere.'));
     Result.Text := LText.ToString;
   finally
     LAlerts.Free;

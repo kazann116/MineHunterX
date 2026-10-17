@@ -6,7 +6,8 @@
   текст), а MHTranslateTree переводит подписи всех компонентов формы
   (Caption, Hint, TextHint, столбцы списков, элементы списков и меню,
   заголовки графиков). Язык меняется после перезапуска программы.
-  Объяснения находок анализатора пока формируются только на русском.
+  Тексты библиотеки (объяснения находок, отчёты) переключаются через
+  MineHunter.Core.Lang.
 }
 
 interface
@@ -26,7 +27,7 @@ implementation
 uses
   System.SysUtils, System.TypInfo, System.Generics.Collections,
   Vcl.Controls, Vcl.StdCtrls, Vcl.ComCtrls, Vcl.ExtCtrls, Vcl.Menus, Vcl.ActnList,
-  MineHunter.App.Chart;
+  MineHunter.App.Chart, MineHunter.Core.Lang;
 
 var
   GLanguage: TMHUiLanguage = ulRussian;
@@ -302,6 +303,8 @@ end;
 procedure MHSetLanguage(ALanguage: TMHUiLanguage);
 begin
   GLanguage := ALanguage;
+  // Тексты библиотеки (объяснения находок, отчёты) — на том же языке.
+  MHSetCoreEnglish(ALanguage = ulEnglish);
 end;
 
 function MHLanguage: TMHUiLanguage;

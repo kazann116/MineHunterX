@@ -172,7 +172,7 @@ implementation
 uses
   System.JSON, System.DateUtils, System.StrUtils, System.Math, System.Generics.Collections,
   System.Generics.Defaults,
-  MineHunter.Core.Paths;
+  MineHunter.Core.Paths, MineHunter.Core.Lang;
 
 const
   MANIFEST_NAME = 'manifest.json';
@@ -198,11 +198,11 @@ const
 function MHQuarantineKindToString(AKind: TMHQuarantineKind): string;
 begin
   case AKind of
-    qkFile: Result := 'файл';
-    qkRegistryValue: Result := 'значение реестра';
-    qkService: Result := 'служба';
+    qkFile: Result := MHL('файл', 'file');
+    qkRegistryValue: Result := MHL('значение реестра', 'registry value');
+    qkService: Result := MHL('служба', 'service');
   else
-    Result := 'задание планировщика';
+    Result := MHL('задание планировщика', 'scheduled task');
   end;
 end;
 
@@ -254,11 +254,11 @@ end;
 function TMHQuarantineItem.Description: string;
 begin
   case Kind of
-    qkFile: Result := 'Файл ' + Target;
-    qkRegistryValue: Result := Format('Значение «%s» в %s', [ValueName, Target]);
-    qkService: Result := 'Служба ' + Target + ' (тип запуска сохранён)';
+    qkFile: Result := MHL('Файл ', 'File ') + Target;
+    qkRegistryValue: Result := Format(MHL('Значение «%s» в %s', 'Value "%s" in %s'), [ValueName, Target]);
+    qkService: Result := MHL('Служба ', 'Service ') + Target + MHL(' (тип запуска сохранён)', ' (start type saved)');
   else
-    Result := 'Задание планировщика ' + Target;
+    Result := MHL('Задание планировщика ', 'Scheduled task ') + Target;
   end;
 end;
 
@@ -418,15 +418,16 @@ var
   LAccessDenied: Boolean;
 begin
   if not TMHSafeActions.ValidatePlainFilePath(APath, LPath, LError) then
-    Exit(Finish(ActionQuarantine, APath, TMHActionResult.Create(arkFailed, 'Недопустимый путь: ' + LError)));
+    Exit(Finish(ActionQuarantine, APath, TMHActionResult.Create(arkFailed, MHL('Недопустимый путь: ', 'Invalid path: ') + LError)));
   if IsInsideWindows(LPath) then
     Exit(Finish(ActionQuarantine, LPath, TMHActionResult.Create(arkProtected,
-      'Файлы Windows не помещаются в карантин: удаление системного файла может нарушить работу компьютера')));
+      MHL('Файлы Windows не помещаются в карантин: удаление системного файла может нарушить работу компьютера',
+        'Windows files are not quarantined: removing a system file may break the computer'))));
   if SameText(LPath, MHNormalizePath(FOps.SelfPath)) then
     Exit(Finish(ActionQuarantine, LPath, TMHActionResult.Create(arkProtected,
-      'Собственный файл MineHunter не помещается в карантин')));
+      MHL('Собственный файл MineHunter не помещается в карантин', 'MineHunter''s own file is not quarantined'))));
   if not FOps.FileExists(LPath) then
-    Exit(Finish(ActionQuarantine, LPath, TMHActionResult.Create(arkNotFound, 'Файл не найден: ' + LPath)));
+    Exit(Finish(ActionQuarantine, LPath, TMHActionResult.Create(arkNotFound, MHL('Файл не найден: ', 'File not found: ') + LPath)));
 
   LItem := Default(TMHQuarantineItem);
   LItem.Id := NewId;
@@ -436,13 +437,14 @@ begin
   LItem.Target := LPath;
   if not FOps.FileSha256(LPath, LItem.Sha256, LItem.SizeBytes) then
     Exit(Finish(ActionQuarantine, LPath, TMHActionResult.Create(arkFailed,
-      'Не удалось прочитать файл — возможно, он занят. Сначала остановите процесс.')));
+      MHL('Не удалось прочитать файл — возможно, он занят. Сначала остановите процесс.',
+        'Could not read the file — it may be in use. Stop the process first.'))));
   FOps.GetAttributes(LPath, LItem.Attributes);
   LItem.StoredPath := ItemDir(LItem.Id) + '\' + LItem.Sha256 + '.quarantine';
   // Манифест — до переноса: если перенос прервётся, запись всё равно найдётся.
   if not SaveManifest(LItem) then
     Exit(Finish(ActionQuarantine, LPath, TMHActionResult.Create(arkFailed,
-      'Не удалось создать запись карантина в ' + FStoreDir)));
+      MHL('Не удалось создать запись карантина в ', 'Could not create a quarantine record in ') + FStoreDir)));
   // «Скрытый», «системный» и «только чтение» мешают переносу.
   FOps.SetAttributes(LPath, 0);
   if not FOps.MoveFile(LPath, LItem.StoredPath, LError, LAccessDenied) then
@@ -451,12 +453,15 @@ begin
     DropManifest(LItem.Id);
     if LAccessDenied then
       Exit(Finish(ActionQuarantine, LPath, TMHActionResult.Create(arkAccessDenied,
-        'Нет доступа к файлу. Остановите процесс и запустите MineHunter от имени администратора.', LError)));
+        MHL('Нет доступа к файлу. Остановите процесс и запустите MineHunter от имени администратора.',
+          'Access to the file is denied. Stop the process and run MineHunter as administrator.'), LError)));
     Exit(Finish(ActionQuarantine, LPath, TMHActionResult.Create(arkFailed,
-      'Файл занят или недоступен — сначала остановите процесс', LError)));
+      MHL('Файл занят или недоступен — сначала остановите процесс',
+        'The file is in use or unavailable — stop the process first'), LError)));
   end;
   Result := Finish(ActionQuarantine, LPath, TMHActionResult.Create(arkDone,
-    'Файл перемещён в карантин; вернуть его можно в «Настройки → Карантин»', LItem.Id));
+    MHL('Файл перемещён в карантин; вернуть его можно в «Настройки → Карантин»',
+      'The file was moved to quarantine; you can restore it in "Settings → Quarantine"'), LItem.Id));
 end;
 
 function TMHQuarantine.DisableRegistryValue(const AKey, AValueName, AReason: string): TMHActionResult;
@@ -468,7 +473,7 @@ begin
   LTarget := AKey + '\' + AValueName;
   if not MHIsRemediableRegistryKey(AKey) then
     Exit(Finish(ActionDisable, LTarget, TMHActionResult.Create(arkProtected,
-      'Этот раздел реестра MineHunter не изменяет')));
+      MHL('Этот раздел реестра MineHunter не изменяет', 'MineHunter does not modify this registry key'))));
   LItem := Default(TMHQuarantineItem);
   LItem.Id := NewId;
   LItem.Kind := qkRegistryValue;
@@ -478,26 +483,30 @@ begin
   LItem.ValueName := AValueName;
   case FOps.RegReadValue(AKey, AValueName, LItem.ValueType, LData, LError) of
     rorNotFound:
-      Exit(Finish(ActionDisable, LTarget, TMHActionResult.Create(arkNotFound, 'Значение уже отсутствует')));
+      Exit(Finish(ActionDisable, LTarget, TMHActionResult.Create(arkNotFound, MHL('Значение уже отсутствует', 'The value is already gone'))));
     rorAccessDenied:
       Exit(Finish(ActionDisable, LTarget, TMHActionResult.Create(arkAccessDenied,
-        'Нет доступа к разделу реестра — запустите MineHunter от имени администратора', LError)));
+        MHL('Нет доступа к разделу реестра — запустите MineHunter от имени администратора',
+          'Access to the registry key is denied — run MineHunter as administrator'), LError)));
     rorFailed:
       Exit(Finish(ActionDisable, LTarget, TMHActionResult.Create(arkFailed,
-        'Не удалось прочитать значение', LError)));
+        MHL('Не удалось прочитать значение', 'Could not read the value'), LError)));
   end;
   LItem.Data := BytesToHex(LData);
   if not SaveManifest(LItem) then
     Exit(Finish(ActionDisable, LTarget, TMHActionResult.Create(arkFailed,
-      'Не удалось сохранить резервную копию — значение не изменено')));
+      MHL('Не удалось сохранить резервную копию — значение не изменено',
+        'Could not save a backup — the value was not changed'))));
   if FOps.RegDeleteValue(AKey, AValueName, LError) = rorOk then
     Result := Finish(ActionDisable, LTarget, TMHActionResult.Create(arkDone,
-      'Значение удалено; резервная копия — в «Настройки → Карантин»', LItem.Id))
+      MHL('Значение удалено; резервная копия — в «Настройки → Карантин»',
+        'The value was deleted; the backup is in "Settings → Quarantine"'), LItem.Id))
   else
   begin
     DropManifest(LItem.Id);
     Result := Finish(ActionDisable, LTarget, TMHActionResult.Create(arkAccessDenied,
-      'Не удалось удалить значение — запустите MineHunter от имени администратора', LError));
+      MHL('Не удалось удалить значение — запустите MineHunter от имени администратора',
+        'Could not delete the value — run MineHunter as administrator'), LError));
   end;
 end;
 
@@ -507,22 +516,23 @@ var
   LStart: Cardinal;
   LError, LService, LTarget: string;
 begin
-  LTarget := 'служба ' + AName;
+  LTarget := MHL('служба ', 'service ') + AName;
   for LService in CRITICAL_SERVICES do
     if SameText(LService, AName.Trim) then
       Exit(Finish(ActionDisable, LTarget, TMHActionResult.Create(arkProtected,
-        'Эту службу Windows отключать нельзя')));
+        MHL('Эту службу Windows отключать нельзя', 'This Windows service must not be disabled'))));
   case FOps.ServiceGetStartType(AName, LStart, LError) of
     rorNotFound:
-      Exit(Finish(ActionDisable, LTarget, TMHActionResult.Create(arkNotFound, 'Служба не найдена')));
+      Exit(Finish(ActionDisable, LTarget, TMHActionResult.Create(arkNotFound, MHL('Служба не найдена', 'Service not found'))));
     rorAccessDenied:
       Exit(Finish(ActionDisable, LTarget, TMHActionResult.Create(arkAccessDenied,
-        'Нет доступа к службе — запустите MineHunter от имени администратора', LError)));
+        MHL('Нет доступа к службе — запустите MineHunter от имени администратора',
+          'Access to the service is denied — run MineHunter as administrator'), LError)));
     rorFailed:
-      Exit(Finish(ActionDisable, LTarget, TMHActionResult.Create(arkFailed, 'Ошибка службы', LError)));
+      Exit(Finish(ActionDisable, LTarget, TMHActionResult.Create(arkFailed, MHL('Ошибка службы', 'Service error'), LError)));
   end;
   if LStart = SERVICE_DISABLED then
-    Exit(Finish(ActionDisable, LTarget, TMHActionResult.Create(arkDone, 'Служба уже отключена')));
+    Exit(Finish(ActionDisable, LTarget, TMHActionResult.Create(arkDone, MHL('Служба уже отключена', 'The service is already disabled'))));
   LItem := Default(TMHQuarantineItem);
   LItem.Id := NewId;
   LItem.Kind := qkService;
@@ -532,15 +542,18 @@ begin
   LItem.Data := IntToStr(LStart);
   if not SaveManifest(LItem) then
     Exit(Finish(ActionDisable, LTarget, TMHActionResult.Create(arkFailed,
-      'Не удалось сохранить резервную копию — служба не изменена')));
+      MHL('Не удалось сохранить резервную копию — служба не изменена',
+        'Could not save a backup — the service was not changed'))));
   if FOps.ServiceSetStartType(AName, SERVICE_DISABLED, LError) = rorOk then
     Result := Finish(ActionDisable, LTarget, TMHActionResult.Create(arkDone,
-      'Служба отключена (не запустится при следующей загрузке); включить — в «Настройки → Карантин»', LItem.Id))
+      MHL('Служба отключена (не запустится при следующей загрузке); включить — в «Настройки → Карантин»',
+        'The service was disabled (it will not start on next boot); re-enable it in "Settings → Quarantine"'), LItem.Id))
   else
   begin
     DropManifest(LItem.Id);
     Result := Finish(ActionDisable, LTarget, TMHActionResult.Create(arkAccessDenied,
-      'Не удалось изменить службу — запустите MineHunter от имени администратора', LError));
+      MHL('Не удалось изменить службу — запустите MineHunter от имени администратора',
+        'Could not change the service — run MineHunter as administrator'), LError));
   end;
 end;
 
@@ -549,7 +562,7 @@ var
   LItem: TMHQuarantineItem;
   LError, LTarget: string;
 begin
-  LTarget := 'задание ' + APath;
+  LTarget := MHL('задание ', 'task ') + APath;
   LItem := Default(TMHQuarantineItem);
   LItem.Id := NewId;
   LItem.Kind := qkTask;
@@ -558,21 +571,24 @@ begin
   LItem.Target := APath;
   if not SaveManifest(LItem) then
     Exit(Finish(ActionDisable, LTarget, TMHActionResult.Create(arkFailed,
-      'Не удалось сохранить запись — задание не изменено')));
+      MHL('Не удалось сохранить запись — задание не изменено',
+        'Could not save the record — the task was not changed'))));
   case FOps.TaskSetEnabled(APath, False, LError) of
     rorOk:
       Result := Finish(ActionDisable, LTarget, TMHActionResult.Create(arkDone,
-        'Задание отключено; включить — в «Настройки → Карантин»', LItem.Id));
+        MHL('Задание отключено; включить — в «Настройки → Карантин»',
+          'The task was disabled; re-enable it in "Settings → Quarantine"'), LItem.Id));
     rorNotFound:
       begin
         DropManifest(LItem.Id);
-        Result := Finish(ActionDisable, LTarget, TMHActionResult.Create(arkNotFound, 'Задание не найдено'));
+        Result := Finish(ActionDisable, LTarget, TMHActionResult.Create(arkNotFound, MHL('Задание не найдено', 'Task not found')));
       end;
   else
     begin
       DropManifest(LItem.Id);
       Result := Finish(ActionDisable, LTarget, TMHActionResult.Create(arkAccessDenied,
-        'Не удалось отключить задание — запустите MineHunter от имени администратора', LError));
+        MHL('Не удалось отключить задание — запустите MineHunter от имени администратора',
+          'Could not disable the task — run MineHunter as administrator'), LError));
     end;
   end;
 end;
@@ -630,19 +646,22 @@ var
 begin
   if FOps.FileExists(AItem.Target) then
     Exit(TMHActionResult.Create(arkFailed,
-      'На прежнем месте уже есть файл — восстановление отменено, чтобы ничего не перезаписать'));
+      MHL('На прежнем месте уже есть файл — восстановление отменено, чтобы ничего не перезаписать',
+        'A file already exists at the original location — restore cancelled so nothing is overwritten')));
   if not FOps.FileSha256(AItem.StoredPath, LSha, LSize) or not SameText(LSha, AItem.Sha256) then
-    Exit(TMHActionResult.Create(arkFailed, 'Файл в карантине повреждён или изменён — восстановление отменено'));
+    Exit(TMHActionResult.Create(arkFailed, MHL('Файл в карантине повреждён или изменён — восстановление отменено',
+      'The quarantined file is damaged or modified — restore cancelled')));
   FOps.ForceDirectories(ExtractFileDir(AItem.Target));
   if not FOps.MoveFile(AItem.StoredPath, AItem.Target, LError, LAccessDenied) then
   begin
     if LAccessDenied then
       Exit(TMHActionResult.Create(arkAccessDenied,
-        'Нет доступа к папке — запустите MineHunter от имени администратора', LError));
-    Exit(TMHActionResult.Create(arkFailed, 'Не удалось вернуть файл', LError));
+        MHL('Нет доступа к папке — запустите MineHunter от имени администратора',
+          'Access to the folder is denied — run MineHunter as administrator'), LError));
+    Exit(TMHActionResult.Create(arkFailed, MHL('Не удалось вернуть файл', 'Could not restore the file'), LError));
   end;
   FOps.SetAttributes(AItem.Target, AItem.Attributes);
-  Result := TMHActionResult.Create(arkDone, 'Файл возвращён на место: ' + AItem.Target);
+  Result := TMHActionResult.Create(arkDone, MHL('Файл возвращён на место: ', 'File restored to its place: ') + AItem.Target);
 end;
 
 function TMHQuarantine.RestoreRegistry(const AItem: TMHQuarantineItem): TMHActionResult;
@@ -652,18 +671,20 @@ var
   LError: string;
 begin
   if not HexToBytes(AItem.Data, LData) then
-    Exit(TMHActionResult.Create(arkFailed, 'Резервная копия значения повреждена'));
+    Exit(TMHActionResult.Create(arkFailed, MHL('Резервная копия значения повреждена', 'The value backup is damaged')));
   if FOps.RegReadValue(AItem.Target, AItem.ValueName, LType, LExisting, LError) = rorOk then
     Exit(TMHActionResult.Create(arkFailed,
-      'Значение уже существует — восстановление отменено, чтобы ничего не перезаписать'));
+      MHL('Значение уже существует — восстановление отменено, чтобы ничего не перезаписать',
+        'The value already exists — restore cancelled so nothing is overwritten')));
   case FOps.RegWriteValue(AItem.Target, AItem.ValueName, AItem.ValueType, LData, LError) of
     rorOk:
-      Result := TMHActionResult.Create(arkDone, Format('Значение «%s» восстановлено', [AItem.ValueName]));
+      Result := TMHActionResult.Create(arkDone, Format(MHL('Значение «%s» восстановлено', 'Value "%s" restored'), [AItem.ValueName]));
     rorAccessDenied:
       Result := TMHActionResult.Create(arkAccessDenied,
-        'Нет доступа к разделу реестра — запустите MineHunter от имени администратора', LError);
+        MHL('Нет доступа к разделу реестра — запустите MineHunter от имени администратора',
+          'Access to the registry key is denied — run MineHunter as administrator'), LError);
   else
-    Result := TMHActionResult.Create(arkFailed, 'Не удалось записать значение', LError);
+    Result := TMHActionResult.Create(arkFailed, MHL('Не удалось записать значение', 'Could not write the value'), LError);
   end;
 end;
 
@@ -673,17 +694,19 @@ var
   LError: string;
 begin
   if not TryStrToInt(AItem.Data, LStart) then
-    Exit(TMHActionResult.Create(arkFailed, 'Резервная копия службы повреждена'));
+    Exit(TMHActionResult.Create(arkFailed, MHL('Резервная копия службы повреждена', 'The service backup is damaged')));
   case FOps.ServiceSetStartType(AItem.Target, Cardinal(LStart), LError) of
     rorOk:
-      Result := TMHActionResult.Create(arkDone, 'Прежний тип запуска службы восстановлен');
+      Result := TMHActionResult.Create(arkDone, MHL('Прежний тип запуска службы восстановлен',
+        'The previous service start type was restored'));
     rorNotFound:
-      Result := TMHActionResult.Create(arkNotFound, 'Служба больше не существует');
+      Result := TMHActionResult.Create(arkNotFound, MHL('Служба больше не существует', 'The service no longer exists'));
     rorAccessDenied:
       Result := TMHActionResult.Create(arkAccessDenied,
-        'Нет доступа к службе — запустите MineHunter от имени администратора', LError);
+        MHL('Нет доступа к службе — запустите MineHunter от имени администратора',
+          'Access to the service is denied — run MineHunter as administrator'), LError);
   else
-    Result := TMHActionResult.Create(arkFailed, 'Не удалось изменить службу', LError);
+    Result := TMHActionResult.Create(arkFailed, MHL('Не удалось изменить службу', 'Could not change the service'), LError);
   end;
 end;
 
@@ -693,14 +716,15 @@ var
 begin
   case FOps.TaskSetEnabled(AItem.Target, True, LError) of
     rorOk:
-      Result := TMHActionResult.Create(arkDone, 'Задание снова включено');
+      Result := TMHActionResult.Create(arkDone, MHL('Задание снова включено', 'The task is enabled again'));
     rorNotFound:
-      Result := TMHActionResult.Create(arkNotFound, 'Задание больше не существует');
+      Result := TMHActionResult.Create(arkNotFound, MHL('Задание больше не существует', 'The task no longer exists'));
     rorAccessDenied:
       Result := TMHActionResult.Create(arkAccessDenied,
-        'Нет доступа к заданию — запустите MineHunter от имени администратора', LError);
+        MHL('Нет доступа к заданию — запустите MineHunter от имени администратора',
+          'Access to the task is denied — run MineHunter as administrator'), LError);
   else
-    Result := TMHActionResult.Create(arkFailed, 'Не удалось включить задание', LError);
+    Result := TMHActionResult.Create(arkFailed, MHL('Не удалось включить задание', 'Could not enable the task'), LError);
   end;
 end;
 
@@ -709,7 +733,8 @@ var
   LItem: TMHQuarantineItem;
 begin
   if not FindItem(Items, AId, LItem) then
-    Exit(Finish(ActionRestore, AId, TMHActionResult.Create(arkNotFound, 'Запись карантина не найдена')));
+    Exit(Finish(ActionRestore, AId, TMHActionResult.Create(arkNotFound,
+      MHL('Запись карантина не найдена', 'Quarantine record not found'))));
   case LItem.Kind of
     qkFile: Result := RestoreFile(LItem);
     qkRegistryValue: Result := RestoreRegistry(LItem);
@@ -729,18 +754,20 @@ var
   LError: string;
 begin
   if not FindItem(Items, AId, LItem) then
-    Exit(Finish(ActionPurge, AId, TMHActionResult.Create(arkNotFound, 'Запись карантина не найдена')));
+    Exit(Finish(ActionPurge, AId, TMHActionResult.Create(arkNotFound,
+      MHL('Запись карантина не найдена', 'Quarantine record not found'))));
   if (LItem.Kind = qkFile) and FOps.FileExists(LItem.StoredPath) and
      not FOps.DeleteFile(LItem.StoredPath, LError) then
     Exit(Finish(ActionPurge, LItem.Description, TMHActionResult.Create(arkFailed,
-      'Не удалось удалить файл из карантина', LError)));
+      MHL('Не удалось удалить файл из карантина', 'Could not delete the file from quarantine'), LError)));
   DropManifest(LItem.Id);
   if LItem.Kind = qkFile then
     Result := Finish(ActionPurge, LItem.Description, TMHActionResult.Create(arkDone,
-      'Файл удалён из карантина навсегда'))
+      MHL('Файл удалён из карантина навсегда', 'The file was permanently deleted from quarantine')))
   else
     Result := Finish(ActionPurge, LItem.Description, TMHActionResult.Create(arkDone,
-      'Резервная копия удалена — изменение останется навсегда'));
+      MHL('Резервная копия удалена — изменение останется навсегда',
+        'The backup was deleted — the change will remain permanently')));
 end;
 
 { План исправления }
@@ -780,21 +807,22 @@ begin
   case AEntry.Kind of
     akRegistryRun, akRegistryRunOnce:
       if not HasStep(ASteps, rmRegistryValue, AEntry.Location, AEntry.Name) then
-        ASteps := ASteps + [Step(rmRegistryValue, Format('Отключить автозапуск «%s» (%s)',
-          [AEntry.Name, AEntry.Location]), AEntry.Location, AEntry.Name)];
+        ASteps := ASteps + [Step(rmRegistryValue, Format(MHL('Отключить автозапуск «%s» (%s)',
+          'Disable autostart "%s" (%s)'), [AEntry.Name, AEntry.Location]), AEntry.Location, AEntry.Name)];
     akStartupFolder:
       begin
         LPath := IncludeTrailingPathDelimiter(AEntry.Location) + AEntry.Name;
         if not HasStep(ASteps, rmQuarantineFile, LPath, '') then
-          ASteps := ASteps + [Step(rmQuarantineFile, 'Убрать ярлык из папки автозагрузки в карантин: ' + LPath,
-            LPath)];
+          ASteps := ASteps + [Step(rmQuarantineFile, MHL('Убрать ярлык из папки автозагрузки в карантин: ',
+            'Move the shortcut from the Startup folder to quarantine: ') + LPath, LPath)];
       end;
     akService:
       if not HasStep(ASteps, rmService, AEntry.Name, '') then
-        ASteps := ASteps + [Step(rmService, 'Отключить службу ' + AEntry.Name, AEntry.Name)];
+        ASteps := ASteps + [Step(rmService, MHL('Отключить службу ', 'Disable service ') + AEntry.Name, AEntry.Name)];
     akScheduledTask:
       if not HasStep(ASteps, rmTask, AEntry.Name, '') then
-        ASteps := ASteps + [Step(rmTask, 'Отключить задание планировщика ' + AEntry.Name, AEntry.Name)];
+        ASteps := ASteps + [Step(rmTask, MHL('Отключить задание планировщика ', 'Disable scheduled task ') + AEntry.Name,
+          AEntry.Name)];
   end;
 end;
 
@@ -814,7 +842,8 @@ begin
   LPath := MHNormalizePath(APath);
   if (LPath = '') or IsWindowsFile(LPath, AWindowsDir) or HasStep(ASteps, rmQuarantineFile, LPath, '') then
     Exit;
-  ASteps := ASteps + [Step(rmQuarantineFile, 'Переместить файл в карантин: ' + LPath, LPath)];
+  ASteps := ASteps + [Step(rmQuarantineFile, MHL('Переместить файл в карантин: ', 'Move the file to quarantine: ') + LPath,
+    LPath)];
 end;
 
 function MHBuildRemediationPlan(const ASnapshot: TMHSnapshot; const AFinding: TMHFinding;
@@ -833,7 +862,8 @@ begin
   // 1. Остановить запущенный процесс находки (по личности PID + время создания).
   if not AFinding.Process.IsEmpty and ASnapshot.FindProcess(AFinding.Process, LInfo) then
   begin
-    LStep := Step(rmStopProcess, Format('Остановить процесс %s (PID %d)', [LInfo.Name, LInfo.Id.Pid]), '');
+    LStep := Step(rmStopProcess, Format(MHL('Остановить процесс %s (PID %d)', 'Stop process %s (PID %d)'),
+      [LInfo.Name, LInfo.Id.Pid]), '');
     LStep.Process := LInfo.Id;
     LStep.ProcessName := LInfo.Name;
     Result := Result + [LStep];
@@ -849,21 +879,21 @@ begin
              (('tamper:defender:files:' + ExtractFileDir(LTamper.ImagePath).ToLower = LKey) or
               ('tamper:defender:item:' + LTamper.Name.ToLower = LKey)) then
           begin
-            Result := Result + [Step(rmRegistryValue, 'Удалить исключение Microsoft Defender: ' + LTamper.Name,
-              LTamper.Location, LTamper.Name)];
+            Result := Result + [Step(rmRegistryValue, MHL('Удалить исключение Microsoft Defender: ',
+              'Remove Microsoft Defender exclusion: ') + LTamper.Name, LTamper.Location, LTamper.Name)];
             // Исключённые программы (не папки) — в карантин, если файлы на месте.
             if (ExtractFileExt(LTamper.Name) <> '') and not LTamper.Details.Contains('файла нет') then
               AddQuarantine(LTamper.ImagePath, AWindowsDir, Result);
           end;
         tpIfeoDebugger:
           if LKey = 'tamper:ifeo:' + LTamper.Value.ToLower then
-            Result := Result + [Step(rmRegistryValue, 'Снять перехват запуска ' + LTamper.Name,
-              LTamper.Location, 'Debugger')];
+            Result := Result + [Step(rmRegistryValue, MHL('Снять перехват запуска ', 'Remove launch hijack of ') +
+              LTamper.Name, LTamper.Location, 'Debugger')];
         tpSilentExitMonitor:
           if LKey = 'tamper:silentexit:' + LTamper.Name.ToLower then
           begin
-            Result := Result + [Step(rmRegistryValue, 'Убрать запуск при завершении ' + LTamper.Name,
-              LTamper.Location, 'MonitorProcess')];
+            Result := Result + [Step(rmRegistryValue, MHL('Убрать запуск при завершении ', 'Remove launch-on-exit of ') +
+              LTamper.Name, LTamper.Location, 'MonitorProcess')];
             AddQuarantine(LTamper.ImagePath, AWindowsDir, Result);
           end;
         tpPolicyRestriction:
@@ -871,19 +901,23 @@ begin
              (SameText(LTamper.Name, 'DisableAntiSpyware') or SameText(LTamper.Name, 'DisableAntiVirus') or
               LTamper.Name.StartsWith('Disable', True) and LTamper.Location.ToLower.Contains('windows defender')) or
              (LKey = 'tamper:policy:' + LTamper.Details.ToLower + ':' + LTamper.Name.ToLower) then
-            Result := Result + [Step(rmRegistryValue, Format('Удалить политику %s = %s', [LTamper.Name,
+            Result := Result + [Step(rmRegistryValue, Format(MHL('Удалить политику %s = %s', 'Remove policy %s = %s'), [LTamper.Name,
               LTamper.Value]), LTamper.Location, LTamper.Name)];
         tpWmiSubscription:
           if LKey = 'tamper:wmi:' + LTamper.Name.ToLower then
           begin
-            Result := Result + [Step(rmManual, 'Подписку WMI «' + LTamper.Name + '» удалите вручную в PowerShell ' +
-              'от имени администратора (см. рекомендации) — автоматический откат подписок не поддерживается', '')];
+            Result := Result + [Step(rmManual, MHL('Подписку WMI «', 'Remove the WMI subscription "') + LTamper.Name +
+              MHL('» удалите вручную в PowerShell ', '" manually in PowerShell ') +
+              MHL('от имени администратора (см. рекомендации) — автоматический откат подписок не поддерживается',
+              'as administrator (see recommendations) — automatic rollback of subscriptions is not supported'), '')];
             AddQuarantine(LTamper.ImagePath, AWindowsDir, Result);
           end;
         tpHostsRedirect:
           if LKey.StartsWith('tamper:hosts') and (Length(Result) = 0) then
-            Result := Result + [Step(rmManual, 'Удалите строки из файла hosts вручную (Блокнот от имени ' +
-              'администратора) — MineHunter не изменяет hosts автоматически', '')];
+            Result := Result + [Step(rmManual, MHL('Удалите строки из файла hosts вручную (Блокнот от имени ',
+              'Remove the lines from the hosts file manually (Notepad as ') +
+              MHL('администратора) — MineHunter не изменяет hosts автоматически',
+              'administrator) — MineHunter does not modify hosts automatically'), '')];
       end;
     Exit;
   end;

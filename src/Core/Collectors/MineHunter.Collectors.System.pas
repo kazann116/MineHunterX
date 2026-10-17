@@ -105,7 +105,7 @@ implementation
 
 uses
   System.Generics.Collections, System.Math,
-  MineHunter.Core.Calc;
+  MineHunter.Core.Calc, MineHunter.Core.Lang;
 
 constructor TMHSystemCollector.Create(const AApi: IMHSystemMetricsApi; const AClock: IMHClock);
 begin
@@ -125,7 +125,7 @@ end;
 
 function TMHSystemCollector.GetDisplayName: string;
 begin
-  Result := 'Система: CPU, память, диск';
+  Result := MHL('Система: CPU, память, диск', 'System: CPU, memory, disk');
 end;
 
 function TMHSystemCollector.Collect(const ASnapshot: TMHSnapshot): TMHCollectionResult;
@@ -163,7 +163,8 @@ begin
          MHTryCalcSystemCpuPercent(LIdle, LKernel, LUser, LPercent) then
         LCpuValue := True
       else
-        LNotes.Append('Загрузка CPU будет доступна после следующего замера. ');
+        LNotes.Append(MHL('Загрузка CPU будет доступна после следующего замера. ',
+          'CPU load will be available after the next measurement. '));
       FPrevious := LTimes;
       FHasPrevious := True;
     end
@@ -209,8 +210,8 @@ begin
     else
     begin
       if LError = '' then
-        LError := 'некорректные данные о памяти';
-      LNotes.Append('Память: ' + LError + '. ');
+        LError := MHL('некорректные данные о памяти', 'invalid memory data');
+      LNotes.Append(MHL('Память: ', 'Memory: ') + LError + '. ');
       LMetrics.Add(TMHMetric.NoData(mkMemoryUsedBytes, LNow));
       LMetrics.Add(TMHMetric.NoData(mkMemoryTotalBytes, LNow));
       LMetrics.Add(TMHMetric.NoData(mkMemoryLoadPercent, LNow));
@@ -228,7 +229,7 @@ begin
     else
     begin
       if LDisk.Reason <> '' then
-        LNotes.Append('Диск: ' + LDisk.Reason + '. ');
+        LNotes.Append(MHL('Диск: ', 'Disk: ') + LDisk.Reason + '. ');
       LMetrics.Add(TMHMetric.NoData(mkDiskReadBytesPerSec, LNow));
       LMetrics.Add(TMHMetric.NoData(mkDiskWriteBytesPerSec, LNow));
       LMetrics.Add(TMHMetric.NoData(mkDiskActivePercent, LNow));

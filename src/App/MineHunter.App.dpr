@@ -2,6 +2,7 @@
 
 uses
   Vcl.Forms,
+  MineHunter.Core.Lang in '..\Core\MineHunter.Core.Lang.pas',
   MineHunter.Core.Types in '..\Core\MineHunter.Core.Types.pas',
   MineHunter.Core.Interfaces in '..\Core\MineHunter.Core.Interfaces.pas',
   MineHunter.Core.Calc in '..\Core\MineHunter.Core.Calc.pas',

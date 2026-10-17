@@ -45,7 +45,7 @@ function MHFormatEnergy(AKWh: Double): string;
 implementation
 
 uses
-  System.Math, System.Generics.Collections, System.Generics.Defaults;
+  System.Math, System.Generics.Collections, System.Generics.Defaults, MineHunter.Core.Lang;
 
 function MHEnergyCost(AWatts, AHours, APricePerKWh: Double): Double;
 begin
@@ -123,9 +123,9 @@ begin
   if IsNan(AKWh) or IsInfinite(AKWh) or (AKWh < 0) then
     AKWh := 0;
   if AKWh < 1 then
-    Result := FormatFloat('0', AKWh * 1000) + ' Вт·ч'
+    Result := FormatFloat('0', AKWh * 1000) + MHL(' Вт·ч', ' Wh')
   else
-    Result := FormatFloat('0.00', AKWh) + ' кВт·ч';
+    Result := FormatFloat('0.00', AKWh) + MHL(' кВт·ч', ' kWh');
 end;
 
 end.

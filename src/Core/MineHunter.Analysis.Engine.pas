@@ -169,7 +169,7 @@ implementation
 
 uses
   System.Math, System.StrUtils, System.Hash, System.DateUtils, System.Generics.Defaults,
-  MineHunter.Core.Paths, MineHunter.Analysis.Tamper, MineHunter.Analysis.Launches;
+  MineHunter.Core.Paths, MineHunter.Core.Lang, MineHunter.Analysis.Tamper, MineHunter.Analysis.Launches;
 
 const
   MINUTE = 1 / MinsPerDay;
@@ -255,6 +255,7 @@ end;
 
 function TMHThreatAnalyzer.GetRulesetVersion: string;
 begin
+  // Не зависит от языка: версия правил сохраняется вместе с находками.
   Result := MH_RULESET_VERSION + ' / индикаторы ' + MH_INDICATORS_VERSION;
 end;
 
@@ -688,25 +689,30 @@ begin
     // Длительность: данные покрывают почти весь интервал (допуск — один интервал опроса).
     LSustained := LLoadHigh and (LMinutes >= ASettings.SustainedMinutes * 0.9);
     if LLoadHigh and not LSustained then
-      AddUnique(LMissing, Format('История нагрузки короче %d мин — длительность ещё не подтверждена',
+      AddUnique(LMissing, Format(MHL('История нагрузки короче %d мин — длительность ещё не подтверждена',
+        'Load history is shorter than %d min — duration not yet confirmed'),
         [ASettings.SustainedMinutes]));
   end;
   if LSustained then
   begin
     if LAvg >= ASettings.HighCpuPercent * 2 then
-      AddEvidence(LEvidence, EV_LOAD_SUSTAINED, 'Длительная высокая нагрузка на процессор', 30,
-        Format('в среднем %s CPU (≈%s ядра) в течение %d мин',
+      AddEvidence(LEvidence, EV_LOAD_SUSTAINED, MHL('Длительная высокая нагрузка на процессор',
+        'Sustained high CPU load'), 30,
+        Format(MHL('в среднем %s CPU (≈%s ядра) в течение %d мин', 'average %s CPU (≈%s cores) for %d min'),
           [FormatPercent(LAvg), FormatFloat('0.0', LAvg * FCpuCount / 100), ASettings.SustainedMinutes]))
     else
-      AddEvidence(LEvidence, EV_LOAD_SUSTAINED, 'Длительная высокая нагрузка на процессор', 25,
-        Format('в среднем %s CPU (≈%s ядра) в течение %d мин',
+      AddEvidence(LEvidence, EV_LOAD_SUSTAINED, MHL('Длительная высокая нагрузка на процессор',
+        'Sustained high CPU load'), 25,
+        Format(MHL('в среднем %s CPU (≈%s ядра) в течение %d мин', 'average %s CPU (≈%s cores) for %d min'),
           [FormatPercent(LAvg), FormatFloat('0.0', LAvg * FCpuCount / 100), ASettings.SustainedMinutes]));
     LIsForeground := ASnapshot.Context.Available and (ASnapshot.Context.ForegroundPid = AInfo.Id.Pid);
     if ASnapshot.Context.Available and not AInfo.HasVisibleWindow and not LIsForeground then
-      AddEvidence(LEvidence, EV_LOAD_BACKGROUND, 'Нагрузку создаёт фоновый процесс без окна', 10);
+      AddEvidence(LEvidence, EV_LOAD_BACKGROUND, MHL('Нагрузку создаёт фоновый процесс без окна',
+        'The load comes from a background process without a window'), 10);
     if ASnapshot.Context.Available and (ASnapshot.Context.UserIdleSeconds >= IDLE_SECONDS) then
-      AddEvidence(LEvidence, EV_LOAD_WHILE_IDLE, 'Нагрузка сохраняется, пока пользователь не работает', 10,
-        Format('бездействие %d мин', [ASnapshot.Context.UserIdleSeconds div 60]));
+      AddEvidence(LEvidence, EV_LOAD_WHILE_IDLE, MHL('Нагрузка сохраняется, пока пользователь не работает',
+        'The load continues while the user is away'), 10,
+        Format(MHL('бездействие %d мин', 'idle for %d min'), [ASnapshot.Context.UserIdleSeconds div 60]));
   end;
 
   // --- Видеокарта ---
@@ -726,28 +732,34 @@ begin
     if LGpuCovered and (LGpuAvg >= MH_GPU_HIGH_PERCENT) then
     begin
       LGpuSustained := True;
-      AddEvidence(LEvidence, EV_GPU_SUSTAINED, 'Длительная высокая нагрузка на видеокарту', 20,
-        Format('в среднем %s GPU в течение %d мин', [FormatPercent(LGpuAvg), ASettings.SustainedMinutes]));
+      AddEvidence(LEvidence, EV_GPU_SUSTAINED, MHL('Длительная высокая нагрузка на видеокарту',
+        'Sustained high GPU load'), 20,
+        Format(MHL('в среднем %s GPU в течение %d мин', 'average %s GPU for %d min'),
+          [FormatPercent(LGpuAvg), ASettings.SustainedMinutes]));
     end;
     if LGpuCovered and (LComputeAvg >= MH_GPU_COMPUTE_HIGH_PERCENT) and ASnapshot.Context.Available and
        not AInfo.HasVisibleWindow and not LIsForeground then
     begin
       LComputeBackground := True;
       AddEvidence(LEvidence, EV_GPU_COMPUTE_BACKGROUND,
-        'Фоновая программа без окна загружает вычислительные блоки видеокарты (Compute, CUDA) — ' +
-        'так работают майнеры на GPU', 25,
-        Format('в среднем %s вычислений GPU в течение %d мин', [FormatPercent(LComputeAvg),
+        MHL('Фоновая программа без окна загружает вычислительные блоки видеокарты (Compute, CUDA) — ',
+          'A background program without a window is loading the GPU compute engines (Compute, CUDA) — ') +
+        MHL('так работают майнеры на GPU', 'this is how GPU miners work'), 25,
+        Format(MHL('в среднем %s вычислений GPU в течение %d мин', 'average %s GPU compute for %d min'),
+          [FormatPercent(LComputeAvg),
           ASettings.SustainedMinutes]));
     end;
     if LGpuSustained or LComputeBackground then
     begin
       if ASnapshot.Context.Available and not AInfo.HasVisibleWindow and not LIsForeground and
          not HasCode(LEvidence, EV_LOAD_BACKGROUND) then
-        AddEvidence(LEvidence, EV_LOAD_BACKGROUND, 'Нагрузку создаёт фоновый процесс без окна', 10);
+        AddEvidence(LEvidence, EV_LOAD_BACKGROUND, MHL('Нагрузку создаёт фоновый процесс без окна',
+          'The load comes from a background process without a window'), 10);
       if ASnapshot.Context.Available and (ASnapshot.Context.UserIdleSeconds >= IDLE_SECONDS) and
          not HasCode(LEvidence, EV_LOAD_WHILE_IDLE) then
-        AddEvidence(LEvidence, EV_LOAD_WHILE_IDLE, 'Нагрузка сохраняется, пока пользователь не работает', 10,
-          Format('бездействие %d мин', [ASnapshot.Context.UserIdleSeconds div 60]));
+        AddEvidence(LEvidence, EV_LOAD_WHILE_IDLE, MHL('Нагрузка сохраняется, пока пользователь не работает',
+          'The load continues while the user is away'), 10,
+          Format(MHL('бездействие %d мин', 'idle for %d min'), [ASnapshot.Context.UserIdleSeconds div 60]));
     end;
   end;
 
@@ -755,21 +767,24 @@ begin
   if (LState <> nil) and (LState.HidSince > 0) then
   begin
     AddEvidence(LEvidence, EV_HIDES_FROM_MONITOR,
-      'Процесс резко снизил нагрузку после запуска диспетчера задач', 30,
-      Format('было %s, стало %s', [FormatPercent(LState.HidCpuBefore), FormatPercent(LState.HidCpuAfter)]));
+      MHL('Процесс резко снизил нагрузку после запуска диспетчера задач',
+        'The process sharply reduced its load after Task Manager was started'), 30,
+      Format(MHL('было %s, стало %s', 'was %s, now %s'), [FormatPercent(LState.HidCpuBefore), FormatPercent(LState.HidCpuAfter)]));
     LMinerSignal := True;
   end;
 
   // --- Признаки майнера ---
   if MHIsKnownMinerName(AInfo.Name) then
   begin
-    AddEvidence(LEvidence, EV_MINER_NAME, 'Имя совпадает с известной программой для майнинга', 35, AInfo.Name);
+    AddEvidence(LEvidence, EV_MINER_NAME, MHL('Имя совпадает с известной программой для майнинга',
+      'The name matches a known mining program'), 35, AInfo.Name);
     LMinerSignal := True;
   end;
   LToken := MHFindMinerCommandToken(AInfo.CommandLine);
   if LToken <> '' then
   begin
-    AddEvidence(LEvidence, EV_MINER_CMDLINE, 'В командной строке есть параметры майнинга', 40, LToken);
+    AddEvidence(LEvidence, EV_MINER_CMDLINE, MHL('В командной строке есть параметры майнинга',
+      'The command line contains mining parameters'), 40, LToken);
     LMinerSignal := True;
   end;
   LPoolPorts := '';
@@ -781,7 +796,8 @@ begin
   if (LPoolPorts <> '') and (LSustained or LMinerSignal) then
   begin
     AddEvidence(LEvidence, EV_POOL_PORT,
-      'Соединение с портом, типичным для пулов майнинга (сам по себе не доказательство)', 15,
+      MHL('Соединение с портом, типичным для пулов майнинга (сам по себе не доказательство)',
+        'Connection to a port typical for mining pools (not proof by itself)'), 15,
       Trim(LPoolPorts));
     LMinerSignal := True;
   end;
@@ -790,31 +806,35 @@ begin
   LHasFile := ASnapshot.FindFile(LPath, LFile);
   if LPath = '' then
   begin
-    AddUnique(LMissing, 'Путь к файлу недоступен (нет прав) — подпись и расположение не проверены');
+    AddUnique(LMissing, MHL('Путь к файлу недоступен (нет прав) — подпись и расположение не проверены',
+      'File path is unavailable (no access) — signature and location not checked'));
     LConfidence := LConfidence - 0.3;
   end
   else if not LHasFile or (LFile.Signature = sgNotChecked) then
   begin
-    AddUnique(LMissing, 'Цифровая подпись ещё не проверена');
+    AddUnique(LMissing, MHL('Цифровая подпись ещё не проверена', 'Digital signature not checked yet'));
     LConfidence := LConfidence - 0.15;
   end;
   if LHasFile then
     case LFile.Signature of
       sgUnsigned:
-        AddEvidence(LEvidence, EV_UNSIGNED, 'Файл без цифровой подписи (это не доказательство угрозы)', 10);
+        AddEvidence(LEvidence, EV_UNSIGNED, MHL('Файл без цифровой подписи (это не доказательство угрозы)',
+          'The file has no digital signature (this is not proof of a threat)'), 10);
       sgSignedUntrusted:
         begin
-          AddEvidence(LEvidence, EV_SIGNATURE_INVALID, 'Подпись недействительна или файл изменён после подписания',
+          AddEvidence(LEvidence, EV_SIGNATURE_INVALID, MHL('Подпись недействительна или файл изменён после подписания',
+            'The signature is invalid or the file was modified after signing'),
             25, LFile.Error);
           LThreatSignal := True;
         end;
       sgCheckFailed:
-        AddUnique(LMissing, 'Подпись не удалось проверить: ' + LFile.Error);
+        AddUnique(LMissing, MHL('Подпись не удалось проверить: ', 'Could not verify the signature: ') + LFile.Error);
     end;
 
   if (LPath <> '') and MHIsSuspiciousLocation(LPath, LReason) then
   begin
-    AddEvidence(LEvidence, EV_LOCATION, 'Программа запущена из необычного места', 15, LReason);
+    AddEvidence(LEvidence, EV_LOCATION, MHL('Программа запущена из необычного места',
+      'The program is running from an unusual location'), 15, LReason);
     LThreatSignal := True;
   end;
 
@@ -828,14 +848,16 @@ begin
         LInExpectedDir := True;
     if not LInExpectedDir then
     begin
-      AddEvidence(LEvidence, EV_MASQUERADE, 'Системное имя Windows, но файл не в системной папке', 40,
+      AddEvidence(LEvidence, EV_MASQUERADE, MHL('Системное имя Windows, но файл не в системной папке',
+        'A Windows system name, but the file is not in a system folder'), 40,
         LPath);
       LThreatSignal := True;
     end;
   end
   else if MHLooksLikeSystemName(AInfo.Name, LSystemName) then
   begin
-    AddEvidence(LEvidence, EV_NAME_LOOKALIKE, 'Имя похоже на системное, но отличается одним символом', 25,
+    AddEvidence(LEvidence, EV_NAME_LOOKALIKE, MHL('Имя похоже на системное, но отличается одним символом',
+      'The name resembles a system name but differs by one character'), 25,
       Format('%s ≈ %s', [AInfo.Name, LSystemName]));
     LThreatSignal := True;
   end;
@@ -850,8 +872,9 @@ begin
          (LHasFile and (LFile.Signature = sgUnsigned) and not MHIsStandardInstallLocation(LPath)) or
          MHIsSuspiciousLocation(LPath, LReason) or LMinerSignal then
       begin
-        AddEvidence(LEvidence, EV_AUTOSTART, 'Программа закреплена в автозапуске', 15,
-          MHAutostartKindToString(LAutostart.Kind) + ': ' + LAutostart.Location);
+        AddEvidence(LEvidence, EV_AUTOSTART, MHL('Программа закреплена в автозапуске',
+          'The program is registered in autostart'), 15,
+          MHAutostartKindTitle(LAutostart.Kind) + ': ' + LAutostart.Location);
         LThreatSignal := True;
       end;
       Break;
@@ -875,41 +898,51 @@ begin
     if ABaseline.FindProcess(LKey, LBaseProcess) and LBaseProcess.Cpu.HasData then
     begin
       if LSustained and (LAvg > LBaseProcess.Cpu.P95 + 10) then
-        AddEvidence(LEvidence, EV_ABOVE_BASELINE, 'Нагрузка выше обычной для этого компьютера', 10,
-          Format('сейчас %s, обычно до %s (%s)', [FormatPercent(LAvg), FormatPercent(LBaseProcess.Cpu.P95),
+        AddEvidence(LEvidence, EV_ABOVE_BASELINE, MHL('Нагрузка выше обычной для этого компьютера',
+          'The load is higher than usual for this computer'), 10,
+          Format(MHL('сейчас %s, обычно до %s (%s)', 'now %s, usually up to %s (%s)'), [FormatPercent(LAvg), FormatPercent(LBaseProcess.Cpu.P95),
             MHWorkContextToString(ABaseline.Context)]))
       else if LSustained and (LAvg <= LBaseProcess.Cpu.P95 * 1.2) and not LMinerSignal and not LThreatSignal then
-        AddEvidence(LEvidence, EV_TYPICAL, 'Такая нагрузка обычна для этого компьютера', -10,
-          Format('обычно до %s', [FormatPercent(LBaseProcess.Cpu.P95)]));
+        AddEvidence(LEvidence, EV_TYPICAL, MHL('Такая нагрузка обычна для этого компьютера',
+          'This load is typical for this computer'), -10,
+          Format(MHL('обычно до %s', 'usually up to %s'), [FormatPercent(LBaseProcess.Cpu.P95)]));
     end
     else if LSustained then
-      AddEvidence(LEvidence, EV_ABOVE_BASELINE, 'Новая программа, которой не было в профиле нормы', 10);
+      AddEvidence(LEvidence, EV_ABOVE_BASELINE, MHL('Новая программа, которой не было в профиле нормы',
+        'A new program that was not in the baseline profile'), 10);
   end
   else if LSustained then
-    AddUnique(LMissing, 'Профиль нормы ещё не сформирован — сравнение с обычной работой недоступно');
+    AddUnique(LMissing, MHL('Профиль нормы ещё не сформирован — сравнение с обычной работой недоступно',
+      'The baseline profile is not built yet — comparison with normal activity is unavailable'));
 
   // --- Оправдывающие факторы ---
   if LHasFile and (LFile.Signature = sgSignedTrusted) and not LThreatSignal then
   begin
     if MHIsStandardInstallLocation(LPath) and LFile.Signer.Contains('Microsoft') then
-      AddEvidence(LEvidence, EV_SIGNED_TRUSTED, 'Подписан Microsoft, расположен в системной папке', -25,
+      AddEvidence(LEvidence, EV_SIGNED_TRUSTED, MHL('Подписан Microsoft, расположен в системной папке',
+        'Signed by Microsoft, located in a system folder'), -25,
         LFile.Signer)
     else
-      AddEvidence(LEvidence, EV_SIGNED_TRUSTED, 'Подписан доверенным издателем', -15, LFile.Signer);
+      AddEvidence(LEvidence, EV_SIGNED_TRUSTED, MHL('Подписан доверенным издателем',
+        'Signed by a trusted publisher'), -15, LFile.Signer);
   end;
   if ASnapshot.Context.Available then
   begin
     if ASnapshot.Context.FullscreenActive and (ASnapshot.Context.ForegroundPid = AInfo.Id.Pid) then
-      AddEvidence(LEvidence, EV_FULLSCREEN, 'Это активное полноэкранное приложение (игра, видео, презентация)', -20)
+      AddEvidence(LEvidence, EV_FULLSCREEN, MHL('Это активное полноэкранное приложение (игра, видео, презентация)',
+        'This is the active full-screen application (game, video, presentation)'), -20)
     else if (ASnapshot.Context.ForegroundPid = AInfo.Id.Pid) and
             (ASnapshot.Context.UserIdleSeconds < IDLE_SECONDS) then
-      AddEvidence(LEvidence, EV_USER_ACTIVE, 'Пользователь сейчас работает с этой программой', -20)
+      AddEvidence(LEvidence, EV_USER_ACTIVE, MHL('Пользователь сейчас работает с этой программой',
+        'The user is currently working with this program'), -20)
     else if AInfo.HasVisibleWindow and (ASnapshot.Context.UserIdleSeconds < IDLE_SECONDS) then
-      AddEvidence(LEvidence, EV_USER_ACTIVE, 'У программы есть открытое окно', -10);
+      AddEvidence(LEvidence, EV_USER_ACTIVE, MHL('У программы есть открытое окно',
+        'The program has an open window'), -10);
   end
   else
   begin
-    AddUnique(LMissing, 'Нет данных о работе пользователя (активное окно, бездействие)');
+    AddUnique(LMissing, MHL('Нет данных о работе пользователя (активное окно, бездействие)',
+      'No data on user activity (active window, idle time)'));
     LConfidence := LConfidence - 0.1;
   end;
   LWorkload := MHWorkloadCategoryOf(AInfo.Name, LPath);
@@ -918,10 +951,12 @@ begin
     if (LThreatSignal or LMinerSignal) or (LHasFile and (LFile.Signature in [sgUnsigned, sgSignedUntrusted]) and
        not MHIsStandardInstallLocation(LPath)) then
       AddEvidence(LEvidence, EV_WORKLOAD_MISMATCH,
-        'Имя совпадает с известной программой, но подпись или расположение необычны', 10,
+        MHL('Имя совпадает с известной программой, но подпись или расположение необычны',
+          'The name matches a known program, but its signature or location is unusual'), 10,
         MHWorkloadCategoryToString(LWorkload))
     else if LSustained or LGpuSustained or LComputeBackground then
-      AddEvidence(LEvidence, EV_KNOWN_WORKLOAD, 'Похоже на обычную ресурсоёмкую задачу', -20,
+      AddEvidence(LEvidence, EV_KNOWN_WORKLOAD, MHL('Похоже на обычную ресурсоёмкую задачу',
+        'Looks like a normal resource-intensive task'), -20,
         MHWorkloadCategoryToString(LWorkload));
   end;
 
@@ -940,23 +975,32 @@ begin
     LMinerSignal := True;
   if (LSustained or LLoadHigh) and
      not (ASnapshot.FindMetric(mkGpuPercent, LGpuMetric) and LGpuMetric.HasValue) then
-    AddUnique(LMissing, 'Загрузка видеокарты недоступна — майнинг на GPU не проверен');
+    AddUnique(LMissing, MHL('Загрузка видеокарты недоступна — майнинг на GPU не проверен',
+      'GPU load is unavailable — GPU mining not checked'));
 
   if HasCode(LEvidence, EV_LOCATION) or HasCode(LEvidence, EV_UNSIGNED) or LMinerSignal or
      HasCode(LEvidence, EV_MASQUERADE) or HasCode(LEvidence, EV_NAME_LOOKALIKE) then
-    AddUnique(LRecommend, 'Проверьте файл через Microsoft Defender (кнопка «Проверить в Defender»).');
-  AddUnique(LRecommend, 'Откройте расположение файла и убедитесь, что вы знаете эту программу.');
+    AddUnique(LRecommend, MHL('Проверьте файл через Microsoft Defender (кнопка «Проверить в Defender»).',
+      'Scan the file with Microsoft Defender (the "Scan with Defender" button).'));
+  AddUnique(LRecommend, MHL('Откройте расположение файла и убедитесь, что вы знаете эту программу.',
+    'Open the file location and make sure you know this program.'));
   if HasCode(LEvidence, EV_MASQUERADE) or HasCode(LEvidence, EV_NAME_LOOKALIKE) then
-    AddUnique(LRecommend, 'Системные файлы Windows находятся только в папке Windows — подделка имени является частым приёмом маскировки.');
+    AddUnique(LRecommend, MHL('Системные файлы Windows находятся только в папке Windows — подделка имени является частым приёмом маскировки.',
+      'Windows system files are located only in the Windows folder — faking the name is a common disguise technique.'));
   if HasCode(LEvidence, EV_HIDES_FROM_MONITOR) then
-    AddUnique(LRecommend, 'Снижение нагрузки при открытии диспетчера задач характерно для скрытых майнеров — понаблюдайте за процессом с закрытым диспетчером.');
+    AddUnique(LRecommend, MHL('Снижение нагрузки при открытии диспетчера задач характерно для скрытых майнеров — понаблюдайте за процессом с закрытым диспетчером.',
+      'Reducing load when Task Manager opens is typical of hidden miners — observe the process with Task Manager closed.'));
   if HasCode(LEvidence, EV_AUTOSTART) then
-    AddUnique(LRecommend, 'Проверьте запись автозапуска. Не удаляйте её, пока не убедились, что программа вам не нужна.');
+    AddUnique(LRecommend, MHL('Проверьте запись автозапуска. Не удаляйте её, пока не убедились, что программа вам не нужна.',
+      'Check the autostart entry. Do not delete it until you are sure you do not need the program.'));
   if (LSustained or LGpuSustained or LComputeBackground) and not LMinerSignal then
-    AddUnique(LRecommend, 'Если это ваша программа (рендеринг, вычисления на процессоре или видеокарте, ' +
-      'майнинг по вашему желанию) — добавьте её в исключения.');
+    AddUnique(LRecommend, MHL('Если это ваша программа (рендеринг, вычисления на процессоре или видеокарте, ',
+      'If this is your program (rendering, CPU or GPU computing, ') +
+      MHL('майнинг по вашему желанию) — добавьте её в исключения.',
+        'mining by your choice) — add it to exclusions.'));
   if LMinerSignal or LThreatSignal then
-    AddUnique(LRecommend, 'Чтобы остановить процесс, используйте «Остановить процесс» — действие потребует подтверждения.');
+    AddUnique(LRecommend, MHL('Чтобы остановить процесс, используйте «Остановить процесс» — действие потребует подтверждения.',
+      'To stop the process, use "Stop process" — the action will require confirmation.'));
 
   if LState <> nil then
     LCount := LState.Samples.Count
@@ -984,7 +1028,7 @@ begin
   if LMinerSignal then
   begin
     AFinding.Category := fcMining;
-    AFinding.Title := 'Признаки скрытого майнинга: ' + AInfo.Name;
+    AFinding.Title := MHL('Признаки скрытого майнинга: ', 'Signs of hidden mining: ') + AInfo.Name;
   end
   else if LThreatSignal then
   begin
@@ -992,15 +1036,16 @@ begin
       AFinding.Category := fcPersistence
     else
       AFinding.Category := fcSuspicious;
-    AFinding.Title := 'Подозрительный процесс: ' + AInfo.Name;
+    AFinding.Title := MHL('Подозрительный процесс: ', 'Suspicious process: ') + AInfo.Name;
   end
   else
   begin
     AFinding.Category := fcPerformance;
-    AFinding.Title := 'Необычная фоновая нагрузка: ' + AInfo.Name;
+    AFinding.Title := MHL('Необычная фоновая нагрузка: ', 'Unusual background load: ') + AInfo.Name;
   end;
-  AFinding.Summary := Format('%s. Оценка %d из 100 (%s), уверенность %s. Это повод для проверки, а не диагноз.',
-    [MHFindingCategoryToString(AFinding.Category), AFinding.Score, MHRiskLevelToString(AFinding.Level),
+  AFinding.Summary := Format(MHL('%s. Оценка %d из 100 (%s), уверенность %s. Это повод для проверки, а не диагноз.',
+    '%s. Score %d of 100 (%s), confidence %s. This is a reason to check, not a diagnosis.'),
+    [MHFindingCategoryTitle(AFinding.Category), AFinding.Score, MHRiskLevelToString(AFinding.Level),
      FormatPercent(AFinding.Confidence * 100)]);
   AFinding.Key := Format('process:%s:%s', [LKey, MHFindingCategoryToString(AFinding.Category)]);
   AFinding.Id := MHFindingIdFromKey(AFinding.Key + ':' + AInfo.Id.ToString);
@@ -1036,18 +1081,21 @@ begin
   LStandard := MHIsStandardInstallLocation(AEntry.ImagePath);
   if MHIsSuspiciousLocation(AEntry.ImagePath, LReason) then
   begin
-    AddEvidence(LEvidence, EV_LOCATION, 'Автозапуск программы из необычного места', 20, LReason);
+    AddEvidence(LEvidence, EV_LOCATION, MHL('Автозапуск программы из необычного места',
+      'Autostart of a program from an unusual location'), 20, LReason);
     LThreat := True;
   end;
   if MHIsScriptFile(AEntry.ImagePath) and not LStandard then
   begin
     AddEvidence(LEvidence, EV_SCRIPT_AUTOSTART,
-      'Автозапуск сценария (bat, vbs, ps1…) вне системных папок', 20, LName);
+      MHL('Автозапуск сценария (bat, vbs, ps1…) вне системных папок',
+        'Autostart of a script (bat, vbs, ps1…) outside system folders'), 20, LName);
     LThreat := True;
   end;
   if not LStandard and MHFindRandomLookingFolder(AEntry.ImagePath, LFolder) then
   begin
-    AddEvidence(LEvidence, EV_RANDOM_FOLDER, 'Файл лежит в папке со случайным именем', 15, LFolder);
+    AddEvidence(LEvidence, EV_RANDOM_FOLDER, MHL('Файл лежит в папке со случайным именем',
+      'The file is in a folder with a random name'), 15, LFolder);
     LThreat := True;
   end;
   if (AEntry.Kind = akScheduledTask) and
@@ -1055,14 +1103,16 @@ begin
      not LStandard then
   begin
     AddEvidence(LEvidence, EV_TASK_MASQUERADE,
-      'Задание размещено среди системных заданий Windows, но запускает файл вне папок Windows и Program Files',
+      MHL('Задание размещено среди системных заданий Windows, но запускает файл вне папок Windows и Program Files',
+        'The task is placed among Windows system tasks but runs a file outside the Windows and Program Files folders'),
       25, AEntry.Name);
     LThreat := True;
   end;
   LObfuscation := MHFindObfuscatedCommand(AEntry.Command);
   if LObfuscation <> '' then
   begin
-    AddEvidence(LEvidence, EV_OBFUSCATED_COMMAND, 'Команда автозапуска скрывает своё содержимое', 35,
+    AddEvidence(LEvidence, EV_OBFUSCATED_COMMAND, MHL('Команда автозапуска скрывает своё содержимое',
+      'The autostart command hides its content'), 35,
       LObfuscation);
     LThreat := True;
   end
@@ -1072,50 +1122,58 @@ begin
     if LObfuscation <> '' then
     begin
       AddEvidence(LEvidence, EV_HIDDEN_SCRIPT,
-        'Сценарий запускается скрыто (так делает и обычная автоматизация — проверьте, ваш ли это сценарий)',
+        MHL('Сценарий запускается скрыто (так делает и обычная автоматизация — проверьте, ваш ли это сценарий)',
+          'The script is launched hidden (normal automation does this too — check whether this script is yours)'),
         20, LObfuscation);
       LThreat := True;
     end;
   end;
   if MHIsKnownMinerName(LName) then
   begin
-    AddEvidence(LEvidence, EV_MINER_NAME, 'В автозапуске программа с именем известного майнера', 35, LName);
+    AddEvidence(LEvidence, EV_MINER_NAME, MHL('В автозапуске программа с именем известного майнера',
+      'A program with the name of a known miner is in autostart'), 35, LName);
     LThreat := True;
   end;
   if MHFindMinerCommandToken(AEntry.Command) <> '' then
   begin
-    AddEvidence(LEvidence, EV_MINER_CMDLINE, 'В команде автозапуска есть параметры майнинга', 40,
+    AddEvidence(LEvidence, EV_MINER_CMDLINE, MHL('В команде автозапуска есть параметры майнинга',
+      'The autostart command contains mining parameters'), 40,
       MHFindMinerCommandToken(AEntry.Command));
     LThreat := True;
   end;
   if MHIsSystemProcessName(LName, LDirs) and not MHIsStandardInstallLocation(AEntry.ImagePath) then
   begin
-    AddEvidence(LEvidence, EV_MASQUERADE, 'Системное имя Windows вне системной папки', 40, AEntry.ImagePath);
+    AddEvidence(LEvidence, EV_MASQUERADE, MHL('Системное имя Windows вне системной папки',
+      'A Windows system name outside a system folder'), 40, AEntry.ImagePath);
     LThreat := True;
   end
   else if MHLooksLikeSystemName(LName, LSystemName) then
   begin
-    AddEvidence(LEvidence, EV_NAME_LOOKALIKE, 'Имя похоже на системное', 25, LName + ' ≈ ' + LSystemName);
+    AddEvidence(LEvidence, EV_NAME_LOOKALIKE, MHL('Имя похоже на системное', 'The name resembles a system name'),
+      25, LName + ' ≈ ' + LSystemName);
     LThreat := True;
   end;
   // Подпись и отсутствие файла учитываются только вместе с другими признаками.
   if LThreat then
   begin
     if LHasFile and (LFile.Signature = sgUnsigned) then
-      AddEvidence(LEvidence, EV_UNSIGNED, 'Файл без цифровой подписи', 10)
+      AddEvidence(LEvidence, EV_UNSIGNED, MHL('Файл без цифровой подписи', 'The file has no digital signature'), 10)
     else if LHasFile and (LFile.Signature = sgSignedUntrusted) then
-      AddEvidence(LEvidence, EV_SIGNATURE_INVALID, 'Подпись недействительна', 25, LFile.Error)
+      AddEvidence(LEvidence, EV_SIGNATURE_INVALID, MHL('Подпись недействительна', 'The signature is invalid'),
+        25, LFile.Error)
     // Подпись не оправдывает угрозу в аргументах команды: подписанный powershell.exe
     // с закодированной командой остаётся подозрительным.
     else if LHasFile and (LFile.Signature = sgSignedTrusted) and
             not HasCode(LEvidence, EV_OBFUSCATED_COMMAND) and not HasCode(LEvidence, EV_MINER_CMDLINE) and
             not HasCode(LEvidence, EV_HIDDEN_SCRIPT) then
-      AddEvidence(LEvidence, EV_SIGNED_TRUSTED, 'Подписан доверенным издателем', -15, LFile.Signer)
+      AddEvidence(LEvidence, EV_SIGNED_TRUSTED, MHL('Подписан доверенным издателем',
+        'Signed by a trusted publisher'), -15, LFile.Signer)
     else if not LHasFile or (LFile.Signature = sgNotChecked) then
-      AddUnique(LMissing, 'Цифровая подпись ещё не проверена');
+      AddUnique(LMissing, MHL('Цифровая подпись ещё не проверена', 'Digital signature not checked yet'));
     // Только при реальной ошибке доступа: «проверка запланирована» — это ещё не проверенный файл.
     if LHasFile and (LFile.Signature = sgCheckFailed) and (LFile.SizeBytes < 0) then
-      AddEvidence(LEvidence, EV_FILE_MISSING, 'Файл из автозапуска недоступен или отсутствует', 5, LFile.Error);
+      AddEvidence(LEvidence, EV_FILE_MISSING, MHL('Файл из автозапуска недоступен или отсутствует',
+        'The autostart file is unavailable or missing'), 5, LFile.Error);
   end;
   if not LThreat then
     Exit;
@@ -1125,13 +1183,15 @@ begin
   if MHClampScore(LRaw) < ASettings.Thresholds.Low then
     Exit;
 
-  AddUnique(LRecommend, 'Проверьте файл через Microsoft Defender.');
-  AddUnique(LRecommend, 'Проверьте запись автозапуска: ' + MHAutostartKindToString(AEntry.Kind) + ', ' +
-    AEntry.Location + '. Не удаляйте её, пока не убедились, что программа вам не нужна.');
+  AddUnique(LRecommend, MHL('Проверьте файл через Microsoft Defender.', 'Scan the file with Microsoft Defender.'));
+  AddUnique(LRecommend, MHL('Проверьте запись автозапуска: ', 'Check the autostart entry: ') +
+    MHAutostartKindTitle(AEntry.Kind) + ', ' + AEntry.Location +
+    MHL('. Не удаляйте её, пока не убедились, что программа вам не нужна.',
+      '. Do not delete it until you are sure you do not need the program.'));
   AFinding.Category := fcPersistence;
   AFinding.ProcessName := LName;
   AFinding.ImagePath := AEntry.ImagePath;
-  AFinding.Title := 'Подозрительный автозапуск: ' + AEntry.Name;
+  AFinding.Title := MHL('Подозрительный автозапуск: ', 'Suspicious autostart: ') + AEntry.Name;
   AFinding.Evidence := LEvidence;
   AFinding.MissingData := LMissing;
   AFinding.Recommendations := LRecommend;
@@ -1141,7 +1201,8 @@ begin
   AFinding.Confidence := IfThen(Length(LMissing) > 0, 0.85, 1.0);
   AFinding.RulesetVersion := GetRulesetVersion;
   AFinding.DetectedAtUtc := ASnapshot.TimestampUtc;
-  AFinding.Summary := Format('Команда: %s. Оценка %d из 100 (%s). Это повод для проверки, а не диагноз.',
+  AFinding.Summary := Format(MHL('Команда: %s. Оценка %d из 100 (%s). Это повод для проверки, а не диагноз.',
+    'Command: %s. Score %d of 100 (%s). This is a reason to check, not a diagnosis.'),
     [AEntry.Command, AFinding.Score, MHRiskLevelToString(AFinding.Level)]);
   AFinding.Key := Format('autostart:%s:%s:%s', [MHAutostartKindToString(AEntry.Kind),
     AEntry.Location.ToLower, AEntry.Name.ToLower]);
@@ -1202,17 +1263,19 @@ procedure TMHThreatAnalyzer.AnalyzeSystem(const ASnapshot: TMHSnapshot;
       LFinding.Evidence := [TMHEvidence.Create(AEvidenceCode, ATitle, 20, AObserved)]
     else
       LFinding.Evidence := [TMHEvidence.Create(AEvidenceCode, ATitle, 20,
-        Format('в среднем %s за %d мин', [FormatPercent(AAverage), ASettings.SustainedMinutes]))];
+        Format(MHL('в среднем %s за %d мин', 'average %s over %d min'),
+          [FormatPercent(AAverage), ASettings.SustainedMinutes]))];
     if ABaselineStat.HasData then
       LFinding.Evidence := LFinding.Evidence + [TMHEvidence.Create(EV_ABOVE_BASELINE,
-        'Выше обычного для этого компьютера', 10,
-        Format('обычно до %s', [FormatPercent(ABaselineStat.P95)]))];
+        MHL('Выше обычного для этого компьютера', 'Higher than usual for this computer'), 10,
+        Format(MHL('обычно до %s', 'usually up to %s'), [FormatPercent(ABaselineStat.P95)]))];
     LText := '';
     LReasons := MHExplainLoad(ASnapshot, FCpuCount);
     for LReason in LReasons do
       if LReason.Resource = AResource then
         LText := LReason.Text;
-    LFinding.Summary := 'Причина замедления, а не угроза и не диагноз. ' + LText;
+    LFinding.Summary := MHL('Причина замедления, а не угроза и не диагноз. ',
+      'A cause of slowdown, not a threat and not a diagnosis. ') + LText;
     LFinding.RawScore := 20 + IfThen(ABaselineStat.HasData, 10, 0);
     LFinding.Score := LFinding.RawScore;
     LFinding.Level := ASettings.Thresholds.LevelOf(LFinding.Score);
@@ -1222,8 +1285,9 @@ procedure TMHThreatAnalyzer.AnalyzeSystem(const ASnapshot: TMHSnapshot;
     if ARecommendation <> '' then
       LFinding.Recommendations := [ARecommendation]
     else
-      LFinding.Recommendations := ['Посмотрите на странице «Процессы», какие программы создают нагрузку, ' +
-        'и закройте ненужные.'];
+      LFinding.Recommendations := [MHL('Посмотрите на странице «Процессы», какие программы создают нагрузку, ',
+        'Check on the "Processes" page which programs create the load, ') +
+        MHL('и закройте ненужные.', 'and close the ones you do not need.')];
     AFindings.Add(LFinding);
   end;
 
@@ -1251,7 +1315,7 @@ procedure TMHThreatAnalyzer.AnalyzeSystem(const ASnapshot: TMHSnapshot;
     // Температура держится на пороге устройства или выше (запас <= 0) почти весь интервал.
     if SustainedAbove(AResource, 0, LMargin) and HottestOf(AKind, LReading) then
       AddSystemFinding(MHHeatResourceName(AKind), ATitle, AKey, 0, Default(TMHStat), EV_OVERHEAT,
-        Format('%s: %.0f °C, порог %.0f °C, держится %d мин', [LReading.Device, LReading.Celsius,
+        Format(MHL('%s: %.0f °C, порог %.0f °C, держится %d мин', '%s: %.0f °C, limit %.0f °C, for %d min'), [LReading.Device, LReading.Celsius,
           MHTemperatureLimit(LReading), ASettings.SustainedMinutes]), ARecommendation);
   end;
 
@@ -1264,31 +1328,44 @@ begin
   if ABaseline.IsEstablished(ASettings.BaselineMinSamples) and ABaseline.SystemCpu.HasData then
     LThreshold := Min(LThreshold, Max(50, ABaseline.SystemCpu.P95 + 15));
   if SustainedAbove(srCpu, LThreshold, LAverage) then
-    AddSystemFinding('cpu', 'Процессор долго загружен почти полностью', 'system:cpu', LAverage,
+    AddSystemFinding('cpu', MHL('Процессор долго загружен почти полностью',
+      'The CPU has been almost fully loaded for a long time'), 'system:cpu', LAverage,
       ABaseline.SystemCpu);
   if SustainedAbove(srMemory, 90, LAverage) then
-    AddSystemFinding('memory', 'Оперативная память почти заполнена', 'system:memory', LAverage,
-      ABaseline.MemoryLoad);
+    AddSystemFinding('memory', MHL('Оперативная память почти заполнена', 'RAM is almost full'),
+      'system:memory', LAverage, ABaseline.MemoryLoad);
   if SustainedAbove(srDisk, 90, LAverage) then
-    AddSystemFinding('disk', 'Диск постоянно занят', 'system:disk', LAverage, ABaseline.DiskActive);
+    AddSystemFinding('disk', MHL('Диск постоянно занят', 'The disk is constantly busy'), 'system:disk',
+      LAverage, ABaseline.DiskActive);
   if SustainedAbove(srGpu, 90, LAverage) then
-    AddSystemFinding('gpu', 'Видеокарта долго загружена почти полностью', 'system:gpu', LAverage,
+    AddSystemFinding('gpu', MHL('Видеокарта долго загружена почти полностью',
+      'The GPU has been almost fully loaded for a long time'), 'system:gpu', LAverage,
       Default(TMHStat));
   // Троттлинг: прошивка ограничивает производительность процессора (перегрев или питание).
   if SustainedAbove(srThrottle, 10, LAverage) then
-    AddSystemFinding('throttle', 'Процессор снижает производительность (троттлинг)', 'system:throttle',
+    AddSystemFinding('throttle', MHL('Процессор снижает производительность (троттлинг)',
+      'The CPU is reducing performance (throttling)'), 'system:throttle',
       LAverage, Default(TMHStat), EV_THROTTLING,
-      Format('производительность ограничена в среднем до %s', [FormatPercent(100 - LAverage)]),
-      'Проверьте охлаждение (пыль, вентиляторы, термопасту) и режим электропитания. ' +
-      'Ограничение снижает скорость работы, пока не устранена причина.');
-  CheckHeat(srGpuHeat, skGpu, 'system:heat:gpu', 'Видеокарта работает на пределе температуры',
-    'Видеокарта при этой температуре снижает частоту. Проверьте, какая программа её нагружает ' +
-    '(колонка «GPU» на странице «Процессы»), и состояние охлаждения.');
-  CheckHeat(srDiskHeat, skDisk, 'system:heat:disk', 'Накопитель перегревается',
-    'Длительный перегрев сокращает срок службы накопителя и снижает скорость. ' +
-    'Проверьте обдув корпуса; сделайте резервную копию важных данных.');
-  CheckHeat(srCpuHeat, skCpu, 'system:heat:cpu', 'Процессор перегревается',
-    'Проверьте охлаждение процессора и программы, которые его нагружают.');
+      Format(MHL('производительность ограничена в среднем до %s', 'performance limited to %s on average'),
+        [FormatPercent(100 - LAverage)]),
+      MHL('Проверьте охлаждение (пыль, вентиляторы, термопасту) и режим электропитания. ',
+        'Check the cooling (dust, fans, thermal paste) and the power plan. ') +
+      MHL('Ограничение снижает скорость работы, пока не устранена причина.',
+        'The limit slows the computer down until the cause is fixed.'));
+  CheckHeat(srGpuHeat, skGpu, 'system:heat:gpu', MHL('Видеокарта работает на пределе температуры',
+    'The GPU is running at its temperature limit'),
+    MHL('Видеокарта при этой температуре снижает частоту. Проверьте, какая программа её нагружает ',
+      'At this temperature the GPU lowers its clock speed. Check which program is loading it ') +
+    MHL('(колонка «GPU» на странице «Процессы»), и состояние охлаждения.',
+      '(the "GPU" column on the "Processes" page) and the state of the cooling.'));
+  CheckHeat(srDiskHeat, skDisk, 'system:heat:disk', MHL('Накопитель перегревается', 'The drive is overheating'),
+    MHL('Длительный перегрев сокращает срок службы накопителя и снижает скорость. ',
+      'Prolonged overheating shortens the drive''s lifespan and reduces its speed. ') +
+    MHL('Проверьте обдув корпуса; сделайте резервную копию важных данных.',
+      'Check the case airflow; back up important data.'));
+  CheckHeat(srCpuHeat, skCpu, 'system:heat:cpu', MHL('Процессор перегревается', 'The CPU is overheating'),
+    MHL('Проверьте охлаждение процессора и программы, которые его нагружают.',
+      'Check the CPU cooling and the programs that load it.'));
 end;
 
 /// Память процесса как в диспетчере задач: частный рабочий набор, иначе рабочий набор.
@@ -1355,10 +1432,11 @@ function MHExplainLoad(const ASnapshot: TMHSnapshot; ACpuCount: Integer;
           Result := Result + ', ';
         case AResource of
           0: Result := Result + Describe(LList[I], FormatPercent(LList[I].Cpu.Value));
-          1: Result := Result + Describe(LList[I], FormatFloat('0', MemoryOf(LList[I]).Value / 1048576) + ' МБ');
+          1: Result := Result + Describe(LList[I], FormatFloat('0', MemoryOf(LList[I]).Value / 1048576) +
+            MHL(' МБ', ' MB'));
         else
           if LList[I].GpuCompute.HasValue and (LList[I].GpuCompute.Value >= 1) then
-            Result := Result + Describe(LList[I], FormatPercent(LList[I].Gpu.Value) + ', вычисления ' +
+            Result := Result + Describe(LList[I], FormatPercent(LList[I].Gpu.Value) + MHL(', вычисления ', ', compute ') +
               FormatPercent(LList[I].GpuCompute.Value))
           else
             Result := Result + Describe(LList[I], FormatPercent(LList[I].Gpu.Value));
@@ -1392,9 +1470,11 @@ function MHExplainLoad(const ASnapshot: TMHSnapshot; ACpuCount: Integer;
     LReason.IsHigh := LHottest.Celsius >= LLimit - 5;
     LReason.Text := Format('%s %s: %.0f °C', [ADeviceTitle, LHottest.Device, LHottest.Celsius]);
     if LHottest.LimitCelsius > 0 then
-      LReason.Text := LReason.Text + Format(' (порог производителя %.0f °C)', [LLimit]);
+      LReason.Text := LReason.Text + Format(MHL(' (порог производителя %.0f °C)',
+        ' (manufacturer limit %.0f °C)'), [LLimit]);
     if LReason.IsHigh then
-      LReason.Text := LReason.Text + ' — горячо: при такой температуре устройство снижает скорость';
+      LReason.Text := LReason.Text + MHL(' — горячо: при такой температуре устройство снижает скорость',
+        ' — hot: at this temperature the device slows down');
     AResult := AResult + [LReason];
   end;
 
@@ -1409,9 +1489,9 @@ begin
     LReason.Resource := 'cpu';
     LReason.IsHigh := LMetric.Value >= 70;
     LTop := TopBy(0);
-    LReason.Text := Format('Процессор загружен на %s', [FormatPercent(LMetric.Value)]);
+    LReason.Text := Format(MHL('Процессор загружен на %s', 'CPU load is %s'), [FormatPercent(LMetric.Value)]);
     if LTop <> '' then
-      LReason.Text := LReason.Text + '. Основная нагрузка: ' + LTop;
+      LReason.Text := LReason.Text + MHL('. Основная нагрузка: ', '. Main load: ') + LTop;
     Result := Result + [LReason];
   end;
   if ASnapshot.FindMetric(mkMemoryLoadPercent, LMetric) and LMetric.HasValue then
@@ -1419,16 +1499,17 @@ begin
     LReason.Resource := 'memory';
     LReason.IsHigh := LMetric.Value >= 85;
     LTop := TopBy(1);
-    LReason.Text := Format('Память занята на %s', [FormatPercent(LMetric.Value)]);
+    LReason.Text := Format(MHL('Память занята на %s', 'Memory usage is %s'), [FormatPercent(LMetric.Value)]);
     if LTop <> '' then
-      LReason.Text := LReason.Text + '. Больше всего занимают: ' + LTop;
+      LReason.Text := LReason.Text + MHL('. Больше всего занимают: ', '. Largest consumers: ') + LTop;
     Result := Result + [LReason];
   end;
   if ASnapshot.FindMetric(mkDiskActivePercent, LMetric) and LMetric.HasValue then
   begin
     LReason.Resource := 'disk';
     LReason.IsHigh := LMetric.Value >= 80;
-    LReason.Text := Format('Диск занят %s времени', [FormatPercent(LMetric.Value)]);
+    LReason.Text := Format(MHL('Диск занят %s времени', 'The disk is busy %s of the time'),
+      [FormatPercent(LMetric.Value)]);
     Result := Result + [LReason];
   end;
   if ASnapshot.FindMetric(mkGpuPercent, LMetric) and LMetric.HasValue then
@@ -1436,9 +1517,9 @@ begin
     LReason.Resource := 'gpu';
     LReason.IsHigh := LMetric.Value >= 80;
     LTop := TopBy(2);
-    LReason.Text := Format('Видеокарта загружена на %s', [FormatPercent(LMetric.Value)]);
+    LReason.Text := Format(MHL('Видеокарта загружена на %s', 'GPU load is %s'), [FormatPercent(LMetric.Value)]);
     if LTop <> '' then
-      LReason.Text := LReason.Text + '. Основная нагрузка: ' + LTop;
+      LReason.Text := LReason.Text + MHL('. Основная нагрузка: ', '. Main load: ') + LTop;
     Result := Result + [LReason];
   end;
   // Троттлинг: прошивка ограничила производительность (перегрев или питание).
@@ -1447,15 +1528,18 @@ begin
     LReason.Resource := 'throttle';
     LReason.IsHigh := LMetric.Value < 90;
     if LReason.IsHigh then
-      LReason.Text := Format('Процессор ограничен до %s производительности (перегрев или ограничение ' +
-        'питания) — это замедляет работу', [FormatPercent(LMetric.Value)])
+      LReason.Text := Format(MHL('Процессор ограничен до %s производительности (перегрев или ограничение ',
+        'The CPU is limited to %s of its performance (overheating or power ') +
+        MHL('питания) — это замедляет работу', 'limit) — this slows the computer down'),
+        [FormatPercent(LMetric.Value)])
     else
-      LReason.Text := 'Процессор работает без ограничений производительности';
+      LReason.Text := MHL('Процессор работает без ограничений производительности',
+        'The CPU is running without performance limits');
     Result := Result + [LReason];
   end;
-  AddHeat(skGpu, 'Видеокарта', Result);
-  AddHeat(skCpu, 'Процессор', Result);
-  AddHeat(skDisk, 'Накопитель', Result);
+  AddHeat(skGpu, MHL('Видеокарта', 'GPU'), Result);
+  AddHeat(skCpu, MHL('Процессор', 'CPU'), Result);
+  AddHeat(skDisk, MHL('Накопитель', 'Drive'), Result);
 end;
 
 function MHHeatResourceName(AKind: TMHSensorKind): string;

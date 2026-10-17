@@ -48,7 +48,7 @@ implementation
 uses
   Winapi.Windows, Winapi.ShellAPI, Winapi.ShlObj, System.SysUtils, System.Classes,
   System.IOUtils,
-  MineHunter.Core.Calc;
+  MineHunter.Core.Calc, MineHunter.Core.Lang;
 
 const
   // Не объявлены в Winapi.Windows Delphi 12; значения из документации Windows SDK.
@@ -163,7 +163,7 @@ begin
   LLength := GetWindowsDirectory(@LWinDir[0], Length(LWinDir));
   if (LLength = 0) or (LLength >= UINT(Length(LWinDir))) then
   begin
-    AError := 'Не удалось определить папку Windows';
+    AError := MHL('Не удалось определить папку Windows', 'Failed to determine the Windows folder');
     Exit(False);
   end;
   LExplorer := IncludeTrailingPathDelimiter(string(PChar(@LWinDir[0]))) + 'explorer.exe';
@@ -266,7 +266,8 @@ begin
   LSecurity.bInheritHandle := True;
   if not CreatePipe(LRead, LWrite, @LSecurity, 0) then
   begin
-    AOutput := 'Не удалось создать канал вывода: ' + SysErrorMessage(GetLastError);
+    AOutput := MHL('Не удалось создать канал вывода: ', 'Failed to create the output pipe: ') +
+      SysErrorMessage(GetLastError);
     Exit(roStartFailed);
   end;
   LStream := TBytesStream.Create;
@@ -286,7 +287,8 @@ begin
     if not CreateProcess(PChar(AExe), PChar(LCommandLine), nil, nil, True, CREATE_NO_WINDOW,
       nil, nil, LStartup, LProcess) then
     begin
-      AOutput := Format('Не удалось запустить «%s»: %s', [AExe, SysErrorMessage(GetLastError)]);
+      AOutput := Format(MHL('Не удалось запустить «%s»: %s', 'Failed to start "%s": %s'),
+        [AExe, SysErrorMessage(GetLastError)]);
       Exit(roStartFailed);
     end;
     // Без своей копии конца для записи чтение получит EOF после выхода программы.

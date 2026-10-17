@@ -46,7 +46,8 @@ type
 implementation
 
 uses
-  Winapi.Windows, System.SysUtils, System.Hash;
+  Winapi.Windows, System.SysUtils, System.Hash,
+  MineHunter.Core.Lang;
 
 const
   WINTRUST_DLL = 'wintrust.dll';
@@ -175,7 +176,7 @@ end;
 
 function LastErrorText(ACode: DWORD): string;
 begin
-  Result := Format('%s (код %d)', [SysErrorMessage(ACode), ACode]);
+  Result := Format(MHL('%s (код %d)', '%s (code %d)'), [SysErrorMessage(ACode), ACode]);
 end;
 
 function HashToHexUpper(const AHash: TBytes; ALength: DWORD): string;
@@ -371,21 +372,25 @@ begin
     ERROR_SUCCESS:
       AState := sgSignedTrusted;
     TRUST_E_BAD_DIGEST:
-      AError := 'файл изменён после подписания';
+      AError := MHL('файл изменён после подписания', 'file was modified after signing');
     TRUST_E_EXPLICIT_DISTRUST:
-      AError := 'сертификат подписи явно запрещён в системе';
+      AError := MHL('сертификат подписи явно запрещён в системе',
+        'the signing certificate is explicitly distrusted by the system');
     CERT_E_UNTRUSTEDROOT:
-      AError := 'цепочка сертификатов заканчивается недоверенным корнем';
+      AError := MHL('цепочка сертификатов заканчивается недоверенным корнем',
+        'the certificate chain ends in an untrusted root');
     CERT_E_CHAINING:
-      AError := 'не удалось построить цепочку до доверенного корневого сертификата';
+      AError := MHL('не удалось построить цепочку до доверенного корневого сертификата',
+        'could not build a chain to a trusted root certificate');
     TRUST_E_SUBJECT_NOT_TRUSTED:
-      AError := 'издатель не является доверенным';
+      AError := MHL('издатель не является доверенным', 'the publisher is not trusted');
     CERT_E_EXPIRED:
-      AError := 'срок действия сертификата истёк, а метки времени нет';
+      AError := MHL('срок действия сертификата истёк, а метки времени нет',
+        'the certificate has expired and there is no timestamp');
     CERT_E_REVOKED:
-      AError := 'сертификат подписи отозван';
+      AError := MHL('сертификат подписи отозван', 'the signing certificate has been revoked');
     TRUST_E_CERT_SIGNATURE:
-      AError := 'подпись сертификата недействительна';
+      AError := MHL('подпись сертификата недействительна', 'the certificate signature is invalid');
   else
     AState := sgCheckFailed;
     AError := Format('WinVerifyTrust: 0x%.8x %s', [Cardinal(ACode), SysErrorMessage(Cardinal(ACode))]);
@@ -494,7 +499,7 @@ begin
         end;
       coFailed:
         begin
-          AError := 'проверка каталогов Windows: ' + LCatalogError;
+          AError := MHL('проверка каталогов Windows: ', 'Windows catalog check: ') + LCatalogError;
           Result := False;
         end;
     else
@@ -503,7 +508,7 @@ begin
       if (LCode = TRUST_E_NOSIGNATURE) and not IsNoSignatureCode(Longint(LLastError)) and
          (LLastError <> ERROR_SUCCESS) then
       begin
-        AError := 'не удалось прочитать подпись: ' + LastErrorText(LLastError);
+        AError := MHL('не удалось прочитать подпись: ', 'could not read the signature: ') + LastErrorText(LLastError);
         Result := False;
       end
       else

@@ -96,9 +96,12 @@ implementation
 uses
   Winapi.Windows, Winapi.ShlObj, System.Classes, System.JSON, System.DateUtils,
   System.Math, System.Character, System.Generics.Collections, System.Generics.Defaults,
-  MineHunter.Core.Serialization, MineHunter.Core.Settings;
+  MineHunter.Core.Serialization, MineHunter.Core.Settings, MineHunter.Core.Lang;
 
 const
+  MH_REPORT_DISCLAIMER_EN = 'The absence of findings does not guarantee the absence of threats. ' +
+    'The MineHunter X score is a degree of suspicion, not a diagnosis of infection.';
+  NO_DATA_EN = 'no data';
   PLACEHOLDER_PROFILE = '%USERPROFILE%';
   PLACEHOLDER_USER = '<user>';
   PLACEHOLDER_COMPUTER = '<computer>';
@@ -136,7 +139,7 @@ var
 function FormatUtc(AUtc: TDateTime): string;
 begin
   if AUtc = 0 then
-    Result := NO_DATA
+    Result := MHL(NO_DATA, NO_DATA_EN)
   else
     Result := FormatDateTime('yyyy-mm-dd hh:nn:ss', AUtc, GInvariantFormat) + ' UTC';
 end;
@@ -161,19 +164,19 @@ const
   GB = MB * 1024;
 begin
   if ABytes >= GB then
-    Result := FormatNumber(ABytes / GB, '0.00') + ' ГБ'
+    Result := FormatNumber(ABytes / GB, '0.00') + MHL(' ГБ', ' GB')
   else if ABytes >= MB then
-    Result := FormatNumber(ABytes / MB, '0.0') + ' МБ'
+    Result := FormatNumber(ABytes / MB, '0.0') + MHL(' МБ', ' MB')
   else if ABytes >= KB then
-    Result := FormatNumber(ABytes / KB, '0.0') + ' КБ'
+    Result := FormatNumber(ABytes / KB, '0.0') + MHL(' КБ', ' KB')
   else
-    Result := FormatNumber(ABytes, '0') + ' Б';
+    Result := FormatNumber(ABytes, '0') + MHL(' Б', ' B');
 end;
 
 function FormatMetric(const AMetric: TMHMetric): string;
 begin
   if not AMetric.HasValue then
-    Exit(NO_DATA);
+    Exit(MHL(NO_DATA, NO_DATA_EN));
   case AMetric.Kind of
     mkCpuPercent, mkGpuPercent, mkMemoryLoadPercent, mkDiskActivePercent, mkCpuTimePercent,
     mkCpuFrequencyPercent, mkCpuPerformanceLimitPercent, mkGpuComputePercent:
@@ -182,11 +185,11 @@ begin
     mkPrivateWorkingSetBytes:
       Result := FormatBytes(AMetric.Value);
     mkDiskBytesPerSec, mkNetworkBytesPerSec, mkDiskReadBytesPerSec, mkDiskWriteBytesPerSec:
-      Result := FormatBytes(AMetric.Value) + '/с';
+      Result := FormatBytes(AMetric.Value) + MHL('/с', '/s');
     mkTemperatureCelsius, mkGpuTemperatureCelsius, mkCpuTemperatureCelsius, mkDiskTemperatureCelsius:
       Result := FormatNumber(AMetric.Value, '0') + ' °C';
     mkGpuPowerWatts:
-      Result := FormatNumber(AMetric.Value, '0') + ' Вт';
+      Result := FormatNumber(AMetric.Value, '0') + MHL(' Вт', ' W');
   else
     Result := FormatNumber(AMetric.Value, '0.##');
   end;
@@ -204,48 +207,49 @@ end;
 function SensorKindTitle(AKind: TMHSensorKind): string;
 begin
   case AKind of
-    skGpu: Result := 'Видеокарта';
-    skDisk: Result := 'Накопитель';
+    skGpu: Result := MHL('Видеокарта', 'GPU');
+    skDisk: Result := MHL('Накопитель', 'Drive');
   else
-    Result := 'Процессор';
+    Result := MHL('Процессор', 'CPU');
   end;
 end;
 
 function MetricTitle(AKind: TMHMetricKind): string;
 begin
   case AKind of
-    mkCpuPercent:          Result := 'Загрузка CPU';
-    mkWorkingSetBytes:     Result := 'Рабочий набор';
-    mkPrivateBytes:        Result := 'Частная память';
-    mkDiskBytesPerSec:     Result := 'Диск, всего';
-    mkNetworkBytesPerSec:  Result := 'Сеть';
-    mkGpuPercent:          Result := 'Загрузка GPU';
-    mkTemperatureCelsius:  Result := 'Температура';
-    mkMemoryUsedBytes:     Result := 'Память занята';
-    mkMemoryTotalBytes:    Result := 'Память всего';
-    mkMemoryLoadPercent:   Result := 'Загрузка памяти';
-    mkDiskReadBytesPerSec: Result := 'Чтение с диска';
-    mkDiskWriteBytesPerSec: Result := 'Запись на диск';
-    mkDiskActivePercent:   Result := 'Активность диска';
-    mkCpuTimePercent:      Result := 'Время работы CPU';
-    mkCpuFrequencyPercent: Result := 'Частота CPU (от базовой)';
-    mkCpuPerformanceLimitPercent: Result := 'Предел производительности CPU';
-    mkGpuComputePercent:   Result := 'Вычисления на GPU';
-    mkGpuMemoryBytes:      Result := 'Видеопамять';
-    mkGpuTemperatureCelsius: Result := 'Температура GPU';
-    mkCpuTemperatureCelsius: Result := 'Температура CPU';
-    mkDiskTemperatureCelsius: Result := 'Температура диска';
-    mkGpuPowerWatts:       Result := 'Мощность видеокарты';
+    mkCpuPercent:          Result := MHL('Загрузка CPU', 'CPU load');
+    mkWorkingSetBytes:     Result := MHL('Рабочий набор', 'Working set');
+    mkPrivateBytes:        Result := MHL('Частная память', 'Private memory');
+    mkDiskBytesPerSec:     Result := MHL('Диск, всего', 'Disk, total');
+    mkNetworkBytesPerSec:  Result := MHL('Сеть', 'Network');
+    mkGpuPercent:          Result := MHL('Загрузка GPU', 'GPU load');
+    mkTemperatureCelsius:  Result := MHL('Температура', 'Temperature');
+    mkMemoryUsedBytes:     Result := MHL('Память занята', 'Memory used');
+    mkMemoryTotalBytes:    Result := MHL('Память всего', 'Memory total');
+    mkMemoryLoadPercent:   Result := MHL('Загрузка памяти', 'Memory load');
+    mkDiskReadBytesPerSec: Result := MHL('Чтение с диска', 'Disk read');
+    mkDiskWriteBytesPerSec: Result := MHL('Запись на диск', 'Disk write');
+    mkDiskActivePercent:   Result := MHL('Активность диска', 'Disk activity');
+    mkCpuTimePercent:      Result := MHL('Время работы CPU', 'CPU time');
+    mkCpuFrequencyPercent: Result := MHL('Частота CPU (от базовой)', 'CPU frequency (of base)');
+    mkCpuPerformanceLimitPercent: Result := MHL('Предел производительности CPU', 'CPU performance limit');
+    mkGpuComputePercent:   Result := MHL('Вычисления на GPU', 'GPU compute');
+    mkGpuMemoryBytes:      Result := MHL('Видеопамять', 'Video memory');
+    mkGpuTemperatureCelsius: Result := MHL('Температура GPU', 'GPU temperature');
+    mkCpuTemperatureCelsius: Result := MHL('Температура CPU', 'CPU temperature');
+    mkDiskTemperatureCelsius: Result := MHL('Температура диска', 'Disk temperature');
+    mkGpuPowerWatts:       Result := MHL('Мощность видеокарты', 'GPU power');
   else
-    Result := 'Память процесса';
+    Result := MHL('Память процесса', 'Process memory');
   end;
 end;
 
 function SourceStateText(AState: TMHSourceState): string;
 const
   Marks: array[TMHSourceState] of string = ('[?]', '[OK]', '[ЧАСТИЧНО]', '[НЕДОСТУПНО]', '[ОШИБКА]');
+  MarksEn: array[TMHSourceState] of string = ('[?]', '[OK]', '[PARTIAL]', '[UNAVAILABLE]', '[ERROR]');
 begin
-  Result := Marks[AState] + ' ' + MHSourceStateToString(AState);
+  Result := MHL(Marks[AState], MarksEn[AState]) + ' ' + MHSourceStateToString(AState);
 end;
 
 function SvgNumber(AValue: Double): string;
@@ -580,11 +584,12 @@ begin
   for LStatus in ASnapshot.Sources do
     if LStatus.State <> ssSuccess then
     begin
-      LText := Format('Источник «%s»: %s', [LStatus.SourceId, MHSourceStateToString(LStatus.State)]);
+      LText := Format(MHL('Источник «%s»: %s', 'Source "%s": %s'), [LStatus.SourceId, MHSourceStateToString(LStatus.State)]);
       if LStatus.Message <> '' then
         LText := LText + ' — ' + LStatus.Message;
       if LStatus.RequiresElevation then
-        LText := LText + ' (больше данных доступно при запуске от имени администратора)';
+        LText := LText + MHL(' (больше данных доступно при запуске от имени администратора)',
+          ' (more data is available when running as administrator)');
       AddUnique(Clean(LText, AOptions));
     end;
   for LFinding in AFindings do
@@ -692,7 +697,7 @@ end;
 
 procedure THtml.BeginDocument(const ATitle: string);
 begin
-  Raw('<!DOCTYPE html>'#13#10'<html lang="ru">'#13#10'<head>'#13#10);
+  Raw('<!DOCTYPE html>'#13#10'<html lang="' + MHL('ru', 'en') + '">'#13#10'<head>'#13#10);
   Raw('<meta charset="utf-8">'#13#10);
   Raw('<meta name="viewport" content="width=device-width, initial-scale=1">'#13#10);
   Raw('<meta name="referrer" content="no-referrer">'#13#10);
@@ -704,9 +709,9 @@ end;
 procedure THtml.EndDocument;
 begin
   Raw('<p class="disclaimer"><strong>');
-  Text('Важно: ');
+  Text(MHL('Важно: ', 'Important: '));
   Raw('</strong>');
-  Text(MH_REPORT_DISCLAIMER);
+  Text(MHL(MH_REPORT_DISCLAIMER, MH_REPORT_DISCLAIMER_EN));
   Raw('</p>'#13#10'</body>'#13#10'</html>'#13#10);
 end;
 
@@ -743,7 +748,7 @@ begin
   AHtml.Tag('p', ATitle);
   if Length(AItems) = 0 then
   begin
-    AHtml.Tag('p', 'нет', 'muted');
+    AHtml.Tag('p', MHL('нет', 'none'), 'muted');
     Exit;
   end;
   AHtml.Raw('<ul>'#13#10);
@@ -785,25 +790,25 @@ begin
   AHtml.Raw('<section class="finding ' + LevelClass(AFinding.Level) + '">'#13#10);
   AHtml.Tag(AHeadingTag, AFinding.Title);
   AHtml.Raw('<table>'#13#10);
-  AHtml.Row('Уровень', MHRiskLevelToString(AFinding.Level));
-  AHtml.Row('Балл', IntToStr(AFinding.Score) + ' из 100');
-  AHtml.Row('Уверенность оценки', ConfidenceText(AFinding.Confidence));
-  AHtml.Row('Категория', MHFindingCategoryToString(AFinding.Category));
-  AHtml.Row('Процесс', Format('%s (PID %u)', [AFinding.ProcessName, AFinding.Process.Pid]));
-  AHtml.Row('Родительский PID', UIntToStr(AFinding.ParentPid));
+  AHtml.Row(MHL('Уровень', 'Level'), MHRiskLevelToString(AFinding.Level));
+  AHtml.Row(MHL('Балл', 'Score'), IntToStr(AFinding.Score) + MHL(' из 100', ' of 100'));
+  AHtml.Row(MHL('Уверенность оценки', 'Assessment confidence'), ConfidenceText(AFinding.Confidence));
+  AHtml.Row(MHL('Категория', 'Category'), MHFindingCategoryTitle(AFinding.Category));
+  AHtml.Row(MHL('Процесс', 'Process'), Format('%s (PID %u)', [AFinding.ProcessName, AFinding.Process.Pid]));
+  AHtml.Row(MHL('Родительский PID', 'Parent PID'), UIntToStr(AFinding.ParentPid));
   if AFinding.ImagePath <> '' then
-    AHtml.Row('Путь', AFinding.ImagePath, 'mono')
+    AHtml.Row(MHL('Путь', 'Path'), AFinding.ImagePath, 'mono')
   else
-    AHtml.Row('Путь', NO_DATA);
-  AHtml.Row('Обнаружено', FormatUtc(AFinding.DetectedAtUtc));
-  AHtml.Row('Версия правил', AFinding.RulesetVersion);
+    AHtml.Row(MHL('Путь', 'Path'), MHL(NO_DATA, NO_DATA_EN));
+  AHtml.Row(MHL('Обнаружено', 'Detected'), FormatUtc(AFinding.DetectedAtUtc));
+  AHtml.Row(MHL('Версия правил', 'Ruleset version'), AFinding.RulesetVersion);
   AHtml.Raw('</table>'#13#10);
   if AFinding.Summary <> '' then
     AHtml.Tag('p', AFinding.Summary);
-  WriteEvidenceList(AHtml, 'Признаки, повышающие оценку (+):', AFinding.PositiveEvidence);
-  WriteEvidenceList(AHtml, 'Оправдывающие факторы (−):', AFinding.NegativeEvidence);
-  WriteStringList(AHtml, 'Недостающие данные:', AFinding.MissingData, 'нет');
-  WriteStringList(AHtml, 'Рекомендации:', AFinding.Recommendations, 'нет');
+  WriteEvidenceList(AHtml, MHL('Признаки, повышающие оценку (+):', 'Evidence raising the score (+):'), AFinding.PositiveEvidence);
+  WriteEvidenceList(AHtml, MHL('Оправдывающие факторы (−):', 'Mitigating factors (−):'), AFinding.NegativeEvidence);
+  WriteStringList(AHtml, MHL('Недостающие данные:', 'Missing data:'), AFinding.MissingData, MHL('нет', 'none'));
+  WriteStringList(AHtml, MHL('Рекомендации:', 'Recommendations:'), AFinding.Recommendations, MHL('нет', 'none'));
   AHtml.Raw('</section>'#13#10);
 end;
 
@@ -850,10 +855,10 @@ var
   end;
 
 begin
-  AHtml.Tag('h3', 'Загрузка CPU процессом, % всей машины');
+  AHtml.Tag('h3', MHL('Загрузка CPU процессом, % всей машины', 'Process CPU load, % of the whole machine'));
   if Length(ALoad) = 0 then
   begin
-    AHtml.Tag('p', 'Нет данных о загрузке за выбранный период.', 'muted');
+    AHtml.Tag('p', MHL('Нет данных о загрузке за выбранный период.', 'No load data for the selected period.'), 'muted');
     Exit;
   end;
   LNoData := 0;
@@ -861,8 +866,8 @@ begin
     if not ALoad[I].HasValue then
       Inc(LNoData);
   AHtml.Raw(Format('<svg role="img" width="%d" height="%d" viewBox="0 0 %d %d" ' +
-    'aria-label="График загрузки CPU">'#13#10, [CHART_WIDTH, CHART_HEIGHT, CHART_WIDTH, CHART_HEIGHT]));
-  AHtml.Tag('title', Format('Загрузка CPU: %d точек, без данных: %d', [Length(ALoad), LNoData]));
+    'aria-label="' + MHL('График загрузки CPU', 'CPU load chart') + '">'#13#10, [CHART_WIDTH, CHART_HEIGHT, CHART_WIDTH, CHART_HEIGHT]));
+  AHtml.Tag('title', Format(MHL('Загрузка CPU: %d точек, без данных: %d', 'CPU load: %d points, without data: %d'), [Length(ALoad), LNoData]));
   AHtml.Raw(Format('<line x1="0" y1="%d" x2="%d" y2="%d" stroke="#ddd"/>'#13#10,
     [CHART_HEIGHT div 2, CHART_WIDTH, CHART_HEIGHT div 2]));
   LSegmentStart := -1;
@@ -876,8 +881,9 @@ begin
       FlushSegment(I);
   FlushSegment(Length(ALoad));
   AHtml.Raw('</svg>'#13#10);
-  AHtml.Tag('p', Format('Шкала 0–100 %%; период: %s — %s; точек: %d, из них без данных: %d ' +
-    '(разрывы линии).', [FormatUtc(ALoad[0].TimestampUtc), FormatUtc(ALoad[High(ALoad)].TimestampUtc),
+  AHtml.Tag('p', Format(MHL('Шкала 0–100 %%; период: %s — %s; точек: %d, из них без данных: %d ',
+    'Scale 0–100 %%; period: %s — %s; points: %d, of them without data: %d ') +
+    MHL('(разрывы линии).', '(gaps in the line).'), [FormatUtc(ALoad[0].TimestampUtc), FormatUtc(ALoad[High(ALoad)].TimestampUtc),
     Length(ALoad), LNoData]), 'muted');
 end;
 
@@ -950,7 +956,7 @@ begin
       LArray.AddElement(TMHJson.ProcessToJson(LProcess));
 
     LRoot.AddPair('missingData', StringsJson(MissingDataSummary(ASnapshot, AFindings, AOptions)));
-    LRoot.AddPair('disclaimer', MH_REPORT_DISCLAIMER);
+    LRoot.AddPair('disclaimer', MHL(MH_REPORT_DISCLAIMER, MH_REPORT_DISCLAIMER_EN));
     Result := JsonText(LRoot);
   finally
     LRoot.Free;
@@ -970,42 +976,44 @@ var
 begin
   LHtml := THtml.Create;
   try
-    LHtml.BeginDocument('Отчёт MineHunter X');
+    LHtml.BeginDocument(MHL('Отчёт MineHunter X', 'MineHunter X report'));
 
-    LHtml.Tag('h2', 'Сводка');
+    LHtml.Tag('h2', MHL('Сводка', 'Summary'));
     LHtml.Raw('<table>'#13#10);
-    LHtml.Row('Отчёт сформирован', FormatUtc(AOptions.GeneratedUtc));
-    LHtml.Row('Версия программы', AOptions.AppVersion);
-    LHtml.Row('Версия правил', AOptions.RulesetVersion);
-    LHtml.Row('Время снимка', FormatUtc(ASnapshot.TimestampUtc));
-    LHtml.Row('Процессов в снимке', IntToStr(Length(ASnapshot.Processes)));
-    LHtml.Row('Находок', IntToStr(Length(AFindings)));
-    LHtml.Row('Наивысший уровень', MHRiskLevelToString(HighestLevel(AFindings)));
+    LHtml.Row(MHL('Отчёт сформирован', 'Report generated'), FormatUtc(AOptions.GeneratedUtc));
+    LHtml.Row(MHL('Версия программы', 'Application version'), AOptions.AppVersion);
+    LHtml.Row(MHL('Версия правил', 'Ruleset version'), AOptions.RulesetVersion);
+    LHtml.Row(MHL('Время снимка', 'Snapshot time'), FormatUtc(ASnapshot.TimestampUtc));
+    LHtml.Row(MHL('Процессов в снимке', 'Processes in snapshot'), IntToStr(Length(ASnapshot.Processes)));
+    LHtml.Row(MHL('Находок', 'Findings'), IntToStr(Length(AFindings)));
+    LHtml.Row(MHL('Наивысший уровень', 'Highest level'), MHRiskLevelToString(HighestLevel(AFindings)));
     for LMetric in ASnapshot.Metrics do
       LHtml.Row(MetricTitle(LMetric.Kind), FormatMetric(LMetric));
     for LSensor in ASnapshot.Sensors do
       if LSensor.LimitCelsius > 0 then
         LHtml.Row(SensorKindTitle(LSensor.Kind) + ' ' + LSensor.Device,
-          Format('%s °C (порог %s °C)', [FormatNumber(LSensor.Celsius, '0'), FormatNumber(LSensor.LimitCelsius, '0')]))
+          Format(MHL('%s °C (порог %s °C)', '%s °C (threshold %s °C)'), [FormatNumber(LSensor.Celsius, '0'), FormatNumber(LSensor.LimitCelsius, '0')]))
       else
         LHtml.Row(SensorKindTitle(LSensor.Kind) + ' ' + LSensor.Device,
           FormatNumber(LSensor.Celsius, '0') + ' °C');
     if AOptions.RedactPaths then
-      LHtml.Row('Обезличивание', 'имя пользователя, имя компьютера и путь профиля скрыты')
+      LHtml.Row(MHL('Обезличивание', 'Anonymization'), MHL('имя пользователя, имя компьютера и путь профиля скрыты',
+        'user name, computer name and profile path are hidden'))
     else
-      LHtml.Row('Обезличивание', 'выключено');
+      LHtml.Row(MHL('Обезличивание', 'Anonymization'), MHL('выключено', 'off'));
     if AOptions.IncludeCommandLines then
-      LHtml.Row('Командные строки', 'включены')
+      LHtml.Row(MHL('Командные строки', 'Command lines'), MHL('включены', 'included'))
     else
-      LHtml.Row('Командные строки', 'не включены');
+      LHtml.Row(MHL('Командные строки', 'Command lines'), MHL('не включены', 'not included'));
     LHtml.Raw('</table>'#13#10);
 
-    LHtml.Tag('h2', 'Состояние источников');
+    LHtml.Tag('h2', MHL('Состояние источников', 'Source status'));
     if Length(ASnapshot.Sources) = 0 then
-      LHtml.Tag('p', 'Сведения об источниках отсутствуют.', 'muted')
+      LHtml.Tag('p', MHL('Сведения об источниках отсутствуют.', 'No source information available.'), 'muted')
     else
     begin
-      LHtml.Raw('<table>'#13#10'<tr><th>Источник</th><th>Состояние</th><th>Пояснение</th></tr>'#13#10);
+      LHtml.Raw('<table>'#13#10'<tr><th>' + MHL('Источник', 'Source') + '</th><th>' + MHL('Состояние', 'State') +
+        '</th><th>' + MHL('Пояснение', 'Details') + '</th></tr>'#13#10);
       for LStatus in ASnapshot.Sources do
       begin
         LHtml.Raw('<tr><td>');
@@ -1015,27 +1023,31 @@ begin
         LHtml.Raw('</td><td>');
         LHtml.Text(Clean(LStatus.Message, AOptions));
         if LStatus.RequiresElevation then
-          LHtml.Text(' (больше данных при запуске от имени администратора)');
+          LHtml.Text(MHL(' (больше данных при запуске от имени администратора)',
+            ' (more data when running as administrator)'));
         LHtml.Raw('</td></tr>'#13#10);
       end;
       LHtml.Raw('</table>'#13#10);
     end;
 
-    LHtml.Tag('h2', 'Находки');
+    LHtml.Tag('h2', MHL('Находки', 'Findings'));
     if Length(AFindings) = 0 then
-      LHtml.Tag('p', 'Находок нет.')
+      LHtml.Tag('p', MHL('Находок нет.', 'No findings.'))
     else
       for LFinding in AFindings do
         WriteFinding(LHtml, PrepareFinding(LFinding, AOptions), 'h3');
 
     LMissing := MissingDataSummary(ASnapshot, AFindings, AOptions);
-    WriteStringList(LHtml, 'Отсутствующие данные:', LMissing, 'Все источники ответили полностью.');
+    WriteStringList(LHtml, MHL('Отсутствующие данные:', 'Missing data:'), LMissing,
+      MHL('Все источники ответили полностью.', 'All sources responded fully.'));
 
-    LHtml.Tag('h2', 'Самые нагруженные процессы');
-    LHtml.Raw('<table>'#13#10'<tr><th>Процесс</th><th>PID</th><th>Родитель</th><th>CPU</th>' +
-      '<th>Память</th><th>GPU</th><th>Подпись</th><th>Путь</th>');
+    LHtml.Tag('h2', MHL('Самые нагруженные процессы', 'Top processes by load'));
+    LHtml.Raw('<table>'#13#10'<tr><th>' + MHL('Процесс', 'Process') + '</th><th>PID</th><th>' +
+      MHL('Родитель', 'Parent') + '</th><th>CPU</th>' +
+      '<th>' + MHL('Память', 'Memory') + '</th><th>GPU</th><th>' + MHL('Подпись', 'Signature') +
+      '</th><th>' + MHL('Путь', 'Path') + '</th>');
     if AOptions.IncludeCommandLines then
-      LHtml.Raw('<th>Командная строка</th>');
+      LHtml.Raw('<th>' + MHL('Командная строка', 'Command line') + '</th>');
     LHtml.Raw('</tr>'#13#10);
     for LProcess in TopProcesses(ASnapshot, AOptions) do
     begin
@@ -1057,7 +1069,7 @@ begin
       if LProcess.ImagePath <> '' then
         LHtml.Text(LProcess.ImagePath)
       else
-        LHtml.Text(NO_DATA);
+        LHtml.Text(MHL(NO_DATA, NO_DATA_EN));
       if AOptions.IncludeCommandLines then
       begin
         LHtml.Raw('</td><td class="mono">');
@@ -1095,7 +1107,7 @@ begin
     LRoot.AddPair('cpuLoad', LArray);
     for LMetric in ALoad do
       LArray.AddElement(TMHJson.MetricToJson(LMetric));
-    LRoot.AddPair('disclaimer', MH_REPORT_DISCLAIMER);
+    LRoot.AddPair('disclaimer', MHL(MH_REPORT_DISCLAIMER, MH_REPORT_DISCLAIMER_EN));
     Result := JsonText(LRoot);
   finally
     LRoot.Free;
@@ -1112,36 +1124,36 @@ begin
   LProcess := PrepareProcess(AProcess, AOptions);
   LHtml := THtml.Create;
   try
-    LHtml.BeginDocument('Карточка находки MineHunter X');
+    LHtml.BeginDocument(MHL('Карточка находки MineHunter X', 'MineHunter X finding card'));
     LHtml.Raw('<table>'#13#10);
-    LHtml.Row('Экспортировано', FormatUtc(AOptions.GeneratedUtc));
-    LHtml.Row('Версия программы', AOptions.AppVersion);
+    LHtml.Row(MHL('Экспортировано', 'Exported'), FormatUtc(AOptions.GeneratedUtc));
+    LHtml.Row(MHL('Версия программы', 'Application version'), AOptions.AppVersion);
     LHtml.Raw('</table>'#13#10);
 
     WriteFinding(LHtml, PrepareFinding(AFinding, AOptions), 'h2');
 
-    LHtml.Tag('h2', 'Процесс');
+    LHtml.Tag('h2', MHL('Процесс', 'Process'));
     LHtml.Raw('<table>'#13#10);
-    LHtml.Row('Имя', LProcess.Name);
+    LHtml.Row(MHL('Имя', 'Name'), LProcess.Name);
     LHtml.Row('PID', UIntToStr(LProcess.Id.Pid));
-    LHtml.Row('Родительский PID', UIntToStr(LProcess.ParentPid));
+    LHtml.Row(MHL('Родительский PID', 'Parent PID'), UIntToStr(LProcess.ParentPid));
     if LProcess.ImagePath <> '' then
-      LHtml.Row('Путь', LProcess.ImagePath, 'mono')
+      LHtml.Row(MHL('Путь', 'Path'), LProcess.ImagePath, 'mono')
     else
-      LHtml.Row('Путь', NO_DATA);
-    LHtml.Row('Цифровая подпись', MHSignatureToString(LProcess.Signature));
+      LHtml.Row(MHL('Путь', 'Path'), MHL(NO_DATA, NO_DATA_EN));
+    LHtml.Row(MHL('Цифровая подпись', 'Digital signature'), MHSignatureToString(LProcess.Signature));
     if LProcess.Sha256 <> '' then
       LHtml.Row('SHA-256', LProcess.Sha256, 'mono')
     else
-      LHtml.Row('SHA-256', NO_DATA);
-    LHtml.Row('Загрузка CPU', FormatMetric(LProcess.Cpu));
-    LHtml.Row('Память (как в диспетчере задач)', FormatMetric(ProcessMemory(LProcess)));
-    LHtml.Row('Рабочий набор', FormatMetric(LProcess.WorkingSet));
-    LHtml.Row('Загрузка GPU', FormatMetric(LProcess.Gpu));
-    LHtml.Row('Вычисления на GPU', FormatMetric(LProcess.GpuCompute));
-    LHtml.Row('Видеопамять', FormatMetric(LProcess.GpuMemory));
+      LHtml.Row('SHA-256', MHL(NO_DATA, NO_DATA_EN));
+    LHtml.Row(MHL('Загрузка CPU', 'CPU load'), FormatMetric(LProcess.Cpu));
+    LHtml.Row(MHL('Память (как в диспетчере задач)', 'Memory (as in Task Manager)'), FormatMetric(ProcessMemory(LProcess)));
+    LHtml.Row(MHL('Рабочий набор', 'Working set'), FormatMetric(LProcess.WorkingSet));
+    LHtml.Row(MHL('Загрузка GPU', 'GPU load'), FormatMetric(LProcess.Gpu));
+    LHtml.Row(MHL('Вычисления на GPU', 'GPU compute'), FormatMetric(LProcess.GpuCompute));
+    LHtml.Row(MHL('Видеопамять', 'Video memory'), FormatMetric(LProcess.GpuMemory));
     if AOptions.IncludeCommandLines then
-      LHtml.Row('Командная строка', LProcess.CommandLine, 'mono');
+      LHtml.Row(MHL('Командная строка', 'Command line'), LProcess.CommandLine, 'mono');
     LHtml.Raw('</table>'#13#10);
 
     WriteLoadChart(LHtml, ALoad);

@@ -111,7 +111,7 @@ implementation
 
 uses
   System.Generics.Defaults, System.Math,
-  MineHunter.Core.Calc;
+  MineHunter.Core.Calc, MineHunter.Core.Lang;
 
 type
   TProcessIdComparer = class(TEqualityComparer<TMHProcessId>)
@@ -160,7 +160,7 @@ end;
 
 function TMHProcessCollector.GetDisplayName: string;
 begin
-  Result := 'Процессы';
+  Result := MHL('Процессы', 'Processes');
 end;
 
 function TMHProcessCollector.TrackedCount: Integer;
@@ -259,7 +259,7 @@ begin
 
   if not FApi.Enumerate(LEntries, LError) then
     Exit(TMHCollectionResult.Create(TMHSourceStatus.Create(SourceIdValue, ssError,
-      'Не удалось получить список процессов: ' + LError, LNow)));
+      MHL('Не удалось получить список процессов: ', 'Failed to get the process list: ') + LError, LNow)));
 
   LWallNow := FApi.NowFileTime;
   LCpuFactor := MHCpuUtilityFactor(ASnapshot);
@@ -312,13 +312,15 @@ begin
     begin
       LState := ssPartial;
       if LDenied > 0 then
-        LMessage := Format('Нет доступа к %d из %d процессов.', [LDenied, LInfos.Count]);
+        LMessage := Format(MHL('Нет доступа к %d из %d процессов.', 'No access to %d of %d processes.'),
+          [LDenied, LInfos.Count]);
       if LLimited > 0 then
-        LMessage := Trim(LMessage + Format(' Неполные данные: %d из %d процессов.',
-          [LLimited, LInfos.Count]));
+        LMessage := Trim(LMessage + Format(MHL(' Неполные данные: %d из %d процессов.',
+          ' Incomplete data: %d of %d processes.'), [LLimited, LInfos.Count]));
     end;
     if LGone + LReused > 0 then
-      LMessage := Trim(LMessage + Format(' Завершились во время опроса: %d.', [LGone + LReused]));
+      LMessage := Trim(LMessage + Format(MHL(' Завершились во время опроса: %d.',
+        ' Exited during polling: %d.'), [LGone + LReused]));
 
     Result := TMHCollectionResult.Create(TMHSourceStatus.Create(SourceIdValue, LState,
       LMessage, LNow));

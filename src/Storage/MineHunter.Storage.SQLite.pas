@@ -189,7 +189,7 @@ uses
   FireDAC.Stan.Async, FireDAC.Stan.Param, FireDAC.Phys.Intf, FireDAC.Phys,
   FireDAC.Phys.SQLite, FireDAC.Phys.SQLiteDef, FireDAC.Phys.SQLiteWrapper.Stat,
   FireDAC.DApt, FireDAC.ConsoleUI.Wait,
-  MineHunter.Core.Serialization;
+  MineHunter.Core.Serialization, MineHunter.Core.Lang;
 
 const
   STORAGE_SOURCE = 'storage';
@@ -395,7 +395,8 @@ begin
   if ALogger = nil then
     raise EArgumentNilException.Create('ALogger');
   if Trim(AFileName) = '' then
-    raise EArgumentException.Create('Не задан путь к базе истории');
+    raise EArgumentException.Create(MHL('Не задан путь к базе истории',
+      'The history database path is not specified'));
   FClock := AClock;
   FLogger := ALogger;
   FOptions := AOptions.Normalized;
@@ -410,7 +411,8 @@ begin
     except
       on E: Exception do
       begin
-        Log(llWarning, 'Ошибка открытия базы истории: ' + E.Message);
+        Log(llWarning, MHL('Ошибка открытия базы истории: ', 'Error opening the history database: ') +
+          E.Message);
         LHealthy := False;
       end;
     end;
@@ -432,8 +434,8 @@ begin
       FreeAndNil(FLock);
       if E is EMHStorageError then
         raise;
-      raise EMHStorageError.CreateFmt('Не удалось открыть базу истории «%s»: %s',
-        [FFileName, E.Message]);
+      raise EMHStorageError.CreateFmt(MHL('Не удалось открыть базу истории «%s»: %s',
+        'Failed to open the history database "%s": %s'), [FFileName, E.Message]);
     end;
   end;
 end;
@@ -465,7 +467,7 @@ end;
 procedure TMHSQLiteRepository.CheckOpen;
 begin
   if FConnection = nil then
-    raise EMHStorageError.Create('База истории закрыта');
+    raise EMHStorageError.Create(MHL('База истории закрыта', 'The history database is closed'));
 end;
 
 procedure TMHSQLiteRepository.OpenConnection(AIsNew: Boolean);
@@ -516,7 +518,8 @@ begin
   LResult := VarToStr(FConnection.ExecSQLScalar('PRAGMA quick_check'));
   Result := SameText(LResult, 'ok');
   if not Result then
-    Log(llWarning, 'Проверка целостности базы истории: ' + LResult);
+    Log(llWarning, MHL('Проверка целостности базы истории: ', 'History database integrity check: ') +
+      LResult);
 end;
 
 procedure TMHSQLiteRepository.QuarantineCorruptFile;
@@ -529,15 +532,17 @@ begin
   LTarget := FFileName + LSuffix;
   if not RenameFile(FFileName, LTarget) then
     raise EMHStorageError.CreateFmt(
-      'База истории повреждена и не может быть перемещена (%s)', [SysErrorMessage(GetLastError)]);
+      MHL('База истории повреждена и не может быть перемещена (%s)',
+        'The history database is corrupted and cannot be moved (%s)'), [SysErrorMessage(GetLastError)]);
   // Журналы WAL принадлежат повреждённой базе и переносятся вместе с ней.
   if FileExists(FFileName + '-wal') then
     RenameFile(FFileName + '-wal', LTarget + '-wal');
   if FileExists(FFileName + '-shm') then
     RenameFile(FFileName + '-shm', LTarget + '-shm');
   FRecoveredFrom := LTarget;
-  Log(llWarning, 'База истории повреждена и сохранена как «' + LTarget +
-    '»; создана новая база');
+  Log(llWarning, MHL('База истории повреждена и сохранена как «',
+    'The history database is corrupted and was saved as "') + LTarget +
+    MHL('»; создана новая база', '"; a new database was created'));
 end;
 
 procedure TMHSQLiteRepository.Migrate;
@@ -548,8 +553,9 @@ begin
   LVersion := FConnection.ExecSQLScalar('SELECT COALESCE(MAX(version), 0) FROM schema_version');
   if LVersion > SchemaVersion then
     raise EMHStorageError.CreateFmt(
-      'База истории создана более новой версией MineHunter X (схема %d, поддерживается %d)',
-      [LVersion, SchemaVersion]);
+      MHL('База истории создана более новой версией MineHunter X (схема %d, поддерживается %d)',
+        'The history database was created by a newer version of MineHunter X (schema %d, ' +
+        'supported %d)'), [LVersion, SchemaVersion]);
   for I := LVersion + 1 to SchemaVersion do
   begin
     FConnection.StartTransaction;
@@ -562,7 +568,8 @@ begin
       FConnection.Rollback;
       raise;
     end;
-    Log(llInfo, Format('Схема базы истории обновлена до версии %d', [I]));
+    Log(llInfo, Format(MHL('Схема базы истории обновлена до версии %d',
+      'History database schema upgraded to version %d'), [I]));
   end;
 end;
 
@@ -774,7 +781,8 @@ begin
   Inc(LOther, FConnection.ExecSQL('DELETE FROM inventory WHERE (kind, key) IN (SELECT kind, key FROM inventory ' +
     'ORDER BY last_seen DESC LIMIT -1 OFFSET :n)', [MaxInventoryRows]));
   if LOther > 0 then
-    Log(llInfo, Format('Ротация истории: удалено находок — %d', [LOther]));
+    Log(llInfo, Format(MHL('Ротация истории: удалено находок — %d',
+      'History rotation: findings deleted — %d'), [LOther]));
   Inc(LOther, TrimActionsLocked);
 
   // Ограничение размера: удаляем самые старые снимки порциями по 10%.
@@ -793,7 +801,8 @@ begin
   if LDeleted + LOther > 0 then
     RunPragma('PRAGMA incremental_vacuum');
   if LDeleted > 0 then
-    Log(llInfo, Format('Ротация истории: удалено снимков — %d', [LDeleted]));
+    Log(llInfo, Format(MHL('Ротация истории: удалено снимков — %d',
+      'History rotation: snapshots deleted — %d'), [LDeleted]));
   RunPragma('PRAGMA wal_checkpoint(TRUNCATE)');
 end;
 
@@ -1071,7 +1080,8 @@ begin
     mkWorkingSetBytes: LColumn := 'working_set';
     mkPrivateBytes:    LColumn := 'private_bytes';
   else
-    raise EArgumentException.Create('Для процессов хранятся только CPU, рабочий набор и частная память');
+    raise EArgumentException.Create(MHL('Для процессов хранятся только CPU, рабочий набор и частная память',
+      'Only CPU, working set and private memory are stored for processes'));
   end;
   FLock.Enter;
   try
@@ -1228,7 +1238,8 @@ begin
     FLastInventoryUtc := 0;
     RunPragma('PRAGMA incremental_vacuum');
     RunPragma('PRAGMA wal_checkpoint(TRUNCATE)');
-    Log(llWarning, 'История наблюдений и находок очищена пользователем');
+    Log(llWarning, MHL('История наблюдений и находок очищена пользователем',
+      'Observation and finding history was cleared by the user'));
   finally
     FLock.Leave;
   end;
@@ -1305,8 +1316,8 @@ begin
         LList.Add(LItem);
       except
         on E: Exception do
-          Log(llWarning, Format('Находка «%s» в истории повреждена и пропущена: %s',
-            [LQuery.Fields[0].AsString, E.Message]));
+          Log(llWarning, Format(MHL('Находка «%s» в истории повреждена и пропущена: %s',
+            'Finding "%s" in history is corrupted and was skipped: %s'), [LQuery.Fields[0].AsString, E.Message]));
       end;
       LQuery.Next;
     end;
@@ -1419,8 +1430,8 @@ begin
         LList.Add(TMHJson.BaselineFromString(LQuery.Fields[1].AsString));
       except
         on E: Exception do
-          Log(llWarning, Format('Профиль нормы «%s» повреждён и пропущен: %s',
-            [LQuery.Fields[0].AsString, E.Message]));
+          Log(llWarning, Format(MHL('Профиль нормы «%s» повреждён и пропущен: %s',
+            'Baseline "%s" is corrupted and was skipped: %s'), [LQuery.Fields[0].AsString, E.Message]));
       end;
       LQuery.Next;
     end;

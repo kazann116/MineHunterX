@@ -93,7 +93,7 @@ function MHComputeRange(const APoints: TArray<TMHMetric>; out ARange: TMHValueRa
 implementation
 
 uses
-  MineHunter.App.Theme, System.Math, System.DateUtils, System.Generics.Collections,
+  MineHunter.App.Theme, MineHunter.Core.Lang, System.Math, System.DateUtils, System.Generics.Collections,
   Winapi.Windows;
 
 { TMHSeriesBuffer }
@@ -317,7 +317,7 @@ var
   LMin, LMax: Double;
   LHas: Boolean;
 begin
-  LLast := 'нет данных';
+  LLast := MHL('нет данных', 'no data');
   for I := High(FPoints) downto 0 do
     if FPoints[I].HasValue then
     begin
@@ -387,7 +387,7 @@ begin
   Canvas.Font.Style := [fsBold];
   Canvas.TextOut(LRect.Left + S(6), LRect.Top + S(4), FTitle);
   Canvas.Font.Style := [];
-  LText := 'нет данных';
+  LText := MHL('нет данных', 'no data');
   for I := High(FPoints) downto 0 do
     if FPoints[I].HasValue then
     begin
@@ -427,7 +427,7 @@ begin
 
   if not LHasData then
   begin
-    LText := 'нет данных';
+    LText := MHL('нет данных', 'no data');
     Canvas.Font.Color := MHThemeColor(clGrayText);
     Canvas.TextOut(LPlot.Left + (LPlot.Width - Canvas.TextWidth(LText)) div 2,
       LPlot.Top + (LPlot.Height - LTextH) div 2, LText);

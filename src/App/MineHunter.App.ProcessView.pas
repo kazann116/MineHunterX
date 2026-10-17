@@ -75,7 +75,7 @@ function MHProcessMemory(const AInfo: TMHProcessInfo): TMHMetric;
 implementation
 
 uses
-  System.Generics.Defaults, System.Math;
+  System.Generics.Defaults, System.Math, MineHunter.Core.Lang;
 
 function MHProcessMemory(const AInfo: TMHProcessInfo): TMHMetric;
 begin
@@ -88,11 +88,11 @@ end;
 function MHAccessLevelToString(AAccess: TMHAccessLevel): string;
 begin
   case AAccess of
-    alFull:    Result := 'полный';
-    alLimited: Result := 'частичный';
-    alDenied:  Result := 'нет доступа';
+    alFull:    Result := MHL('полный', 'full');
+    alLimited: Result := MHL('частичный', 'limited');
+    alDenied:  Result := MHL('нет доступа', 'access denied');
   else
-    Result := 'неизвестно';
+    Result := MHL('неизвестно', 'unknown');
   end;
 end;
 

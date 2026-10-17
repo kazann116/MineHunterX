@@ -42,7 +42,8 @@ implementation
 
 uses
   Winapi.Windows, Winapi.ActiveX, System.SysUtils, System.Variants, System.Win.ComObj,
-  System.Generics.Collections;
+  System.Generics.Collections,
+  MineHunter.Core.Lang;
 
 const
   DISK_REFRESH_MS = 60 * 1000;
@@ -165,7 +166,7 @@ begin
         Continue;
       Inc(LOpened);
       try
-        LName := Format('Диск %d', [I]);
+        LName := Format(MHL('Диск %d', 'Disk %d'), [I]);
         if QueryProperty(LDevice, StorageDeviceProperty, LBuffer) and
            (Length(LBuffer) >= SizeOf(LDescriptor)) then
         begin
@@ -210,9 +211,9 @@ begin
     if LFound > 0 then
       FDiskReason := ''
     else if LOpened = 0 then
-      FDiskReason := 'накопители недоступны'
+      FDiskReason := MHL('накопители недоступны', 'drives are not accessible')
     else
-      FDiskReason := 'накопители не сообщают температуру';
+      FDiskReason := MHL('накопители не сообщают температуру', 'drives do not report temperature');
   finally
     LList.Free;
   end;
@@ -277,7 +278,7 @@ begin
   LInit := CoInitializeEx(nil, COINIT_MULTITHREADED);
   if Failed(LInit) and (LInit <> RPC_E_CHANGED_MODE) then
   begin
-    FCpuReason := Format('не удалось инициализировать COM (0x%.8x)', [Cardinal(LInit)]);
+    FCpuReason := Format(MHL('не удалось инициализировать COM (0x%.8x)', 'failed to initialize COM (0x%.8x)'), [Cardinal(LInit)]);
     Exit;
   end;
   try
@@ -296,8 +297,9 @@ begin
     if Length(FCpu) > 0 then
       FCpuReason := ''
     else
-      FCpuReason := 'Windows не сообщает температуру ядер без драйвера; запустите ' +
-        'LibreHardwareMonitor, чтобы MineHunter получил её';
+      FCpuReason := MHL('Windows не сообщает температуру ядер без драйвера; запустите ',
+        'Windows does not report core temperature without a driver; start ') +
+        MHL('LibreHardwareMonitor, чтобы MineHunter получил её', 'LibreHardwareMonitor so that MineHunter can read it');
   finally
     if Succeeded(LInit) then
       CoUninitialize;
@@ -318,7 +320,7 @@ begin
       on E: Exception do
       begin
         FDisks := nil;
-        FDiskReason := 'ошибка опроса накопителей: ' + E.Message;
+        FDiskReason := MHL('ошибка опроса накопителей: ', 'drive polling error: ') + E.Message;
       end;
     end;
   end;
@@ -340,7 +342,7 @@ begin
       on E: Exception do
       begin
         FCpu := nil;
-        FCpuReason := 'ошибка опроса датчиков процессора: ' + E.Message;
+        FCpuReason := MHL('ошибка опроса датчиков процессора: ', 'CPU sensor polling error: ') + E.Message;
       end;
     end;
   end;

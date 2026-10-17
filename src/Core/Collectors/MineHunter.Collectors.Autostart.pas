@@ -122,7 +122,7 @@ implementation
 
 uses
   System.StrUtils, System.Generics.Collections, System.Generics.Defaults,
-  MineHunter.Core.Paths;
+  MineHunter.Core.Paths, MineHunter.Core.Lang;
 
 const
   /// Расширения, по которым префикс команды считается именем исполняемого файла.
@@ -343,7 +343,7 @@ end;
 
 function TMHAutostartCollector.GetDisplayName: string;
 begin
-  Result := 'Автозапуск';
+  Result := MHL('Автозапуск', 'Autostart');
 end;
 
 procedure TMHAutostartCollector.Invalidate;
@@ -354,11 +354,11 @@ end;
 class function TMHAutostartCollector.SourceName(AKind: TSourceKind): string;
 begin
   case AKind of
-    skRegistry:       Result := 'реестр Run/RunOnce';
-    skStartupFolders: Result := 'папки автозагрузки';
-    skServices:       Result := 'службы';
+    skRegistry:       Result := MHL('реестр Run/RunOnce', 'Run/RunOnce registry');
+    skStartupFolders: Result := MHL('папки автозагрузки', 'startup folders');
+    skServices:       Result := MHL('службы', 'services');
   else
-    Result := 'планировщик заданий';
+    Result := MHL('планировщик заданий', 'task scheduler');
   end;
 end;
 
@@ -401,7 +401,7 @@ begin
   begin
     AEntries := nil;
     if Trim(AError) = '' then
-      AError := 'причина не указана';
+      AError := MHL('причина не указана', 'no reason given');
   end;
 end;
 
@@ -475,7 +475,8 @@ begin
     FHasCache := False;
     FCached := nil;
     FCachedState := ssError;
-    FCachedMessage := 'Не удалось прочитать ни один источник автозапуска: ' +
+    FCachedMessage := MHL('Не удалось прочитать ни один источник автозапуска: ',
+      'Could not read any autostart source: ') +
       string.Join('; ', LFailed) + '.';
     Exit;
   end;
@@ -486,9 +487,9 @@ begin
   FHasCache := True;
   FCachedMessage := '';
   if LFailedCount > 0 then
-    FCachedMessage := 'Не удалось прочитать: ' + string.Join('; ', LFailed) + '.';
+    FCachedMessage := MHL('Не удалось прочитать: ', 'Could not read: ') + string.Join('; ', LFailed) + '.';
   if Length(LWarnings) > 0 then
-    FCachedMessage := Trim(FCachedMessage + ' Неполные данные: ' +
+    FCachedMessage := Trim(FCachedMessage + MHL(' Неполные данные: ', ' Incomplete data: ') +
       string.Join('; ', LWarnings) + '.');
   if FCachedMessage <> '' then
     FCachedState := ssPartial

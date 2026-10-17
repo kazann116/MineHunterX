@@ -73,7 +73,7 @@ function MHIsMasqueradedSystemFile(const APath: string): Boolean;
 implementation
 
 uses
-  System.SysUtils, System.StrUtils, System.Math;
+  System.SysUtils, System.StrUtils, System.Math, MineHunter.Core.Lang;
 
 const
   MINER_NAMES: array[0..30] of string = (
@@ -234,13 +234,14 @@ end;
 function MHWorkloadCategoryToString(ACategory: TMHWorkloadCategory): string;
 begin
   case ACategory of
-    wlBuild:    Result := 'компиляция и сборка программ';
-    wlRender:   Result := 'рендеринг или кодирование видео';
-    wlUpdate:   Result := 'обновление и обслуживание Windows';
-    wlSecurity: Result := 'антивирусная проверка';
-    wlGame:     Result := 'игра или игровой клиент';
-    wlBrowser:  Result := 'браузер';
-    wlCompute:  Result := 'добровольные научные вычисления (BOINC, Folding@home)';
+    wlBuild:    Result := MHL('компиляция и сборка программ', 'compiling and building software');
+    wlRender:   Result := MHL('рендеринг или кодирование видео', 'rendering or video encoding');
+    wlUpdate:   Result := MHL('обновление и обслуживание Windows', 'Windows update and maintenance');
+    wlSecurity: Result := MHL('антивирусная проверка', 'antivirus scan');
+    wlGame:     Result := MHL('игра или игровой клиент', 'game or game client');
+    wlBrowser:  Result := MHL('браузер', 'web browser');
+    wlCompute:  Result := MHL('добровольные научные вычисления (BOINC, Folding@home)',
+      'volunteer scientific computing (BOINC, Folding@home)');
   else
     Result := '';
   end;
@@ -340,17 +341,17 @@ begin
   if LPath = '' then
     Exit(False);
   if LPath.Contains('\appdata\local\temp\') or LPath.Contains('\windows\temp\') then
-    AReason := 'временная папка'
+    AReason := MHL('временная папка', 'temporary folder')
   else if LPath.Contains('\downloads\') then
-    AReason := 'папка «Загрузки»'
+    AReason := MHL('папка «Загрузки»', '"Downloads" folder')
   else if LPath.Contains('\users\public\') then
-    AReason := 'общая папка пользователей (Public)'
+    AReason := MHL('общая папка пользователей (Public)', 'shared users folder (Public)')
   else if LPath.Contains('\$recycle.bin\') then
-    AReason := 'корзина'
+    AReason := MHL('корзина', 'Recycle Bin')
   else if LPath.Contains('\perflogs\') then
-    AReason := 'папка журналов производительности'
+    AReason := MHL('папка журналов производительности', 'performance logs folder')
   else if LPath.Contains('\windows\fonts\') or LPath.Contains('\windows\debug\') then
-    AReason := 'служебная папка Windows, где не бывает программ'
+    AReason := MHL('служебная папка Windows, где не бывает программ', 'Windows service folder that never contains programs')
   else
   begin
     // Исполняемый файл прямо в ProgramData или в её подпапке первого уровня
@@ -360,7 +361,7 @@ begin
     begin
       LRest := Copy(LPath, LPos + Length('\programdata\'), MaxInt);
       if not LRest.Contains('\') then
-        AReason := 'корень папки ProgramData';
+        AReason := MHL('корень папки ProgramData', 'root of the ProgramData folder');
     end;
   end;
   Result := AReason <> '';
@@ -429,12 +430,12 @@ begin
   LLower := ' ' + ACommand.ToLower + ' ';
   if LLower.Contains('powershell') and (LLower.Contains(' -enc ') or
      LLower.Contains(' -encodedcommand ') or LLower.Contains(' -e ') or LLower.Contains(' -ec ')) then
-    Result := 'закодированная команда PowerShell'
+    Result := MHL('закодированная команда PowerShell', 'encoded PowerShell command')
   else if LLower.Contains('frombase64string') then
-    Result := 'декодирование Base64 в команде'
+    Result := MHL('декодирование Base64 в команде', 'Base64 decoding in the command')
   else if LLower.Contains('mshta ') and (LLower.Contains('http') or LLower.Contains('javascript:') or
           LLower.Contains('vbscript:')) then
-    Result := 'mshta с внешним или встроенным сценарием'
+    Result := MHL('mshta с внешним или встроенным сценарием', 'mshta with an external or embedded script')
   else
     Result := '';
 end;
@@ -446,9 +447,10 @@ begin
   LLower := ' ' + ACommand.ToLower + ' ';
   if (LLower.Contains(' -windowstyle hidden') or LLower.Contains(' -w hidden')) and
      (LLower.Contains(' -executionpolicy bypass') or LLower.Contains(' -ep bypass')) then
-    Result := 'скрытое окно и обход политики выполнения PowerShell'
+    Result := MHL('скрытое окно и обход политики выполнения PowerShell',
+      'hidden window and PowerShell execution policy bypass')
   else if LLower.Contains(' -windowstyle hidden') or LLower.Contains(' -w hidden') then
-    Result := 'скрытое окно PowerShell'
+    Result := MHL('скрытое окно PowerShell', 'hidden PowerShell window')
   else
     Result := '';
 end;

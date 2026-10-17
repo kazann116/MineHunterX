@@ -103,7 +103,8 @@ type
 implementation
 
 uses
-  System.Math, System.DateUtils, System.Generics.Defaults;
+  System.Math, System.DateUtils, System.Generics.Defaults,
+  MineHunter.Core.Lang;
 
 constructor TMHProcessEventCollector.Create(const ASource: IMHProcessEventSource; const AClock: IMHClock;
   AWindowMinutes, AShortLivedSeconds: Integer);
@@ -143,7 +144,7 @@ end;
 
 function TMHProcessEventCollector.GetDisplayName: string;
 begin
-  Result := 'Запуски процессов (ETW)';
+  Result := MHL('Запуски процессов (ETW)', 'Process launches (ETW)');
 end;
 
 function TMHProcessEventCollector.TrackedCount: Integer;
@@ -353,9 +354,10 @@ begin
   if not FStarted then
   begin
     if FAccessDenied then
-      LMessage := 'Наблюдение за запусками процессов (ETW) доступно при запуске от имени администратора'
+      LMessage := MHL('Наблюдение за запусками процессов (ETW) доступно при запуске от имени администратора',
+        'Process launch monitoring (ETW) is available when running as administrator')
     else
-      LMessage := 'Наблюдение за запусками процессов недоступно: ' + FError;
+      LMessage := MHL('Наблюдение за запусками процессов недоступно: ', 'Process launch monitoring is unavailable: ') + FError;
     Result := TMHCollectionResult.Create(TMHSourceStatus.Create(SourceIdValue, ssUnavailable, LMessage, LNow));
     Result.Status.RequiresElevation := FAccessDenied;
     Exit;
@@ -371,19 +373,21 @@ begin
   Prune(LNow);
 
   LState := ssSuccess;
-  LMessage := Format('Запусков за %d мин: %d', [FWindowMinutes, FLaunches.Count]);
+  LMessage := Format(MHL('Запусков за %d мин: %d', 'Launches in %d min: %d'), [FWindowMinutes, FLaunches.Count]);
   if not FSource.IsRunning then
   begin
     // Сеанс остановлен извне (например, другой программой) — перезапуск при следующем сборе.
     LState := ssPartial;
-    LMessage := LMessage + '; сеанс событий остановлен, будет запущен повторно';
+    LMessage := LMessage + MHL('; сеанс событий остановлен, будет запущен повторно',
+      '; the event session was stopped and will be restarted');
     FStarted := False;
     FLastAttemptUtc := 0;
   end
   else if FLostTotal > 0 then
   begin
     LState := ssPartial;
-    LMessage := LMessage + Format('; пропущено событий из-за нагрузки: %d', [FLostTotal]);
+    LMessage := LMessage + Format(MHL('; пропущено событий из-за нагрузки: %d',
+      '; events dropped due to load: %d'), [FLostTotal]);
   end;
   Result := TMHCollectionResult.Create(TMHSourceStatus.Create(SourceIdValue, LState, LMessage, LNow));
   Result.Status.ItemCount := FLaunches.Count;

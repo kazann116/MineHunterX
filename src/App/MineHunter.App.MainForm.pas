@@ -464,7 +464,7 @@ uses
   MineHunter.Collectors.Processes, MineHunter.Collectors.System, MineHunter.Core.Paths,
   MineHunter.Core.SelfAutostart, MineHunter.Collectors.Processes.WinApi,
   MineHunter.App.Lang, MineHunter.App.Theme, MineHunter.Core.Updates.WinApi, Winapi.ShellAPI,
-  System.IOUtils;
+  System.IOUtils, MineHunter.Core.Lang;
 
 function PercentText(AValue: Double): string; forward;
 
@@ -541,7 +541,7 @@ begin
   cbInterval.ItemIndex := -1;
   for I := Low(IntervalChoicesMs) to High(IntervalChoicesMs) do
   begin
-    cbInterval.Items.Add(Format('%d с', [IntervalChoicesMs[I] div 1000]));
+    cbInterval.Items.Add(Format(MHL('%d с', '%d s'), [IntervalChoicesMs[I] div 1000]));
     if IntervalChoicesMs[I] = LOptions.IntervalMs then
       cbInterval.ItemIndex := I;
   end;
@@ -592,12 +592,14 @@ begin
   cbFindingsMinLevel.Items.Add(MHRiskLevelToString(rlHighlySuspicious));
   cbFindingsMinLevel.ItemIndex := 0;
   lblStorageNote.Caption := MHTr('История и настройки хранятся только на этом компьютере ') +
-    '(%LOCALAPPDATA%\MineHunterX) и никуда не передаются.';
+    MHL('(%LOCALAPPDATA%\MineHunterX) и никуда не передаются.',
+      '(%LOCALAPPDATA%\MineHunterX) and are never sent anywhere.');
   InitAnalysisSettings;
   RefreshFindingsList;
   if not FServices.SettingsLoadedOk then
     FServices.Logger.Log(llWarning, 'settings',
-      'Файл настроек был повреждён: восстановлены значения по умолчанию');
+      MHL('Файл настроек был повреждён: восстановлены значения по умолчанию',
+        'The settings file was corrupted: default values were restored'));
 
   FServices.Scanner.OnCycle :=
     procedure(const ASnapshot: TMHSnapshot; const AFindings: TMHFindings)
@@ -732,7 +734,8 @@ begin
   LSettings := FServices.Settings;
   LSettings.IntervalMs := IntervalChoicesMs[cbInterval.ItemIndex];
   FServices.Logger.Log(llInfo, 'app',
-    Format('Интервал опроса изменён на %d мс', [LSettings.IntervalMs]));
+    Format(MHL('Интервал опроса изменён на %d мс', 'Polling interval changed to %d ms'),
+      [LSettings.IntervalMs]));
   ChangeSettings(LSettings);
 end;
 
@@ -785,8 +788,8 @@ begin
       lblSelfUpdated.Caption := MHFormatUtcAsLocal(ASnapshot.TimestampUtc);
       Exit;
     end;
-  lblSelfCpu.Caption := MH_NO_DATA;
-  lblSelfMem.Caption := MH_NO_DATA;
+  lblSelfCpu.Caption := MHL(MH_NO_DATA, 'no data');
+  lblSelfMem.Caption := MHL(MH_NO_DATA, 'no data');
 end;
 
 procedure TMainForm.UpdateSources(const ASnapshot: TMHSnapshot);
@@ -806,7 +809,7 @@ begin
       LItem.SubItems.Add(IntToStr(LStatus.DurationMs));
       LMessage := LStatus.Message;
       if LStatus.RequiresElevation then
-        LMessage := Trim(LMessage + ' (нужны права администратора)');
+        LMessage := Trim(LMessage + MHL(' (нужны права администратора)', ' (administrator rights required)'));
       LItem.SubItems.Add(LMessage);
     end;
   finally
@@ -893,12 +896,12 @@ begin
   Item.SubItems.Add(MHFormatMetric(LInfo.WorkingSet));
   Item.SubItems.Add(MHFormatMetric(LInfo.PrivateBytes));
   if LInfo.ThreadCount = MH_UNKNOWN_COUNT then
-    Item.SubItems.Add(MH_NO_DATA)
+    Item.SubItems.Add(MHL(MH_NO_DATA, 'no data'))
   else
     Item.SubItems.Add(IntToStr(LInfo.ThreadCount));
   Item.SubItems.Add(MHAccessLevelToString(LInfo.Access));
   if LInfo.ImagePath = '' then
-    Item.SubItems.Add(MH_NO_DATA)
+    Item.SubItems.Add(MHL(MH_NO_DATA, 'no data'))
   else
     Item.SubItems.Add(LInfo.ImagePath);
   Item.SubItems.Add(MHRiskLevelToString(FProcessModel.RiskOf(LInfo)));
@@ -946,7 +949,7 @@ var
 begin
   for LColumn := Low(TMHProcessColumn) to High(TMHProcessColumn) do
   begin
-    LCaption := PROCESS_COLUMN_TITLES[LColumn];
+    LCaption := MHTr(PROCESS_COLUMN_TITLES[LColumn]);
     if LColumn = FProcessModel.SortColumn then
     begin
       if FProcessModel.Ascending then
@@ -976,46 +979,52 @@ begin
     if LIndex < 0 then
     begin
       if not FHasSelectedProcess then
-        LLines.Add('Выберите процесс в таблице, чтобы увидеть подробности.')
+        LLines.Add(MHL('Выберите процесс в таблице, чтобы увидеть подробности.',
+          'Select a process in the table to see its details.'))
       else
-        LLines.Add(Format('Процесс PID %d больше не выполняется или скрыт фильтром.',
+        LLines.Add(Format(MHL('Процесс PID %d больше не выполняется или скрыт фильтром.',
+          'Process PID %d is no longer running or is hidden by the filter.'),
           [FSelectedProcess.Pid]));
     end
     else
     begin
       LInfo := FProcessModel[LIndex];
-      LLines.Add('Имя: ' + LInfo.Name);
-      LLines.Add(Format('PID: %d    Запущен: %s',
+      LLines.Add(MHL('Имя: ', 'Name: ') + LInfo.Name);
+      LLines.Add(Format(MHL('PID: %d    Запущен: %s', 'PID: %d    Started: %s'),
         [LInfo.Id.Pid, MHFormatFileTimeLocal(LInfo.Id.CreateTime)]));
       if FProcessModel.TryFindParent(LInfo, LParent) then
-        LLines.Add(Format('Родитель: %s (PID %d)', [LParent.Name, LParent.Id.Pid]))
+        LLines.Add(Format(MHL('Родитель: %s (PID %d)', 'Parent: %s (PID %d)'), [LParent.Name, LParent.Id.Pid]))
       else
-        LLines.Add(Format('Родитель: PID %d (процесс уже завершён или недоступен)',
+        LLines.Add(Format(MHL('Родитель: PID %d (процесс уже завершён или недоступен)',
+          'Parent: PID %d (the process has already exited or is inaccessible)'),
           [LInfo.ParentPid]));
       if LInfo.ImagePath = '' then
-        LLines.Add('Путь: ' + MH_NO_DATA)
+        LLines.Add(MHL('Путь: ', 'Path: ') + MHL(MH_NO_DATA, 'no data'))
       else
-        LLines.Add('Путь: ' + LInfo.ImagePath);
-      LLines.Add(Format('CPU: %s    Память (как в диспетчере задач): %s    Рабочий набор: %s    ' +
-        'Выделено: %s', [MHFormatMetric(LInfo.Cpu), MHFormatMetric(MHProcessMemory(LInfo)),
+        LLines.Add(MHL('Путь: ', 'Path: ') + LInfo.ImagePath);
+      LLines.Add(Format(MHL('CPU: %s    Память (как в диспетчере задач): %s    Рабочий набор: %s    ' +
+        'Выделено: %s', 'CPU: %s    Memory (as in Task Manager): %s    Working set: %s    ' +
+        'Committed: %s'), [MHFormatMetric(LInfo.Cpu), MHFormatMetric(MHProcessMemory(LInfo)),
          MHFormatMetric(LInfo.WorkingSet), MHFormatMetric(LInfo.PrivateBytes)]));
-      LLines.Add(Format('Видеокарта: %s    вычисления (Compute, CUDA): %s    видеопамять: %s',
+      LLines.Add(Format(MHL('Видеокарта: %s    вычисления (Compute, CUDA): %s    видеопамять: %s',
+        'Graphics card: %s    compute (Compute, CUDA): %s    video memory: %s'),
         [MHFormatMetric(LInfo.Gpu), MHFormatMetric(LInfo.GpuCompute), MHFormatMetric(LInfo.GpuMemory)]));
       if LInfo.ThreadCount = MH_UNKNOWN_COUNT then
-        LLines.Add('Потоков: ' + MH_NO_DATA)
+        LLines.Add(MHL('Потоков: ', 'Threads: ') + MHL(MH_NO_DATA, 'no data'))
       else
-        LLines.Add('Потоков: ' + IntToStr(LInfo.ThreadCount));
-      LLines.Add('Доступ: ' + MHAccessLevelToString(LInfo.Access) +
-        '    Источник данных: ' + LInfo.SourceId);
+        LLines.Add(MHL('Потоков: ', 'Threads: ') + IntToStr(LInfo.ThreadCount));
+      LLines.Add(MHL('Доступ: ', 'Access: ') + MHAccessLevelToString(LInfo.Access) +
+        MHL('    Источник данных: ', '    Data source: ') + LInfo.SourceId);
       if LInfo.Access in [alDenied, alLimited] then
-        LLines.Add('Часть сведений недоступна с текущими правами. Это ограничение ' +
-          'Windows, а не признак угрозы.');
-      LLines.Add('Подпись: ' + MHSignatureToString(LInfo.Signature));
+        LLines.Add(MHL('Часть сведений недоступна с текущими правами. Это ограничение ' +
+          'Windows, а не признак угрозы.', 'Some details are unavailable with the current rights. ' +
+          'This is a Windows restriction, not a sign of a threat.'));
+      LLines.Add(MHL('Подпись: ', 'Signature: ') + MHSignatureToString(LInfo.Signature));
       if LInfo.Sha256 <> '' then
         LLines.Add('SHA-256: ' + LInfo.Sha256);
-      LLines.Add('Оценка риска: ' + MHRiskLevelToString(FProcessModel.RiskOf(LInfo)));
+      LLines.Add(MHL('Оценка риска: ', 'Risk assessment: ') + MHRiskLevelToString(FProcessModel.RiskOf(LInfo)));
       if LInfo.CommandLine <> '' then
-        LLines.Add('Командная строка: ' + Copy(LInfo.CommandLine, 1, 400));
+        LLines.Add(MHL('Командная строка: ', 'Command line: ') + Copy(LInfo.CommandLine, 1, 400));
       if FHasLastSnapshot then
       begin
         LConnections := FLastSnapshot.ConnectionsOf(LInfo.Id.Pid);
@@ -1028,10 +1037,11 @@ begin
             if LRemote <= 5 then
               LText := LText + Format('%s:%d ', [LConnection.RemoteAddress, LConnection.RemotePort]);
           end;
-        LLines.Add(Format('Сеть: соединений %d, внешних %d %s', [Length(LConnections), LRemote, Trim(LText)]));
+        LLines.Add(Format(MHL('Сеть: соединений %d, внешних %d %s', 'Network: %d connections, %d external %s'),
+          [Length(LConnections), LRemote, Trim(LText)]));
         for LAutostart in FLastSnapshot.Autostart do
           if (LInfo.ImagePath <> '') and SameText(LAutostart.ImagePath, MHNormalizePath(LInfo.ImagePath)) then
-            LLines.Add('Автозапуск: ' + MHAutostartKindToString(LAutostart.Kind) + ' — ' + LAutostart.Name);
+            LLines.Add(MHL('Автозапуск: ', 'Autostart: ') + MHAutostartKindTitle(LAutostart.Kind) + ' — ' + LAutostart.Name);
       end;
     end;
     SetMemoText(mmProcDetails, LLines.Text);
@@ -1050,7 +1060,7 @@ end;
 
 function RateText(AValue: Double): string;
 begin
-  Result := MHFormatBytes(AValue) + '/с';
+  Result := MHFormatBytes(AValue) + MHL('/с', '/s');
 end;
 
 function TemperatureText(AValue: Double): string;
@@ -1115,8 +1125,8 @@ begin
     FTiles[LKind].Parent := pnlTiles;
     LData := Default(TMHTileData);
     LData.Kind := LKind;
-    LData.Title := TITLES[LKind];
-    LData.Value := MH_NO_DATA;
+    LData.Title := MHTr(TITLES[LKind]);
+    LData.Value := MHL(MH_NO_DATA, 'no data');
     LData.State := tsNoData;
     FTiles[LKind].SetData(LData);
   end;
@@ -1318,16 +1328,20 @@ begin
           LComparisons := MHComparePeriods(LCurrent, LBase);
           LDeviations := MHCompareProcesses(LCurrent, LBase);
           if LBase.IsEstablished(LMinSamples) then
-            LInfo := Format('Норма для режима «%s»: %d снимков за %s — %s. Сравнивается выбранный период.',
+            LInfo := Format(MHL('Норма для режима «%s»: %d снимков за %s — %s. Сравнивается выбранный период.',
+              'Baseline for the “%s” mode: %d snapshots from %s to %s. The selected period is compared.'),
               [MHWorkContextToString(LContext), LBase.SampleCount, MHFormatUtcAsLocal(LBase.PeriodFromUtc),
                MHFormatUtcAsLocal(LBase.PeriodToUtc)])
           else
-            LInfo := Format('Профиль нормы для режима «%s» ещё формируется: %d из %d снимков. ' +
+            LInfo := Format(MHL('Профиль нормы для режима «%s» ещё формируется: %d из %d снимков. ' +
               'Сравнение станет точнее после периода обучения.',
+              'The baseline for the “%s” mode is still being built: %d of %d snapshots. ' +
+              'The comparison will become more accurate after the learning period.'),
               [MHWorkContextToString(LContext), LBase.SampleCount, LMinSamples]);
         end
         else
-          LInfo := 'Профиль нормы недоступен без истории наблюдений.';
+          LInfo := MHL('Профиль нормы недоступен без истории наблюдений.',
+            'The baseline is unavailable without observation history.');
       except
         on E: Exception do
           LError := E.Message;
@@ -1428,7 +1442,7 @@ begin
   btnClearHistory.Enabled := LStorage <> nil;
   if LStorage = nil then
   begin
-    lblStoragePath.Caption := MH_NO_DATA;
+    lblStoragePath.Caption := MHL(MH_NO_DATA, 'no data');
     lblStorageStats.Caption := MHTr('История недоступна: ') + FServices.StorageError;
     Exit;
   end;
@@ -1455,7 +1469,7 @@ var
 begin
   cbRetention.Items.Clear;
   for I := Low(RETENTION_DAYS) to High(RETENTION_DAYS) do
-    cbRetention.Items.Add(Format('%d дн.', [RETENTION_DAYS[I]]));
+    cbRetention.Items.Add(Format(MHL('%d дн.', '%d days'), [RETENTION_DAYS[I]]));
   cbRetention.ItemIndex := -1;
   if FServices.Storage <> nil then
   begin
@@ -1482,7 +1496,8 @@ begin
   LSettings := FServices.Settings;
   LSettings.RetentionDays := RETENTION_DAYS[cbRetention.ItemIndex];
   FServices.Logger.Log(llInfo, 'app',
-    Format('Срок хранения истории: %d дн.', [LSettings.RetentionDays]));
+    Format(MHL('Срок хранения истории: %d дн.', 'History retention period: %d days'),
+      [LSettings.RetentionDays]));
   ChangeSettings(LSettings);
 end;
 
@@ -1495,9 +1510,11 @@ begin
   LSettings := FServices.Settings;
   LSettings.StoreProcessPaths := chkStorePaths.Checked;
   if LSettings.StoreProcessPaths then
-    FServices.Logger.Log(llInfo, 'app', 'Пути процессов сохраняются в истории')
+    FServices.Logger.Log(llInfo, 'app', MHL('Пути процессов сохраняются в истории',
+      'Process paths are stored in the history'))
   else
-    FServices.Logger.Log(llInfo, 'app', 'Пути процессов больше не сохраняются в истории');
+    FServices.Logger.Log(llInfo, 'app', MHL('Пути процессов больше не сохраняются в истории',
+      'Process paths are no longer stored in the history'));
   ChangeSettings(LSettings);
 end;
 
@@ -1507,19 +1524,20 @@ var
 begin
   if FServices.Storage = nil then
     Exit;
-  if not FConfirm('Удалить всю историю наблюдений? Это действие нельзя отменить.') then
+  if not FConfirm(MHL('Удалить всю историю наблюдений? Это действие нельзя отменить.',
+    'Delete the entire observation history? This cannot be undone.')) then
     Exit;
   LRecord.TimestampUtc := FServices.Clock.NowUtc;
   LRecord.Action := 'history-clear';
   LRecord.Target := FServices.Storage.FileName;
   try
     FServices.Storage.Clear;
-    LRecord.Result := 'История наблюдений очищена';
+    LRecord.Result := MHL('История наблюдений очищена', 'Observation history cleared');
     LRecord.Success := True;
   except
     on E: Exception do
     begin
-      FServices.Logger.Log(llError, 'app', 'Не удалось очистить историю: ' + E.Message);
+      FServices.Logger.Log(llError, 'app', MHL('Не удалось очистить историю: ', 'Failed to clear the history: ') + E.Message);
       LRecord.Result := E.Message;
       LRecord.Success := False;
     end;
@@ -1529,7 +1547,7 @@ begin
       FServices.ActionLog.LogAction(LRecord);
     except
       on E: Exception do
-        FServices.Logger.Log(llWarning, 'actions', 'Журнал действий недоступен: ' + E.Message);
+        FServices.Logger.Log(llWarning, 'actions', MHL('Журнал действий недоступен: ', 'Action log is unavailable: ') + E.Message);
     end;
   RefreshActionLog;
   UpdateStorageInfo;
@@ -1654,7 +1672,7 @@ begin
   LRow := FFindingsModel[Item.Index];
   Item.Caption := MHRiskLevelToString(LRow.Finding.Level);
   Item.SubItems.Add(IntToStr(LRow.Finding.Score));
-  Item.SubItems.Add(MHFindingCategoryToString(LRow.Finding.Category));
+  Item.SubItems.Add(MHFindingCategoryTitle(LRow.Finding.Category));
   if LRow.Finding.ProcessName <> '' then
     Item.SubItems.Add(LRow.Finding.ProcessName)
   else
@@ -1688,7 +1706,7 @@ begin
           FServices.Clock.NowUtc + 1, 1000);
       except
         on E: Exception do
-          FServices.Logger.Log(llWarning, 'app', 'История находок недоступна: ' + E.Message);
+          FServices.Logger.Log(llWarning, 'app', MHL('История находок недоступна: ', 'Findings history is unavailable: ') + E.Message);
       end;
     FFindingsModel.SetHistory(LHistory);
     FFindingsModel.Mode := fmHistory;
@@ -1764,7 +1782,7 @@ begin
   except
     on E: Exception do
     begin
-      FServices.Logger.Log(llWarning, 'app', 'График нагрузки недоступен: ' + E.Message);
+      FServices.Logger.Log(llWarning, 'app', MHL('График нагрузки недоступен: ', 'Load chart is unavailable: ') + E.Message);
       Result := nil;
     end;
   end;
@@ -1781,10 +1799,13 @@ begin
   if not LHasFinding then
   begin
     if FFindingsModel.Count = 0 then
-      SetMemoText(mmCard, 'Находок нет. Отсутствие находок не гарантирует отсутствие угроз: ' +
-        'MineHunter X оценивает поведение программ, а не проверяет файлы по базе сигнатур.')
+      SetMemoText(mmCard, MHL('Находок нет. Отсутствие находок не гарантирует отсутствие угроз: ' +
+        'MineHunter X оценивает поведение программ, а не проверяет файлы по базе сигнатур.',
+        'No findings. The absence of findings does not guarantee the absence of threats: ' +
+        'MineHunter X assesses program behavior rather than checking files against a signature database.'))
     else
-      SetMemoText(mmCard, 'Выберите находку в списке, чтобы увидеть объяснение и доступные действия.');
+      SetMemoText(mmCard, MHL('Выберите находку в списке, чтобы увидеть объяснение и доступные действия.',
+        'Select a finding in the list to see the explanation and available actions.'));
     FCardSeriesKey := '';
     FCardChart.SetPoints(nil);
     FCardChart.Title := MHTr('Нагрузка (последний час)');
@@ -1800,7 +1821,7 @@ begin
       FCardChart.SetPoints(LoadSeriesFor(LRow.Finding));
     end;
     if LRow.Finding.ProcessName <> '' then
-      FCardChart.Title := 'CPU: ' + LRow.Finding.ProcessName + ' (час)'
+      FCardChart.Title := 'CPU: ' + LRow.Finding.ProcessName + MHL(' (час)', ' (hour)')
     else
       FCardChart.Title := MHTr('CPU системы (час)');
   end;
@@ -1893,8 +1914,10 @@ var
 begin
   if not SelectedFinding(LRow) or not FindLiveProcess(LRow.Finding.Process, LProcess) then
     Exit;
-  if not FConfirm(Format('Остановить процесс %s (PID %d)?' + sLineBreak + '%s' + sLineBreak + sLineBreak +
-    'Несохранённые данные этой программы будут потеряны. Файл программы не удаляется.',
+  if not FConfirm(Format(MHL('Остановить процесс %s (PID %d)?', 'Stop process %s (PID %d)?') +
+    sLineBreak + '%s' + sLineBreak + sLineBreak +
+    MHL('Несохранённые данные этой программы будут потеряны. Файл программы не удаляется.',
+    'Unsaved data of this program will be lost. The program file is not deleted.'),
     [LProcess.Name, LProcess.Id.Pid, LProcess.ImagePath])) then
     Exit;
   ShowActionResult(FServices.Actions.TerminateProcess(LProcess.Id, LProcess.Name));
@@ -1911,16 +1934,19 @@ var
 begin
   if not SelectedFinding(LRow) or (LRow.Finding.ImagePath = '') then
     Exit;
-  if not FConfirm(Format('Добавить %s в разрешённые программы?' + sLineBreak + '%s' + sLineBreak + sLineBreak +
-    'MineHunter X перестанет сообщать об этом файле. Если файл будет заменён другим, ' +
+  if not FConfirm(Format(MHL('Добавить %s в разрешённые программы?', 'Add %s to allowed programs?') +
+    sLineBreak + '%s' + sLineBreak + sLineBreak +
+    MHL('MineHunter X перестанет сообщать об этом файле. Если файл будет заменён другим, ' +
     'проверка возобновится (исключение привязано к SHA-256).',
+    'MineHunter X will stop reporting this file. If the file is replaced with a different one, ' +
+    'checking will resume (the exclusion is bound to SHA-256).'),
     [LRow.Finding.ProcessName, LRow.Finding.ImagePath])) then
     Exit;
   LExclusion := Default(TMHExclusion);
   LExclusion.Key := MHProgramKey(LRow.Finding.ImagePath, LRow.Finding.ProcessName);
   LExclusion.Name := LRow.Finding.ProcessName;
   LExclusion.CreatedUtc := FServices.Clock.NowUtc;
-  LExclusion.Comment := 'Добавлено из карточки находки: ' + LRow.Finding.Title;
+  LExclusion.Comment := MHL('Добавлено из карточки находки: ', 'Added from the finding card: ') + LRow.Finding.Title;
   if FindLiveProcess(LRow.Finding.Process, LProcess) and (LProcess.Sha256 <> '') then
     LExclusion.Sha256 := LProcess.Sha256
   else if FHasLastSnapshot and FLastSnapshot.FindFile(LRow.Finding.ImagePath, LFile) then
@@ -1934,18 +1960,18 @@ begin
       LRecord.TimestampUtc := FServices.Clock.NowUtc;
       LRecord.Action := 'exclusion-add';
       LRecord.Target := LRow.Finding.ImagePath;
-      LRecord.Result := 'Программа добавлена в исключения';
+      LRecord.Result := MHL('Программа добавлена в исключения', 'Program added to exclusions');
       LRecord.Success := True;
       try
         FServices.ActionLog.LogAction(LRecord);
       except
         on E: Exception do
-          FServices.Logger.Log(llWarning, 'actions', 'Журнал действий недоступен: ' + E.Message);
+          FServices.Logger.Log(llWarning, 'actions', MHL('Журнал действий недоступен: ', 'Action log is unavailable: ') + E.Message);
       end;
     end;
     FFindingsModel.Remove(LRow.Finding.Key);
     FSelectedFindingKey := '';
-    lblCardStatus.Caption := LRow.Finding.ProcessName + ' добавлена в исключения.';
+    lblCardStatus.Caption := LRow.Finding.ProcessName + MHL(' добавлена в исключения.', ' added to exclusions.');
     RefreshFindingsList;
     RefreshExclusions;
     RefreshActionLog;
@@ -1981,7 +2007,7 @@ begin
     MHSaveTextFile(AFileName, TMHReportBuilder.BuildHtml(LSnapshot, LFindings, ReportOptions))
   else
     MHSaveTextFile(AFileName, TMHReportBuilder.BuildJson(LSnapshot, LFindings, ReportOptions));
-  FServices.Logger.Log(llInfo, 'app', 'Отчёт сохранён: ' + AFileName);
+  FServices.Logger.Log(llInfo, 'app', MHL('Отчёт сохранён: ', 'Report saved: ') + AFileName);
 end;
 
 procedure TMainForm.ExportFindingCard(const AFileName: string; AHtml: Boolean);
@@ -1991,7 +2017,7 @@ var
   LSeries: TArray<TMHMetric>;
 begin
   if not SelectedFinding(LRow) then
-    raise EMHError.Create('Находка не выбрана');
+    raise EMHError.Create(MHL('Находка не выбрана', 'No finding selected'));
   if not FindLiveProcess(LRow.Finding.Process, LProcess) then
     LProcess := TMHProcessInfo.Create(LRow.Finding.Process, LRow.Finding.ProcessName, LRow.LastSeenUtc);
   LSeries := LoadSeriesFor(LRow.Finding);
@@ -1999,7 +2025,7 @@ begin
     MHSaveTextFile(AFileName, TMHReportBuilder.FindingCardHtml(LRow.Finding, LProcess, LSeries, ReportOptions))
   else
     MHSaveTextFile(AFileName, TMHReportBuilder.FindingCardJson(LRow.Finding, LProcess, LSeries, ReportOptions));
-  FServices.Logger.Log(llInfo, 'app', 'Карточка находки сохранена: ' + AFileName);
+  FServices.Logger.Log(llInfo, 'app', MHL('Карточка находки сохранена: ', 'Finding card saved: ') + AFileName);
 end;
 
 function TMainForm.AskExportFile(const ADefaultName: string; out AFileName: string;
@@ -2075,7 +2101,7 @@ begin
     function(AStat: TMHStat): string
     begin
       if not AStat.HasData then
-        Result := MH_NO_DATA
+        Result := MHL(MH_NO_DATA, 'no data')
       else
         Result := FormatFloat('0', AStat.Median) + '% / ' + FormatFloat('0', AStat.P95) + '%';
     end;
@@ -2158,7 +2184,7 @@ begin
     cbHighCpu.ItemIndex := -1;
     for I := Low(HIGH_CPU_CHOICES) to High(HIGH_CPU_CHOICES) do
     begin
-      cbHighCpu.Items.Add(Format('%d%% всей машины', [HIGH_CPU_CHOICES[I]]));
+      cbHighCpu.Items.Add(Format(MHL('%d%% всей машины', '%d%% of the whole machine'), [HIGH_CPU_CHOICES[I]]));
       if Round(LSettings.Analyzer.HighCpuPercent) = HIGH_CPU_CHOICES[I] then
         cbHighCpu.ItemIndex := I;
     end;
@@ -2166,7 +2192,7 @@ begin
     cbSustained.ItemIndex := -1;
     for I := Low(SUSTAINED_CHOICES) to High(SUSTAINED_CHOICES) do
     begin
-      cbSustained.Items.Add(Format('%d мин', [SUSTAINED_CHOICES[I]]));
+      cbSustained.Items.Add(Format(MHL('%d мин', '%d min'), [SUSTAINED_CHOICES[I]]));
       if LSettings.Analyzer.SustainedMinutes = SUSTAINED_CHOICES[I] then
         cbSustained.ItemIndex := I;
     end;
@@ -2174,7 +2200,7 @@ begin
     cbLearning.ItemIndex := -1;
     for I := Low(LEARNING_CHOICES) to High(LEARNING_CHOICES) do
     begin
-      cbLearning.Items.Add(Format('%d дн.', [LEARNING_CHOICES[I]]));
+      cbLearning.Items.Add(Format(MHL('%d дн.', '%d days'), [LEARNING_CHOICES[I]]));
       if LSettings.LearningDays = LEARNING_CHOICES[I] then
         cbLearning.ItemIndex := I;
     end;
@@ -2284,7 +2310,8 @@ begin
   if (lvExclusions.ItemIndex < 0) or (lvExclusions.ItemIndex > High(FServices.Settings.Exclusions)) then
     Exit;
   LExclusion := FServices.Settings.Exclusions[lvExclusions.ItemIndex];
-  if not FConfirm(Format('Удалить %s из разрешённых программ? MineHunter X снова будет анализировать её.',
+  if not FConfirm(Format(MHL('Удалить %s из разрешённых программ? MineHunter X снова будет анализировать её.',
+    'Remove %s from allowed programs? MineHunter X will analyze it again.'),
     [LExclusion.Name])) then
     Exit;
   LSettings := FServices.Settings;
@@ -2301,8 +2328,10 @@ begin
   FRemediateButton.Parent := pnlCardButtons;
   FRemediateButton.SetBounds(btnOpenLocation.Left, btnOpenLocation.Top + btnOpenLocation.Height + 6, 320, 30);
   FRemediateButton.Caption := MHTr('Исправить (карантин с откатом)…');
-  FRemediateButton.Hint := MHTr('Показывает план: остановить процесс, отключить автозапуск и признаки ') +
-    'вмешательства, переместить файлы в карантин. Каждый шаг можно отменить в «Настройки → Карантин».';
+  FRemediateButton.Hint := MHL('Показывает план: остановить процесс, отключить автозапуск и признаки ',
+    'Shows the plan: stop the process, disable autostart and ') +
+    MHL('вмешательства, переместить файлы в карантин. Каждый шаг можно отменить в «Настройки → Карантин».',
+    'tampering signs, move files to quarantine. Each step can be undone in “Settings → Quarantine”.');
   FRemediateButton.ShowHint := True;
   FRemediateButton.Enabled := False;
   FRemediateButton.OnClick := RemediateClick;
@@ -2371,7 +2400,8 @@ begin
       if FindLiveProcess(AStep.Process, LProcess) then
         Result := FServices.Actions.TerminateProcess(LProcess.Id, LProcess.Name)
       else
-        Result := TMHActionResult.Create(arkNotFound, 'Процесс ' + AStep.ProcessName + ' уже не запущен');
+        Result := TMHActionResult.Create(arkNotFound, MHL('Процесс ', 'Process ') + AStep.ProcessName +
+          MHL(' уже не запущен', ' is no longer running'));
     rmQuarantineFile:
       Result := FServices.Quarantine.QuarantineFile(AStep.Target, AReason);
     rmRegistryValue:
@@ -2381,7 +2411,7 @@ begin
     rmTask:
       Result := FServices.Quarantine.DisableTask(AStep.Target, AReason);
   else
-    Result := TMHActionResult.Create(arkUnavailable, 'Вручную: ' + AStep.Description);
+    Result := TMHActionResult.Create(arkUnavailable, MHL('Вручную: ', 'Manually: ') + AStep.Description);
   end;
 end;
 
@@ -2402,13 +2432,15 @@ begin
     lblCardStatus.Caption := MHTr('Для этой находки нет автоматических шагов исправления — следуйте рекомендациям.');
     Exit;
   end;
-  LQuestion := 'Исправить находку «' + LRow.Finding.Title + '»?' + sLineBreak + sLineBreak +
-    'Будут выполнены шаги:' + sLineBreak;
+  LQuestion := MHL('Исправить находку «', 'Remediate the finding “') + LRow.Finding.Title + MHL('»?', '”?') +
+    sLineBreak + sLineBreak + MHL('Будут выполнены шаги:', 'The following steps will be performed:') + sLineBreak;
   for I := 0 to High(LSteps) do
     LQuestion := LQuestion + Format('%d. %s', [I + 1, LSteps[I].Description]) + sLineBreak;
   LQuestion := LQuestion + sLineBreak +
-    'Файлы не удаляются: они перемещаются в карантин, а значения реестра, службы и задания ' +
-    'сохраняются. Всё можно вернуть в «Настройки → Карантин». Файлы Windows не затрагиваются.';
+    MHL('Файлы не удаляются: они перемещаются в карантин, а значения реестра, службы и задания ' +
+    'сохраняются. Всё можно вернуть в «Настройки → Карантин». Файлы Windows не затрагиваются.',
+    'Files are not deleted: they are moved to quarantine, and registry values, services and tasks ' +
+    'are preserved. Everything can be restored in “Settings → Quarantine”. Windows files are not affected.');
   if not FConfirm(LQuestion) then
     Exit;
 
@@ -2434,7 +2466,8 @@ begin
       LReport := LReport + sLineBreak;
     end;
   end;
-  FServices.Logger.Log(llInfo, 'actions', 'Исправление «' + LRow.Finding.Title + '»:' + sLineBreak + LReport);
+  FServices.Logger.Log(llInfo, 'actions', MHL('Исправление «', 'Remediation “') + LRow.Finding.Title +
+    MHL('»:', '”:') + sLineBreak + LReport);
   if LFailed = 0 then
     lblCardStatus.Caption := Format(MHTr('Исправление выполнено: %d из %d шагов. Отменить можно в «Настройки → Карантин».'),
       [LDone, Length(LSteps)])
@@ -2461,7 +2494,7 @@ begin
     on E: Exception do
     begin
       FQuarantineItems := nil;
-      FServices.Logger.Log(llWarning, 'quarantine', 'Список карантина недоступен: ' + E.Message);
+      FServices.Logger.Log(llWarning, 'quarantine', MHL('Список карантина недоступен: ', 'Quarantine list is unavailable: ') + E.Message);
     end;
   end;
   FQuarantineList.Items.BeginUpdate;
@@ -2503,8 +2536,10 @@ begin
   if (FQuarantineList.Selected = nil) or (FQuarantineList.Selected.Index > High(FQuarantineItems)) then
     Exit;
   LItem := FQuarantineItems[FQuarantineList.Selected.Index];
-  if not FConfirm('Восстановить из карантина?' + sLineBreak + LItem.Description + sLineBreak + sLineBreak +
-    'Объект вернётся на прежнее место и снова сможет запускаться.') then
+  if not FConfirm(MHL('Восстановить из карантина?', 'Restore from quarantine?') + sLineBreak +
+    LItem.Description + sLineBreak + sLineBreak +
+    MHL('Объект вернётся на прежнее место и снова сможет запускаться.',
+    'The object will return to its original location and will be able to run again.')) then
     Exit;
   ShowActionResult(FServices.Quarantine.Restore(LItem.Id));
   RefreshQuarantine;
@@ -2517,8 +2552,9 @@ begin
   if (FQuarantineList.Selected = nil) or (FQuarantineList.Selected.Index > High(FQuarantineItems)) then
     Exit;
   LItem := FQuarantineItems[FQuarantineList.Selected.Index];
-  if not FConfirm('Удалить навсегда файл из карантина?' + sLineBreak + LItem.Description + sLineBreak + sLineBreak +
-    'Это действие нельзя отменить.') then
+  if not FConfirm(MHL('Удалить навсегда файл из карантина?', 'Permanently delete the file from quarantine?') +
+    sLineBreak + LItem.Description + sLineBreak + sLineBreak +
+    MHL('Это действие нельзя отменить.', 'This action cannot be undone.')) then
     Exit;
   ShowActionResult(FServices.Quarantine.Purge(LItem.Id));
   RefreshQuarantine;
@@ -2601,17 +2637,21 @@ begin
   FInitializingSettings := True;
   try
     FChkTray := AddCheck(MHTr('Сворачивать и закрывать в область уведомлений (значок у часов)'),
-      'Наблюдение продолжается, пока окно скрыто. Полный выход — «Выход» в меню значка.',
+      MHL('Наблюдение продолжается, пока окно скрыто. Полный выход — «Выход» в меню значка.',
+      'Monitoring continues while the window is hidden. To quit completely, use “Exit” in the icon menu.'),
       FServices.Settings.MinimizeToTray);
     FChkNotify := AddCheck(MHTr('Уведомлять о новых тревогах (уровень «подозрительно» и выше)'),
-      'Не чаще одного уведомления в минуту; об одной находке — один раз, повторно — если риск вырос.',
+      MHL('Не чаще одного уведомления в минуту; об одной находке — один раз, повторно — если риск вырос.',
+      'At most one notification per minute; once per finding, again only if the risk has increased.'),
       FServices.Settings.NotifyAlerts);
     FChkEconomy := AddCheck(Format(MHTr('Экономный режим: пока окно скрыто, опрос раз в %d с'),
       [TMHAppSettings.EconomyIntervalMs div 1000]),
-      'Снижает нагрузку самого MineHunter X, когда вы не смотрите на окно.',
+      MHL('Снижает нагрузку самого MineHunter X, когда вы не смотрите на окно.',
+      'Reduces the load of MineHunter X itself while you are not looking at the window.'),
       FServices.Settings.EconomyWhenHidden);
     FChkAutostart := AddCheck(MHTr('Запускать MineHunter X вместе с Windows (свёрнутым)'),
-      'Запись в HKCU\...\CurrentVersion\Run только для текущего пользователя; права администратора не нужны.',
+      MHL('Запись в HKCU\...\CurrentVersion\Run только для текущего пользователя; права администратора не нужны.',
+      'An entry in HKCU\...\CurrentVersion\Run for the current user only; administrator rights are not required.'),
       False);
   finally
     FInitializingSettings := False;
@@ -2644,8 +2684,9 @@ begin
       sasStale:
         begin
           FChkAutostart.Checked := False;
-          FLblAutostart.Caption := MHTr('Запись автозапуска указывает на другой файл (программу переместили) — ') +
-            'включите заново.';
+          FLblAutostart.Caption := MHL('Запись автозапуска указывает на другой файл (программу переместили) — ',
+            'The autostart entry points to another file (the program was moved) — ') +
+            MHL('включите заново.', 'turn it on again.');
         end;
     else
       FChkAutostart.Checked := False;
@@ -2688,15 +2729,15 @@ begin
   LRecord.Target := FServices.SelfAutostart.Command;
   LRecord.Success := FServices.SelfAutostart.SetEnabled(LEnable, LError);
   if LRecord.Success then
-    LRecord.Result := 'Готово'
+    LRecord.Result := MHL('Готово', 'Done')
   else
-    LRecord.Result := 'Не удалось изменить автозапуск: ' + LError;
+    LRecord.Result := MHL('Не удалось изменить автозапуск: ', 'Failed to change autostart: ') + LError;
   if FServices.ActionLog <> nil then
     try
       FServices.ActionLog.LogAction(LRecord);
     except
       on E: Exception do
-        FServices.Logger.Log(llWarning, 'actions', 'Журнал действий недоступен: ' + E.Message);
+        FServices.Logger.Log(llWarning, 'actions', MHL('Журнал действий недоступен: ', 'Action log is unavailable: ') + E.Message);
     end;
   if not LRecord.Success then
     FServices.Logger.Log(llWarning, 'app', LRecord.Result);
@@ -2890,8 +2931,10 @@ begin
     SetBounds(8, 74, FChangesPanel.Width - 16, 17);
     Caption := MHTr('Что изменилось за 7 дней');
     Font.Style := [fsBold];
-    Hint := MHTr('Впервые замеченные записи автозапуска, признаки вмешательства в защиту и программы. ' +
-      'Всё, что было на компьютере в первые 30 минут наблюдения, считается исходным состоянием.');
+    Hint := MHL('Впервые замеченные записи автозапуска, признаки вмешательства в защиту и программы. ' +
+      'Всё, что было на компьютере в первые 30 минут наблюдения, считается исходным состоянием.',
+      'First-seen autostart entries, security tampering signs and programs. Everything present ' +
+      'during the first 30 minutes of monitoring is treated as the initial state.');
     ShowHint := True;
   end;
   FChangesList := TListView.Create(Self);
@@ -3023,11 +3066,11 @@ begin
         LNow - 1, LNow, 24 * 60), LInput.ElectricityPrice);
   except
     on E: Exception do
-      FServices.Logger.Log(llWarning, 'check', 'История для отчёта недоступна: ' + E.Message);
+      FServices.Logger.Log(llWarning, 'check', MHL('История для отчёта недоступна: ', 'History for the report is unavailable: ') + E.Message);
   end;
   FLastCheckReport := MHBuildCheckReport(LInput);
   Inc(FCheckCount);
-  FServices.Logger.Log(llInfo, 'check', 'Проверка выполнена: ' + FLastCheckReport.Headline);
+  FServices.Logger.Log(llInfo, 'check', MHL('Проверка выполнена: ', 'Check completed: ') + FLastCheckReport.Headline);
   UpdateEvents;
   if Assigned(FShowReport) then
     FShowReport(FLastCheckReport);
@@ -3111,9 +3154,9 @@ end;
 function MeasuredText(AHours: Double): string;
 begin
   if AHours < 1 then
-    Result := Format('%.0f мин', [AHours * 60])
+    Result := Format(MHL('%.0f мин', '%.0f min'), [AHours * 60])
   else
-    Result := Format('%.1f ч', [AHours]);
+    Result := Format(MHL('%.1f ч', '%.1f h'), [AHours]);
 end;
 
 procedure TMainForm.ApplyChanges;
@@ -3127,14 +3170,17 @@ begin
     Exit;
   LEnergy := FHistoryResultEnergy;
   if LEnergy.HasData and (LEnergy.CoveredHours > 0) then
-    LText := Format('Электроэнергия видеокарты за %d ч (измерено %s): %s ≈ %s · в среднем %.0f Вт, ' +
+    LText := Format(MHL('Электроэнергия видеокарты за %d ч (измерено %s): %s ≈ %s · в среднем %.0f Вт, ' +
       'пик %.0f Вт · при такой нагрузке ≈ %s в месяц (цена %s за кВт·ч).',
+      'Graphics card electricity over %d h (measured %s): %s ≈ %s · average %.0f W, ' +
+      'peak %.0f W · at this load ≈ %s per month (price %s per kWh).'),
       [FHistoryResultHours, MeasuredText(LEnergy.CoveredHours), MHFormatEnergy(LEnergy.KWh), MHFormatMoney(LEnergy.Cost),
        LEnergy.AverageWatts, LEnergy.PeakWatts, MHFormatMoney(LEnergy.CostPerMonth),
        MHFormatMoney(FServices.Settings.ElectricityPrice)])
   else
-    LText := 'Электроэнергия: видеокарта не сообщает мощность (датчик есть у видеокарт NVIDIA) ' +
-      'или за период нет измерений.';
+    LText := MHL('Электроэнергия: видеокарта не сообщает мощность (датчик есть у видеокарт NVIDIA) ' +
+      'или за период нет измерений.', 'Electricity: the graphics card does not report power draw ' +
+      '(NVIDIA cards have the sensor) or there are no measurements for the period.');
   FLblEnergy.Caption := LText;
 
   FChangesList.Items.BeginUpdate;
@@ -3208,14 +3254,17 @@ begin
     FLblAppearanceNote.AutoSize := False;
     FLblAppearanceNote.ShowAccelChar := False;
     FLblAppearanceNote.Font.Color := clGrayText;
-    FLblAppearanceNote.Caption := 'Interface language applies after restart; finding explanations are in Russian.';
+    FLblAppearanceNote.Caption := MHL('Язык интерфейса применяется после перезапуска программы.',
+      'The interface language applies after the program restarts.');
     Inc(LTop, 24);
     FChkUpdates := TCheckBox.Create(Self);
     FChkUpdates.Parent := FAppearanceBox;
     FChkUpdates.SetBounds(16, LTop, FAppearanceBox.Width - 32, 19);
     FChkUpdates.Caption := MHTr('Проверять новые версии на GitHub (раз в сутки)');
-    FChkUpdates.Hint := 'Запрос только к api.github.com (последний выпуск ' + MH_UPDATE_REPOSITORY +
-      '); сведения о компьютере не передаются, ничего не скачивается автоматически.';
+    FChkUpdates.Hint := MHL('Запрос только к api.github.com (последний выпуск ',
+      'Requests go only to api.github.com (latest release of ') + MH_UPDATE_REPOSITORY +
+      MHL('); сведения о компьютере не передаются, ничего не скачивается автоматически.',
+      '); no information about the computer is sent, nothing is downloaded automatically.');
     FChkUpdates.ShowHint := True;
     FChkUpdates.Checked := FServices.Settings.CheckForUpdates;
     Inc(LTop, 28);
@@ -3239,7 +3288,8 @@ begin
     FBtnExportSettings.Parent := FAppearanceBox;
     FBtnExportSettings.SetBounds(16, LTop, 180, 28);
     FBtnExportSettings.Caption := MHTr('Экспорт настроек…');
-    FBtnExportSettings.Hint := 'Файл JSON с настройками и списком разрешённых программ (пути к файлам — внутри).';
+    FBtnExportSettings.Hint := MHL('Файл JSON с настройками и списком разрешённых программ (пути к файлам — внутри).',
+      'A JSON file with the settings and the list of allowed programs (file paths are included).');
     FBtnExportSettings.ShowHint := True;
     FBtnExportSettings.OnClick := ExportSettingsClick;
     FBtnImportSettings := TButton.Create(Self);
@@ -3256,7 +3306,8 @@ begin
   if not MHDarkThemeAvailable then
   begin
     FCbTheme.Enabled := False;
-    FCbTheme.Hint := 'Стиль тёмной темы не встроен в эту сборку.';
+    FCbTheme.Hint := MHL('Стиль тёмной темы не встроен в эту сборку.',
+      'The dark theme style is not included in this build.');
     FCbTheme.ShowHint := True;
   end;
 end;
@@ -3386,9 +3437,10 @@ begin
   Result := False;
   try
     if not FileExists(AFileName) then
-      raise EMHSettingsError.Create('Файл не найден');
+      raise EMHSettingsError.Create(MHL('Файл не найден', 'File not found'));
     if TFile.GetSize(AFileName) > 4 * 1024 * 1024 then
-      raise EMHSettingsError.Create('Файл слишком большой для файла настроек');
+      raise EMHSettingsError.Create(MHL('Файл слишком большой для файла настроек',
+        'The file is too large to be a settings file'));
     LText := TFile.ReadAllText(AFileName, TEncoding.UTF8);
     LSettings := MHSettingsFromJson(LText);
   except
@@ -3398,11 +3450,13 @@ begin
       Exit;
     end;
   end;
-  if not FConfirm(Format('Заменить текущие настройки настройками из файла?' + sLineBreak + '%s' + sLineBreak +
-    sLineBreak + 'Разрешённых программ в файле: %d. Текущие настройки будут заменены.',
+  if not FConfirm(Format(MHL('Заменить текущие настройки настройками из файла?',
+    'Replace the current settings with the settings from the file?') + sLineBreak + '%s' + sLineBreak +
+    sLineBreak + MHL('Разрешённых программ в файле: %d. Текущие настройки будут заменены.',
+    'Allowed programs in the file: %d. The current settings will be replaced.'),
     [AFileName, Length(LSettings.Exclusions)])) then
   begin
-    AError := 'Отменено пользователем';
+    AError := MHL('Отменено пользователем', 'Cancelled by the user');
     Exit;
   end;
   ChangeSettings(LSettings);
@@ -3412,13 +3466,13 @@ begin
     LRecord.TimestampUtc := FServices.Clock.NowUtc;
     LRecord.Action := 'settings-import';
     LRecord.Target := AFileName;
-    LRecord.Result := 'Настройки импортированы';
+    LRecord.Result := MHL('Настройки импортированы', 'Settings imported');
     LRecord.Success := True;
     try
       FServices.ActionLog.LogAction(LRecord);
     except
       on E: Exception do
-        FServices.Logger.Log(llWarning, 'actions', 'Журнал действий недоступен: ' + E.Message);
+        FServices.Logger.Log(llWarning, 'actions', MHL('Журнал действий недоступен: ', 'Action log is unavailable: ') + E.Message);
     end;
     RefreshActionLog;
   end;
@@ -3456,16 +3510,16 @@ var
 begin
   LDialog := TSaveDialog.Create(nil);
   try
-    LDialog.Filter := 'Настройки MineHunter X (*.json)|*.json';
+    LDialog.Filter := MHL('Настройки MineHunter X (*.json)|*.json', 'MineHunter X settings (*.json)|*.json');
     LDialog.DefaultExt := 'json';
     LDialog.FileName := 'minehunter-settings.json';
     LDialog.Options := [ofOverwritePrompt, ofHideReadOnly, ofPathMustExist, ofEnableSizing];
     if not LDialog.Execute(Handle) then
       Exit;
     if ExportSettingsTo(LDialog.FileName, LError) then
-      lblStorageStats.Caption := 'Настройки сохранены: ' + LDialog.FileName
+      lblStorageStats.Caption := MHL('Настройки сохранены: ', 'Settings saved: ') + LDialog.FileName
     else
-      lblStorageStats.Caption := 'Не удалось сохранить настройки: ' + LError;
+      lblStorageStats.Caption := MHL('Не удалось сохранить настройки: ', 'Failed to save settings: ') + LError;
   finally
     LDialog.Free;
   end;
@@ -3478,14 +3532,14 @@ var
 begin
   LDialog := TOpenDialog.Create(nil);
   try
-    LDialog.Filter := 'Настройки MineHunter X (*.json)|*.json';
+    LDialog.Filter := MHL('Настройки MineHunter X (*.json)|*.json', 'MineHunter X settings (*.json)|*.json');
     LDialog.Options := [ofFileMustExist, ofHideReadOnly, ofEnableSizing];
     if not LDialog.Execute(Handle) then
       Exit;
     if ImportSettingsFrom(LDialog.FileName, LError) then
-      lblStorageStats.Caption := 'Настройки импортированы: ' + LDialog.FileName
-    else if LError <> 'Отменено пользователем' then
-      MessageDlg('Настройки не импортированы: ' + LError, mtWarning, [mbOK], 0);
+      lblStorageStats.Caption := MHL('Настройки импортированы: ', 'Settings imported: ') + LDialog.FileName
+    else if LError <> MHL('Отменено пользователем', 'Cancelled by the user') then
+      MessageDlg(MHL('Настройки не импортированы: ', 'Settings were not imported: ') + LError, mtWarning, [mbOK], 0);
   finally
     LDialog.Free;
   end;

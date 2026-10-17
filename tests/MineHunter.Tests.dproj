@@ -75,6 +75,7 @@
         <DelphiCompile Include="$(MainSource)">
             <MainSource>MainSource</MainSource>
         </DelphiCompile>
+        <DCCReference Include="..\src\Core\MineHunter.Core.Lang.pas"/>
         <DCCReference Include="..\src\Core\MineHunter.Core.Types.pas"/>
         <DCCReference Include="..\src\Core\MineHunter.Core.Interfaces.pas"/>
         <DCCReference Include="..\src\Core\MineHunter.Core.Calc.pas"/>
@@ -103,6 +104,7 @@
         <DCCReference Include="..\src\App\MineHunter.App.Lang.pas"/>
         <DCCReference Include="..\src\App\MineHunter.App.Theme.pas"/>
         <DCCReference Include="Unit\MineHunter.Tests.Appearance.pas"/>
+        <DCCReference Include="Unit\MineHunter.Tests.CoreLanguage.pas"/>
         <DCCReference Include="..\src\Core\Collectors\MineHunter.Collectors.ProcessEvents.pas"/>
         <DCCReference Include="..\src\Core\Collectors\MineHunter.Collectors.ProcessEvents.WinApi.pas"/>
         <DCCReference Include="Unit\MineHunter.Tests.ProcessEvents.pas"/>

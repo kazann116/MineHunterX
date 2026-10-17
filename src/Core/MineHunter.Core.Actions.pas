@@ -149,7 +149,7 @@ implementation
 
 uses
   System.Math, System.Character, System.Generics.Collections, System.Generics.Defaults,
-  MineHunter.Core.Paths;
+  MineHunter.Core.Paths, MineHunter.Core.Lang;
 
 const
   // Коды ошибок Windows (winerror.h); модуль не зависит от Winapi.Windows.
@@ -186,15 +186,15 @@ end;
 function MHActionResultKindToString(AKind: TMHActionResultKind): string;
 begin
   case AKind of
-    arkDone:             Result := 'выполнено';
-    arkNotFound:         Result := 'не найдено';
-    arkAccessDenied:     Result := 'нет доступа';
-    arkIdentityMismatch: Result := 'процесс не совпадает';
-    arkProtected:        Result := 'защищённый объект';
-    arkUnavailable:      Result := 'недоступно';
-    arkCancelled:        Result := 'отменено';
+    arkDone:             Result := MHL('выполнено', 'done');
+    arkNotFound:         Result := MHL('не найдено', 'not found');
+    arkAccessDenied:     Result := MHL('нет доступа', 'access denied');
+    arkIdentityMismatch: Result := MHL('процесс не совпадает', 'process mismatch');
+    arkProtected:        Result := MHL('защищённый объект', 'protected object');
+    arkUnavailable:      Result := MHL('недоступно', 'unavailable');
+    arkCancelled:        Result := MHL('отменено', 'cancelled');
   else
-    Result := 'ошибка';
+    Result := MHL('ошибка', 'error');
   end;
 end;
 
@@ -337,18 +337,19 @@ begin
   AError := '';
   if Trim(APath) = '' then
   begin
-    AError := 'Путь к файлу не указан';
+    AError := MHL('Путь к файлу не указан', 'File path is not specified');
     Exit(False);
   end;
   for C in APath do
     if CharInSet(C, ['"', '<', '>', '|', '*', '?', #0..#31]) then
     begin
-      AError := 'Путь содержит недопустимые символы (кавычки, подстановочные или управляющие символы)';
+      AError := MHL('Путь содержит недопустимые символы (кавычки, подстановочные или управляющие символы)',
+        'The path contains invalid characters (quotes, wildcards or control characters)');
       Exit(False);
     end;
   if Length(APath) > MAX_PATH_LENGTH then
   begin
-    AError := 'Путь слишком длинный';
+    AError := MHL('Путь слишком длинный', 'The path is too long');
     Exit(False);
   end;
 
@@ -363,20 +364,22 @@ begin
     LParts := LRest.Split(['\']);
     if Length(LParts) < 3 then
     begin
-      AError := 'Неполный сетевой путь: требуется \\сервер\ресурс\файл';
+      AError := MHL('Неполный сетевой путь: требуется \\сервер\ресурс\файл',
+        'Incomplete network path: \\server\share\file is required');
       Exit(False);
     end;
   end
   else
   begin
-    AError := 'Ожидается полный путь к файлу (например, C:\Папка\файл.exe)';
+    AError := MHL('Ожидается полный путь к файлу (например, C:\Папка\файл.exe)',
+      'A full file path is expected (for example, C:\Folder\file.exe)');
     Exit(False);
   end;
 
   if (LRest = '') or LRest.Contains(':') then
   begin
     // «:» после буквы диска — альтернативный поток NTFS или URI-подобная запись.
-    AError := 'Путь не является обычным путём к файлу';
+    AError := MHL('Путь не является обычным путём к файлу', 'The path is not a plain file path');
     Exit(False);
   end;
   Result := True;
@@ -401,7 +404,8 @@ begin
       // Действие уже выполнено (или отклонено); сбой журнала не должен скрыть его итог.
       if AResult.Details <> '' then
         AResult.Details := AResult.Details + sLineBreak;
-      AResult.Details := AResult.Details + 'Не удалось записать действие в журнал: ' + E.Message;
+      AResult.Details := AResult.Details + MHL('Не удалось записать действие в журнал: ',
+        'Failed to write the action to the journal: ') + E.Message;
     end;
   end;
 end;
@@ -413,11 +417,13 @@ begin
   if not ValidatePlainFilePath(APath, LPath, LError) then
     Exit(TMHActionResult.Create(arkFailed, LError));
   if not FOps.FileExists(LPath) then
-    Exit(TMHActionResult.Create(arkNotFound, 'Файл не найден: ' + LPath));
+    Exit(TMHActionResult.Create(arkNotFound, MHL('Файл не найден: ', 'File not found: ') + LPath));
   if FOps.ShellOpenSelect(LPath, LError) then
-    Result := TMHActionResult.Create(arkDone, 'Расположение файла открыто в Проводнике')
+    Result := TMHActionResult.Create(arkDone, MHL('Расположение файла открыто в Проводнике',
+      'File location opened in Explorer'))
   else
-    Result := TMHActionResult.Create(arkFailed, 'Не удалось открыть Проводник', LError);
+    Result := TMHActionResult.Create(arkFailed, MHL('Не удалось открыть Проводник',
+      'Failed to open Explorer'), LError);
 end;
 
 function TMHSafeActions.DoTerminate(const AId: TMHProcessId; const AName: string): TMHActionResult;
@@ -430,30 +436,41 @@ var
 begin
   if (AId.Pid = 0) or (AId.Pid = 4) then
     Exit(TMHActionResult.Create(arkProtected,
-      'Это системный процесс Windows. MineHunter X не завершает системные процессы.'));
+      MHL('Это системный процесс Windows. MineHunter X не завершает системные процессы.',
+        'This is a Windows system process. MineHunter X does not terminate system processes.')));
   if AId.Pid = FOps.CurrentPid then
-    Exit(TMHActionResult.Create(arkProtected, 'MineHunter X не завершает собственный процесс.'));
+    Exit(TMHActionResult.Create(arkProtected, MHL('MineHunter X не завершает собственный процесс.',
+      'MineHunter X does not terminate its own process.')));
   if IsProtectedProcessName(AName) then
-    Exit(TMHActionResult.Create(arkProtected, Format('«%s» — системный или защитный процесс ' +
+    Exit(TMHActionResult.Create(arkProtected, Format(MHL('«%s» — системный или защитный процесс ' +
       'Windows. Его остановка может нарушить работу системы, поэтому MineHunter X её не ' +
       'выполняет. Если файл находится не в системной папке, проверьте его Microsoft Defender.',
+      '"%s" is a Windows system or security process. Stopping it may disrupt the system, ' +
+      'so MineHunter X does not do it. If the file is not in a system folder, scan it with ' +
+      'Microsoft Defender.'),
       [Trim(AName)])));
   if not AId.HasCreateTime then
-    Exit(TMHActionResult.Create(arkIdentityMismatch, 'Не удалось подтвердить, что это тот же ' +
-      'процесс: неизвестно время его создания. Обновите список процессов и повторите.'));
+    Exit(TMHActionResult.Create(arkIdentityMismatch, MHL('Не удалось подтвердить, что это тот же ' +
+      'процесс: неизвестно время его создания. Обновите список процессов и повторите.',
+      'Could not confirm that this is the same process: its creation time is unknown. ' +
+      'Refresh the process list and try again.')));
 
   if not FOps.OpenProcessForTerminate(AId.Pid, LHandle, LError) then
   begin
     case LError of
       ERROR_INVALID_PARAMETER_CODE:
-        Result := TMHActionResult.Create(arkNotFound, 'Процесс уже завершён.');
+        Result := TMHActionResult.Create(arkNotFound, MHL('Процесс уже завершён.',
+          'The process has already exited.'));
       ERROR_ACCESS_DENIED_CODE:
-        Result := TMHActionResult.Create(arkAccessDenied, 'Недостаточно прав для остановки ' +
+        Result := TMHActionResult.Create(arkAccessDenied, MHL('Недостаточно прав для остановки ' +
           'процесса. Если вы уверены в действии, перезапустите MineHunter X от имени ' +
-          'администратора (права автоматически не повышаются).');
+          'администратора (права автоматически не повышаются).',
+          'Insufficient rights to stop the process. If you are sure, restart MineHunter X ' +
+          'as administrator (rights are not elevated automatically).'));
     else
-      Result := TMHActionResult.Create(arkFailed, 'Не удалось открыть процесс.',
-        Format('Код ошибки Windows: %u', [LError]));
+      Result := TMHActionResult.Create(arkFailed, MHL('Не удалось открыть процесс.',
+        'Failed to open the process.'),
+        Format(MHL('Код ошибки Windows: %u', 'Windows error code: %u'), [LError]));
     end;
     Exit;
   end;
@@ -461,36 +478,49 @@ begin
     // Защита от переиспользования PID: процесс должен быть тем же экземпляром.
     if not FOps.GetCreateTime(LHandle, LCreateTime) then
       Exit(TMHActionResult.Create(arkFailed,
-        'Не удалось проверить время создания процесса; остановка не выполнена.'));
+        MHL('Не удалось проверить время создания процесса; остановка не выполнена.',
+          'Failed to verify the process creation time; the process was not stopped.')));
     if LCreateTime <> AId.CreateTime then
-      Exit(TMHActionResult.Create(arkIdentityMismatch, 'PID уже принадлежит другому процессу: ' +
-        'исходный процесс завершился, а номер занят новым. Остановка не выполнена.'));
+      Exit(TMHActionResult.Create(arkIdentityMismatch, MHL('PID уже принадлежит другому процессу: ' +
+        'исходный процесс завершился, а номер занят новым. Остановка не выполнена.',
+        'The PID now belongs to another process: the original process exited and its number ' +
+        'was reused. The process was not stopped.')));
     if FOps.WaitExit(LHandle, 0) then
-      Exit(TMHActionResult.Create(arkNotFound, 'Процесс уже завершён.'));
+      Exit(TMHActionResult.Create(arkNotFound, MHL('Процесс уже завершён.',
+        'The process has already exited.')));
     // Имя из снимка могло быть неполным — проверяем реальный образ процесса.
     if FOps.GetImagePath(LHandle, LImagePath) and IsProtectedProcessName(LImagePath) then
-      Exit(TMHActionResult.Create(arkProtected, Format('Образ процесса — «%s», системный ' +
-        'процесс Windows. MineHunter X его не завершает.', [ExtractFileName(LImagePath)])));
+      Exit(TMHActionResult.Create(arkProtected, Format(MHL('Образ процесса — «%s», системный ' +
+        'процесс Windows. MineHunter X его не завершает.',
+        'The process image is "%s", a Windows system process. MineHunter X does not terminate it.'),
+        [ExtractFileName(LImagePath)])));
     if FOps.IsCritical(LHandle, LCritical) and LCritical then
-      Exit(TMHActionResult.Create(arkProtected, 'Процесс помечен Windows как критический: ' +
-        'его остановка приведёт к аварийной перезагрузке. Действие запрещено.'));
+      Exit(TMHActionResult.Create(arkProtected, MHL('Процесс помечен Windows как критический: ' +
+        'его остановка приведёт к аварийной перезагрузке. Действие запрещено.',
+        'Windows marks this process as critical: stopping it would cause an emergency restart. ' +
+        'The action is not allowed.')));
 
     if not FOps.Terminate(LHandle, TERMINATE_EXIT_CODE, LError) then
     begin
       if LError = ERROR_ACCESS_DENIED_CODE then
-        Result := TMHActionResult.Create(arkAccessDenied, 'Windows отказала в остановке ' +
+        Result := TMHActionResult.Create(arkAccessDenied, MHL('Windows отказала в остановке ' +
           'процесса. Возможно, нужен запуск MineHunter X от имени администратора или процесс ' +
-          'защищён системой.')
+          'защищён системой.',
+          'Windows refused to stop the process. MineHunter X may need to run as administrator, ' +
+          'or the process is protected by the system.'))
       else
-        Result := TMHActionResult.Create(arkFailed, 'Не удалось остановить процесс.',
-          Format('Код ошибки Windows: %u', [LError]));
+        Result := TMHActionResult.Create(arkFailed, MHL('Не удалось остановить процесс.',
+          'Failed to stop the process.'),
+          Format(MHL('Код ошибки Windows: %u', 'Windows error code: %u'), [LError]));
       Exit;
     end;
     if FOps.WaitExit(LHandle, TerminateWaitMs) then
-      Result := TMHActionResult.Create(arkDone, 'Процесс остановлен.')
+      Result := TMHActionResult.Create(arkDone, MHL('Процесс остановлен.', 'The process was stopped.'))
     else
-      Result := TMHActionResult.Create(arkFailed, Format('Команда остановки отправлена, но ' +
-        'процесс не завершился за %d с.', [TerminateWaitMs div 1000]));
+      Result := TMHActionResult.Create(arkFailed, Format(MHL('Команда остановки отправлена, но ' +
+        'процесс не завершился за %d с.',
+        'The stop command was sent, but the process did not exit within %d s.'),
+        [TerminateWaitMs div 1000]));
   finally
     FOps.CloseProcess(LHandle);
   end;
@@ -503,8 +533,8 @@ begin
     Result := DoTerminate(AId, AName);
   except
     on E: Exception do
-      Result := TMHActionResult.Create(arkFailed, 'Непредвиденная ошибка при остановке процесса.',
-        E.Message);
+      Result := TMHActionResult.Create(arkFailed, MHL('Непредвиденная ошибка при остановке процесса.',
+        'Unexpected error while stopping the process.'), E.Message);
   end;
   Journal(ActionTerminate, Format('%s (PID %u)', [Trim(AName), AId.Pid]), Result);
 end;
@@ -518,45 +548,53 @@ begin
   if not ValidatePlainFilePath(APath, LPath, LError) then
     Exit(TMHActionResult.Create(arkFailed, LError));
   if not FOps.FileExists(LPath) then
-    Exit(TMHActionResult.Create(arkNotFound, 'Файл не найден: ' + LPath));
+    Exit(TMHActionResult.Create(arkNotFound, MHL('Файл не найден: ', 'File not found: ') + LPath));
   LExe := FOps.FindDefenderCli;
   if LExe = '' then
-    Exit(TMHActionResult.Create(arkUnavailable, 'Microsoft Defender недоступен'));
+    Exit(TMHActionResult.Create(arkUnavailable, MHL('Microsoft Defender недоступен',
+      'Microsoft Defender is unavailable')));
   if Assigned(ACancel) and ACancel() then
-    Exit(TMHActionResult.Create(arkCancelled, 'Проверка отменена'));
+    Exit(TMHActionResult.Create(arkCancelled, MHL('Проверка отменена', 'Scan cancelled')));
 
   // -DisableRemediation: только отчёт, Defender не изменяет и не удаляет файл.
   case FOps.RunHidden(LExe, Format('-Scan -ScanType 3 -File "%s" -DisableRemediation', [LPath]),
     DefenderTimeoutMs, ACancel, LExitCode, LOutput) of
     roStartFailed:
-      Result := TMHActionResult.Create(arkFailed, 'Не удалось запустить Microsoft Defender',
-        LOutput);
+      Result := TMHActionResult.Create(arkFailed, MHL('Не удалось запустить Microsoft Defender',
+        'Failed to start Microsoft Defender'), LOutput);
     roTimeout:
-      Result := TMHActionResult.Create(arkFailed, Format('Проверка Microsoft Defender не ' +
-        'завершилась за %d мин и была прервана', [DefenderTimeoutMs div 60000]),
-        OutputTail(LOutput));
+      Result := TMHActionResult.Create(arkFailed, Format(MHL('Проверка Microsoft Defender не ' +
+        'завершилась за %d мин и была прервана',
+        'The Microsoft Defender scan did not finish within %d min and was aborted'),
+        [DefenderTimeoutMs div 60000]), OutputTail(LOutput));
     roCancelled:
-      Result := TMHActionResult.Create(arkCancelled, 'Проверка отменена');
+      Result := TMHActionResult.Create(arkCancelled, MHL('Проверка отменена', 'Scan cancelled'));
   else
     case LExitCode of
       0:
-        Result := TMHActionResult.Create(arkDone, 'Угроз не обнаружено', OutputTail(LOutput));
+        Result := TMHActionResult.Create(arkDone, MHL('Угроз не обнаружено', 'No threats detected'),
+          OutputTail(LOutput));
       2:
         begin
           LThreats := MHParseDefenderThreats(LOutput);
           if Length(LThreats) > 0 then
             LThreatText := string.Join('; ', LThreats)
           else
-            LThreatText := 'название угрозы определить не удалось';
-          Result := TMHActionResult.Create(arkDone, 'Microsoft Defender обнаружил угрозу',
-            'Defender обнаружил угрозу: ' + LThreatText);
+            LThreatText := MHL('название угрозы определить не удалось',
+              'the threat name could not be determined');
+          Result := TMHActionResult.Create(arkDone, MHL('Microsoft Defender обнаружил угрозу',
+            'Microsoft Defender detected a threat'),
+            MHL('Defender обнаружил угрозу: ', 'Defender detected a threat: ') + LThreatText);
         end;
       DEFENDER_SERVICE_NOT_RUNNING:
-        Result := TMHActionResult.Create(arkUnavailable, 'Microsoft Defender недоступен: ' +
-          'служба не запущена (возможно, используется другой антивирус)', OutputTail(LOutput));
+        Result := TMHActionResult.Create(arkUnavailable, MHL('Microsoft Defender недоступен: ' +
+          'служба не запущена (возможно, используется другой антивирус)',
+          'Microsoft Defender is unavailable: the service is not running (another antivirus ' +
+          'may be in use)'), OutputTail(LOutput));
     else
-      Result := TMHActionResult.Create(arkFailed, Format('Microsoft Defender завершился с ' +
-        'кодом %u (0x%.8x)', [LExitCode, LExitCode]), OutputTail(LOutput));
+      Result := TMHActionResult.Create(arkFailed, Format(MHL('Microsoft Defender завершился с ' +
+        'кодом %u (0x%.8x)', 'Microsoft Defender exited with code %u (0x%.8x)'),
+        [LExitCode, LExitCode]), OutputTail(LOutput));
     end;
   end;
 end;
@@ -568,8 +606,8 @@ begin
     Result := DoScan(APath, ACancel);
   except
     on E: Exception do
-      Result := TMHActionResult.Create(arkFailed, 'Непредвиденная ошибка проверки Microsoft Defender',
-        E.Message);
+      Result := TMHActionResult.Create(arkFailed, MHL('Непредвиденная ошибка проверки Microsoft Defender',
+        'Unexpected error during the Microsoft Defender scan'), E.Message);
   end;
   Journal(ActionDefenderScan, Trim(APath), Result);
 end;

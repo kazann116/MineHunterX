@@ -55,7 +55,8 @@ function MHPdhErrorText(AStatus: PDH_STATUS): string;
 implementation
 
 uses
-  System.SysUtils;
+  System.SysUtils,
+  MineHunter.Core.Lang;
 
 type
   TPdhFmtCounterValue = record
@@ -101,7 +102,8 @@ function PdhCloseQuery(hQuery: THandle): PDH_STATUS; stdcall;
 
 function MHPdhErrorText(AStatus: PDH_STATUS): string;
 begin
-  Result := Format('счётчики производительности недоступны (код 0x%.8x)', [Cardinal(AStatus)]);
+  Result := Format(MHL('счётчики производительности недоступны (код 0x%.8x)',
+    'performance counters are unavailable (code 0x%.8x)'), [Cardinal(AStatus)]);
 end;
 
 function IsValidStatus(AStatus: DWORD): Boolean;

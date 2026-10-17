@@ -81,7 +81,7 @@ implementation
 
 uses
   System.Math, System.StrUtils,
-  MineHunter.Analysis.Indicators;
+  MineHunter.Analysis.Indicators, MineHunter.Core.Lang;
 
 function MHParseHostsRedirects(const AText, ALocation: string): TArray<TMHTamperEntry>;
 var
@@ -163,7 +163,7 @@ end;
 
 function TMHTamperCollector.GetDisplayName: string;
 begin
-  Result := 'Признаки вмешательства в защиту системы';
+  Result := MHL('Признаки вмешательства в защиту системы', 'Signs of tampering with system protection');
 end;
 
 procedure TMHTamperCollector.Refresh;
@@ -203,7 +203,8 @@ begin
               begin
                 LRelocated := TMHTamperEntry.Create(tpHostsRedirect, 'DataBasePath', LPath,
                   'HKLM\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters');
-                LRelocated.Details := 'файл hosts перенесён из стандартного места: ' + LDefaultPath;
+                LRelocated.Details := MHL('файл hosts перенесён из стандартного места: ',
+                  'hosts file moved from its standard location: ') + LDefaultPath;
                 LEntries := LEntries + [LRelocated];
               end;
             end;

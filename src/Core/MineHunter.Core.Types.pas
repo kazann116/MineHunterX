@@ -525,6 +525,11 @@ function MHFindingCategoryToString(ACategory: TMHFindingCategory): string;
 function MHAutostartKindToString(AKind: TMHAutostartKind): string;
 function MHWorkContextToString(AContext: TMHWorkContext): string;
 function MHTamperKindToString(AKind: TMHTamperKind): string;
+/// Названия для показа пользователю на текущем языке (функции *ToString выше
+/// входят в сохраняемые ключи и не зависят от языка).
+function MHFindingCategoryTitle(ACategory: TMHFindingCategory): string;
+function MHAutostartKindTitle(AKind: TMHAutostartKind): string;
+function MHTamperKindTitle(AKind: TMHTamperKind): string;
 /// Ключ программы для профиля нормы и исключений: путь в нижнем регистре
 /// (или имя, если путь неизвестен).
 function MHProgramKey(const AImagePath, AName: string): string;
@@ -533,7 +538,8 @@ function MHClampScore(AScore: Integer): Integer;
 implementation
 
 uses
-  System.Hash, System.Math, System.Generics.Collections, System.Generics.Defaults;
+  System.Hash, System.Math, System.Generics.Collections, System.Generics.Defaults,
+  MineHunter.Core.Lang;
 
 { TMHProcessId }
 
@@ -957,36 +963,36 @@ end;
 function MHSourceStateToString(AState: TMHSourceState): string;
 begin
   case AState of
-    ssSuccess:     Result := 'успех';
-    ssPartial:     Result := 'частично';
-    ssUnavailable: Result := 'недоступно';
-    ssError:       Result := 'ошибка';
+    ssSuccess:     Result := MHL('успех', 'success');
+    ssPartial:     Result := MHL('частично', 'partial');
+    ssUnavailable: Result := MHL('недоступно', 'unavailable');
+    ssError:       Result := MHL('ошибка', 'error');
   else
-    Result := 'не опрашивался';
+    Result := MHL('не опрашивался', 'not polled');
   end;
 end;
 
 function MHRiskLevelToString(ALevel: TMHRiskLevel): string;
 begin
   case ALevel of
-    rlLow:              Result := 'низкий';
-    rlNeedsReview:      Result := 'требует проверки';
-    rlSuspicious:       Result := 'подозрительно';
-    rlHighlySuspicious: Result := 'высокая степень подозрения';
+    rlLow:              Result := MHL('низкий', 'low');
+    rlNeedsReview:      Result := MHL('требует проверки', 'needs review');
+    rlSuspicious:       Result := MHL('подозрительно', 'suspicious');
+    rlHighlySuspicious: Result := MHL('высокая степень подозрения', 'highly suspicious');
   else
-    Result := 'нет признаков';
+    Result := MHL('нет признаков', 'no signs');
   end;
 end;
 
 function MHSignatureToString(AState: TMHSignatureState): string;
 begin
   case AState of
-    sgSignedTrusted:   Result := 'подписан, доверенный издатель';
-    sgSignedUntrusted: Result := 'подпись недействительна или не доверена';
-    sgUnsigned:        Result := 'без цифровой подписи';
-    sgCheckFailed:     Result := 'проверить подпись не удалось';
+    sgSignedTrusted:   Result := MHL('подписан, доверенный издатель', 'signed, trusted publisher');
+    sgSignedUntrusted: Result := MHL('подпись недействительна или не доверена', 'signature invalid or untrusted');
+    sgUnsigned:        Result := MHL('без цифровой подписи', 'no digital signature');
+    sgCheckFailed:     Result := MHL('проверить подпись не удалось', 'signature check failed');
   else
-    Result := 'не проверялась';
+    Result := MHL('не проверялась', 'not checked');
   end;
 end;
 
@@ -1026,14 +1032,50 @@ begin
   end;
 end;
 
+function MHFindingCategoryTitle(ACategory: TMHFindingCategory): string;
+begin
+  case ACategory of
+    fcMining:      Result := MHL(MHFindingCategoryToString(ACategory), 'signs of hidden mining');
+    fcPersistence: Result := MHL(MHFindingCategoryToString(ACategory), 'suspicious autostart');
+    fcPerformance: Result := MHL(MHFindingCategoryToString(ACategory), 'unusual load');
+  else
+    Result := MHL(MHFindingCategoryToString(ACategory), 'suspicious process');
+  end;
+end;
+
+function MHAutostartKindTitle(AKind: TMHAutostartKind): string;
+begin
+  case AKind of
+    akRegistryRun:     Result := MHL(MHAutostartKindToString(AKind), 'registry Run');
+    akRegistryRunOnce: Result := MHL(MHAutostartKindToString(AKind), 'registry RunOnce');
+    akStartupFolder:   Result := MHL(MHAutostartKindToString(AKind), 'startup folder');
+    akService:         Result := MHL(MHAutostartKindToString(AKind), 'service');
+  else
+    Result := MHL(MHAutostartKindToString(AKind), 'task scheduler');
+  end;
+end;
+
+function MHTamperKindTitle(AKind: TMHTamperKind): string;
+begin
+  case AKind of
+    tpWmiSubscription:   Result := MHL(MHTamperKindToString(AKind), 'WMI subscription');
+    tpDefenderExclusion: Result := MHL(MHTamperKindToString(AKind), 'Microsoft Defender exclusion');
+    tpIfeoDebugger:      Result := MHL(MHTamperKindToString(AKind), 'program launch hijack (IFEO)');
+    tpSilentExitMonitor: Result := MHL(MHTamperKindToString(AKind), 'launch on program exit (SilentProcessExit)');
+    tpHostsRedirect:     Result := MHL(MHTamperKindToString(AKind), 'hosts redirect');
+  else
+    Result := MHL(MHTamperKindToString(AKind), 'restrictive policy');
+  end;
+end;
+
 function MHWorkContextToString(AContext: TMHWorkContext): string;
 begin
   case AContext of
-    wcIdle:   Result := 'простой';
-    wcWork:   Result := 'работа';
-    wcGaming: Result := 'игра / полноэкранный режим';
+    wcIdle:   Result := MHL('простой', 'idle');
+    wcWork:   Result := MHL('работа', 'work');
+    wcGaming: Result := MHL('игра / полноэкранный режим', 'gaming / full screen');
   else
-    Result := 'не определён';
+    Result := MHL('не определён', 'undetermined');
   end;
 end;
 

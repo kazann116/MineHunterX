@@ -36,7 +36,7 @@ implementation
 
 uses
   Winapi.Windows, Winapi.PsAPI,
-  MineHunter.Core.Calc;
+  MineHunter.Core.Calc, MineHunter.Core.Lang;
 
 { TMHSelfMonitorCollector }
 
@@ -61,7 +61,7 @@ end;
 
 function TMHSelfMonitorCollector.GetDisplayName: string;
 begin
-  Result := 'Самодиагностика MineHunter';
+  Result := MHL('Самодиагностика MineHunter', 'MineHunter self-monitoring');
 end;
 
 function TMHSelfMonitorCollector.Collect(const ASnapshot: TMHSnapshot): TMHCollectionResult;
@@ -107,7 +107,8 @@ begin
   else
   begin
     LState := ssPartial;
-    LMessage := 'Загрузка CPU будет доступна после следующего замера';
+    LMessage := MHL('Загрузка CPU будет доступна после следующего замера',
+      'CPU load will be available after the next measurement');
   end;
   FPrevCpu100ns := LCpuNow;
   FPrevWall100ns := LWallNow;

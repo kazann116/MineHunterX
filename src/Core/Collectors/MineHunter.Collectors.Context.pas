@@ -84,7 +84,8 @@ type
 implementation
 
 uses
-  System.Math;
+  System.Math,
+  MineHunter.Core.Lang;
 
 type
   TProcessIdComparer = class(TEqualityComparer<TMHProcessId>)
@@ -144,7 +145,7 @@ end;
 
 function TMHContextCollector.GetDisplayName: string;
 begin
-  Result := 'Контекст работы';
+  Result := MHL('Контекст работы', 'Work context');
 end;
 
 function TMHContextCollector.CachedCount: Integer;
@@ -165,12 +166,12 @@ begin
   if LHasIdle then
     Result.UserIdleSeconds := LIdle
   else
-    AMessages := AMessages + ['Время бездействия пользователя недоступно.'];
+    AMessages := AMessages + [MHL('Время бездействия пользователя недоступно.', 'User idle time is unavailable.')];
 
   if FApi.FullscreenState(LFullscreen) then
     Result.FullscreenActive := LFullscreen
   else
-    AMessages := AMessages + ['Состояние полноэкранного режима недоступно.'];
+    AMessages := AMessages + [MHL('Состояние полноэкранного режима недоступно.', 'Fullscreen state is unavailable.')];
 
   Result.ForegroundPid := FApi.ForegroundPid;
   Result.VisibleWindowPids := FApi.VisibleWindowPids;
@@ -247,7 +248,7 @@ begin
     if not FApi.ReadCommandLines(LPids, LLines, AError) then
     begin
       if AError = '' then
-        AError := 'причина неизвестна';
+        AError := MHL('причина неизвестна', 'unknown reason');
       Exit(False);
     end;
 
@@ -306,11 +307,11 @@ begin
   LContext := ReadContext(LMessages);
   try
     if not UpdateCommandLines(ASnapshot, LError) then
-      LMessages := LMessages + ['Не удалось получить командные строки процессов: ' + LError + '.'];
+      LMessages := LMessages + [MHL('Не удалось получить командные строки процессов: ', 'Could not read process command lines: ') + LError + '.'];
   except
     // Сбой WMI не должен лишать сканер данных контекста.
     on E: Exception do
-      LMessages := LMessages + ['Не удалось получить командные строки процессов: ' +
+      LMessages := LMessages + [MHL('Не удалось получить командные строки процессов: ', 'Could not read process command lines: ') +
         E.Message + '.'];
   end;
 

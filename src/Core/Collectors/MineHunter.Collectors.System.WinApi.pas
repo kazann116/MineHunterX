@@ -44,7 +44,7 @@ implementation
 
 uses
   System.SysUtils, System.Math,
-  MineHunter.Core.Calc;
+  MineHunter.Core.Calc, MineHunter.Core.Lang;
 
 { TMHWinSystemMetricsApi }
 
@@ -133,14 +133,14 @@ begin
   end;
   if FPdh.Collects < 2 then
   begin
-    Result.Reason := 'скорость будет доступна после следующего замера';
+    Result.Reason := MHL('скорость будет доступна после следующего замера', 'speed will be available after the next measurement');
     Exit;
   end;
   if not (FPdh.Read(FReadCounter, Result.ReadBytesPerSec) and
           FPdh.Read(FWriteCounter, Result.WriteBytesPerSec) and
           FPdh.ReadArray(FDiskIdleCounter, LItems)) then
   begin
-    Result.Reason := 'счётчики диска вернули некорректные данные';
+    Result.Reason := MHL('счётчики диска вернули некорректные данные', 'disk counters returned invalid data');
     Exit;
   end;
   // Как в диспетчере задач: активность — у самого загруженного диска.
@@ -157,7 +157,8 @@ begin
   end;
   if not LHasDisk then
   begin
-    Result.Reason := 'физические диски не найдены в счётчиках производительности';
+    Result.Reason := MHL('физические диски не найдены в счётчиках производительности',
+      'no physical disks found in performance counters');
     Exit;
   end;
   Result.ActivePercent := LMaxActive;

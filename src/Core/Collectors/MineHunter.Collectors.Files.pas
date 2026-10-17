@@ -109,7 +109,7 @@ implementation
 
 uses
   System.Generics.Defaults,
-  MineHunter.Core.Paths;
+  MineHunter.Core.Paths, MineHunter.Core.Lang;
 
 /// Абсолютный путь: «X:\...» или сетевой «\\server\...».
 /// Относительные пути не проверяются: результат зависел бы от текущего каталога.
@@ -168,7 +168,7 @@ end;
 
 function TMHFileCollector.GetDisplayName: string;
 begin
-  Result := 'Файлы и подписи';
+  Result := MHL('Файлы и подписи', 'Files and signatures');
 end;
 
 function TMHFileCollector.CacheCount: Integer;
@@ -277,7 +277,7 @@ begin
     else
     begin
       Result.Signature := sgCheckFailed;
-      Result.Error := 'подпись: ' + LError;
+      Result.Error := MHL('подпись: ', 'signature: ') + LError;
       AFailed := True;
     end;
 
@@ -287,7 +287,7 @@ begin
       Result.Sha256 := LHash
     else
     begin
-      Result.Error := JoinError(Result.Error, 'хеш: ' + LError);
+      Result.Error := JoinError(Result.Error, MHL('хеш: ', 'hash: ') + LError);
       AFailed := True;
     end;
   except
@@ -408,13 +408,15 @@ begin
   if LPending > 0 then
   begin
     LState := ssPartial;
-    LMessage := Format('Проверено %d из %d файлов; остальные — в следующих циклах.',
+    LMessage := Format(MHL('Проверено %d из %d файлов; остальные — в следующих циклах.',
+      'Checked %d of %d files; the rest in the next cycles.'),
       [Length(LPaths) - LPending, Length(LPaths)]);
   end;
   if LFailedCount > 0 then
   begin
     LState := ssPartial;
-    LMessage := Trim(LMessage + Format(' Не удалось проверить %d из %d файлов.',
+    LMessage := Trim(LMessage + Format(MHL(' Не удалось проверить %d из %d файлов.',
+      ' Could not check %d of %d files.'),
       [LFailedCount, Length(LPaths)]));
   end;
 

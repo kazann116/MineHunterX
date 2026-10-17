@@ -104,7 +104,8 @@ function MHIsComputeEngineType(const AEngineType: string): Boolean;
 implementation
 
 uses
-  System.Math;
+  System.Math,
+  MineHunter.Core.Lang;
 
 const
   ENGTYPE_MARK = '_engtype_';
@@ -185,7 +186,7 @@ end;
 
 function TMHGpuCollector.GetDisplayName: string;
 begin
-  Result := 'Видеокарта: загрузка, видеопамять, температура';
+  Result := MHL('Видеокарта: загрузка, видеопамять, температура', 'Graphics card: load, video memory, temperature');
 end;
 
 type
@@ -330,7 +331,7 @@ begin
       LMetrics.Add(TMHMetric.NoData(mkGpuPercent, LNow));
       LMetrics.Add(TMHMetric.NoData(mkGpuComputePercent, LNow));
       LMetrics.Add(TMHMetric.NoData(mkGpuMemoryBytes, LNow));
-      LNotes := 'Загрузка GPU: ' + LCounters.Reason + '.';
+      LNotes := MHL('Загрузка GPU: ', 'GPU load: ') + LCounters.Reason + '.';
     end;
 
     // Температура: самый горячий адаптер.
@@ -367,7 +368,7 @@ begin
     begin
       LMetrics.Add(TMHMetric.NoData(mkGpuTemperatureCelsius, LNow));
       if LSensorReason <> '' then
-        LNotes := Trim(LNotes + ' Температура GPU: ' + LSensorReason + '.');
+        LNotes := Trim(LNotes + MHL(' Температура GPU: ', ' GPU temperature: ') + LSensorReason + '.');
     end;
 
     if LCounters.Available then

@@ -37,7 +37,7 @@ function MHIsScriptHost(const AName: string): Boolean;
 implementation
 
 uses
-  System.Hash, MineHunter.Analysis.Indicators;
+  System.Hash, MineHunter.Core.Lang, MineHunter.Analysis.Indicators;
 
 const
   SCRIPT_HOSTS: array[0..6] of string = ('powershell.exe', 'pwsh.exe', 'cmd.exe', 'wscript.exe',
@@ -97,35 +97,43 @@ begin
   LName := AStat.Name;
   if LName = '' then
     LName := ExtractFileName(AStat.ImagePath);
-  LObserved := Format('%d запусков за %d мин, из них %d завершились быстрее %d с',
+  LObserved := Format(MHL('%d запусков за %d мин, из них %d завершились быстрее %d с',
+    '%d launches in %d min, %d of them exited in under %d s'),
     [AStat.Starts, AStat.WindowMinutes, AStat.ShortLived, AStat.ShortLivedSeconds]);
   if AStat.Exited > 0 then
-    LObserved := LObserved + Format(' (в среднем %.1f с)', [AStat.AverageLifetimeSeconds]);
+    LObserved := LObserved + Format(MHL(' (в среднем %.1f с)', ' (%.1f s on average)'), [AStat.AverageLifetimeSeconds]);
   LEvidence := [TMHEvidence.Create(EV_LAUNCH_LOOP,
-    'Программа многократно запускается и почти сразу завершается — так работают загрузчики ' +
-    'и «сторожа», перезапускающие скрытые программы', 25, LObserved)];
+    MHL('Программа многократно запускается и почти сразу завершается — так работают загрузчики ',
+    'The program repeatedly starts and exits almost immediately — this is how loaders ') +
+    MHL('и «сторожа», перезапускающие скрытые программы', 'and "watchdogs" that restart hidden programs work'),
+    25, LObserved)];
 
   if MHIsSuspiciousLocation(AStat.ImagePath, LReason) then
     LEvidence := LEvidence + [TMHEvidence.Create(EV_LAUNCH_LOCATION,
-      'Файл находится в нетипичном для программ месте: ' + LReason, 20, AStat.ImagePath)];
+      MHL('Файл находится в нетипичном для программ месте: ', 'The file is in a location atypical for programs: ') +
+      LReason, 20, AStat.ImagePath)];
   if MHIsKnownMinerName(LName) then
     LEvidence := LEvidence + [TMHEvidence.Create(EV_LAUNCH_MINER_NAME,
-      'Имя совпадает с известной программой для майнинга', 35, LName)];
+      MHL('Имя совпадает с известной программой для майнинга', 'The name matches a known mining program'), 35, LName)];
   LScript := MHIsScriptHost(LName);
   LByScheduler := InList(AStat.LastParentName, SCHEDULER_PARENTS);
   if LScript and LByScheduler then
     LEvidence := LEvidence + [TMHEvidence.Create(EV_LAUNCH_SCRIPT_HOST,
-      'Сценарий (' + LName + ') раз за разом запускается службой или планировщиком заданий', 15,
-      'родитель: ' + AStat.LastParentName)];
+      MHL('Сценарий (', 'Script (') + LName +
+      MHL(') раз за разом запускается службой или планировщиком заданий',
+      ') is launched over and over by a service or the Task Scheduler'), 15,
+      MHL('родитель: ', 'parent: ') + AStat.LastParentName)];
 
   // Оправдывающие факторы: известная вычислительная нагрузка и стандартные папки установки.
   LWorkload := MHWorkloadCategoryOf(LName, AStat.ImagePath);
   if LWorkload in [wlBuild, wlUpdate, wlSecurity, wlBrowser] then
     LEvidence := LEvidence + [TMHEvidence.Create(EV_LAUNCH_WORKLOAD,
-      'Похоже на известную нагрузку: ' + MHWorkloadCategoryToString(LWorkload), -30, LName)];
+      MHL('Похоже на известную нагрузку: ', 'Looks like a known workload: ') +
+      MHWorkloadCategoryToString(LWorkload), -30, LName)];
   if not LScript and MHIsStandardInstallLocation(AStat.ImagePath) then
     LEvidence := LEvidence + [TMHEvidence.Create(EV_LAUNCH_STANDARD,
-      'Программа установлена в стандартную папку (Program Files или Windows)', -15, AStat.ImagePath)];
+      MHL('Программа установлена в стандартную папку (Program Files или Windows)',
+      'The program is installed in a standard folder (Program Files or Windows)'), -15, AStat.ImagePath)];
 
   LRaw := 0;
   for LItem in LEvidence do
@@ -137,7 +145,8 @@ begin
   AFinding.ProcessName := LName;
   AFinding.ImagePath := AStat.ImagePath;
   AFinding.ParentPid := AStat.LastParentPid;
-  AFinding.Title := 'Программа часто запускается и сразу завершается';
+  AFinding.Title := MHL('Программа часто запускается и сразу завершается',
+    'A program frequently starts and immediately exits');
   AFinding.Evidence := LEvidence;
   AFinding.RawScore := LRaw;
   AFinding.Score := MHClampScore(LRaw);
@@ -147,16 +156,22 @@ begin
   AFinding.DetectedAtUtc := ASnapshot.TimestampUtc;
   LSummary := Format('%s: %s.', [LName, LObserved]);
   if AStat.LastParentName <> '' then
-    LSummary := LSummary + Format(' Последний раз её запустил %s (PID %d).', [AStat.LastParentName,
-      AStat.LastParentPid]);
-  AFinding.Summary := Format('%s Оценка %d из 100 (%s). Это повод для проверки, а не диагноз.',
+    LSummary := LSummary + Format(MHL(' Последний раз её запустил %s (PID %d).',
+      ' It was last launched by %s (PID %d).'), [AStat.LastParentName, AStat.LastParentPid]);
+  AFinding.Summary := Format(MHL('%s Оценка %d из 100 (%s). Это повод для проверки, а не диагноз.',
+    '%s Score %d out of 100 (%s). This is a reason to check, not a diagnosis.'),
     [LSummary, AFinding.Score, MHRiskLevelToString(AFinding.Level)]);
   AFinding.Recommendations := [
-    'Посмотрите, что запускает программу: задания планировщика и автозапуск на странице «Находки» ' +
-    'и в отчёте «Проверить сейчас» (раздел «Что изменилось»).',
-    'Если программа вам незнакома — проверьте файл Microsoft Defender из карточки находки.',
-    'Сборка программ, git, обновления и браузеры тоже часто запускают короткие процессы — ' +
-    'если это ваша работа, добавьте программу в разрешённые.'];
+    MHL('Посмотрите, что запускает программу: задания планировщика и автозапуск на странице «Находки» ',
+    'Check what launches the program: scheduled tasks and autostart on the "Findings" page ') +
+    MHL('и в отчёте «Проверить сейчас» (раздел «Что изменилось»).',
+    'and in the "Check now" report ("What changed" section).'),
+    MHL('Если программа вам незнакома — проверьте файл Microsoft Defender из карточки находки.',
+    'If you do not recognize the program, scan the file with Microsoft Defender from the finding card.'),
+    MHL('Сборка программ, git, обновления и браузеры тоже часто запускают короткие процессы — ',
+    'Software builds, git, updates and browsers also often launch short-lived processes — ') +
+    MHL('если это ваша работа, добавьте программу в разрешённые.',
+    'if this is your work, add the program to the allowed list.')];
   AFinding.Key := 'launch:' + AStat.ImagePath.ToLower;
   AFinding.Id := FindingId(AFinding.Key);
   Result := True;

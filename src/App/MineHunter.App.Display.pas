@@ -24,7 +24,7 @@ function MHFormatFileTimeLocal(AFileTime: UInt64): string;
 implementation
 
 uses
-  MineHunter.App.Lang, Winapi.Windows, System.SysUtils, System.DateUtils;
+  MineHunter.App.Lang, MineHunter.Core.Lang, Winapi.Windows, System.SysUtils, System.DateUtils;
 
 function MHFormatBytes(ABytes: Double): string;
 const
@@ -33,21 +33,21 @@ const
   GB = MB * 1024;
 begin
   if ABytes < 0 then
-    Result := MH_NO_DATA
+    Result := MHL(MH_NO_DATA, 'no data')
   else if ABytes >= GB then
-    Result := FormatFloat('0.00', ABytes / GB) + ' ГБ'
+    Result := FormatFloat('0.00', ABytes / GB) + MHL(' ГБ', ' GB')
   else if ABytes >= MB then
-    Result := FormatFloat('0.0', ABytes / MB) + ' МБ'
+    Result := FormatFloat('0.0', ABytes / MB) + MHL(' МБ', ' MB')
   else if ABytes >= KB then
-    Result := FormatFloat('0.0', ABytes / KB) + ' КБ'
+    Result := FormatFloat('0.0', ABytes / KB) + MHL(' КБ', ' KB')
   else
-    Result := FormatFloat('0', ABytes) + ' Б';
+    Result := FormatFloat('0', ABytes) + MHL(' Б', ' B');
 end;
 
 function MHFormatMetric(const AMetric: TMHMetric): string;
 begin
   if not AMetric.HasValue then
-    Exit(MH_NO_DATA);
+    Exit(MHL(MH_NO_DATA, 'no data'));
   case AMetric.Kind of
     mkCpuPercent, mkGpuPercent, mkMemoryLoadPercent, mkDiskActivePercent, mkCpuTimePercent,
     mkCpuFrequencyPercent, mkCpuPerformanceLimitPercent, mkGpuComputePercent:
@@ -56,11 +56,11 @@ begin
     mkPrivateWorkingSetBytes:
       Result := MHFormatBytes(AMetric.Value);
     mkDiskBytesPerSec, mkNetworkBytesPerSec, mkDiskReadBytesPerSec, mkDiskWriteBytesPerSec:
-      Result := MHFormatBytes(AMetric.Value) + '/с';
+      Result := MHFormatBytes(AMetric.Value) + MHL('/с', '/s');
     mkTemperatureCelsius, mkGpuTemperatureCelsius, mkCpuTemperatureCelsius, mkDiskTemperatureCelsius:
       Result := FormatFloat('0', AMetric.Value) + ' °C';
     mkGpuPowerWatts:
-      Result := FormatFloat('0', AMetric.Value) + ' Вт';
+      Result := FormatFloat('0', AMetric.Value) + MHL(' Вт', ' W');
   else
     Result := FormatFloat('0.##', AMetric.Value);
   end;
@@ -76,7 +76,7 @@ end;
 function MHFormatUtcAsLocal(AUtc: TDateTime): string;
 begin
   if AUtc = 0 then
-    Exit(MH_NO_DATA);
+    Exit(MHL(MH_NO_DATA, 'no data'));
   Result := FormatDateTime('hh:nn:ss', TTimeZone.Local.ToLocalTime(AUtc));
 end;
 
@@ -86,11 +86,11 @@ var
   LSt: TSystemTime;
 begin
   if AFileTime = 0 then
-    Exit(MH_NO_DATA);
+    Exit(MHL(MH_NO_DATA, 'no data'));
   LFt.dwLowDateTime := Cardinal(AFileTime and $FFFFFFFF);
   LFt.dwHighDateTime := Cardinal(AFileTime shr 32);
   if not FileTimeToSystemTime(LFt, LSt) then
-    Exit(MH_NO_DATA);
+    Exit(MHL(MH_NO_DATA, 'no data'));
   Result := FormatDateTime('dd.mm.yyyy hh:nn:ss',
     TTimeZone.Local.ToLocalTime(SystemTimeToDateTime(LSt)));
 end;

@@ -69,7 +69,7 @@ implementation
 
 uses
   System.Math, System.DateUtils, System.Generics.Defaults,
-  MineHunter.App.Display, MineHunter.App.ProcessView;
+  MineHunter.App.Display, MineHunter.App.ProcessView, MineHunter.Core.Lang;
 
 { TMHFindingsModel }
 
@@ -269,40 +269,45 @@ begin
   LLines := TList<string>.Create;
   try
     LLines.Add(F.Title);
-    LLines.Add(Format('Уровень: %s · оценка %d из 100 · уверенность %d%% · %s',
+    LLines.Add(Format(MHL('Уровень: %s · оценка %d из 100 · уверенность %d%% · %s',
+      'Level: %s · score %d of 100 · confidence %d%% · %s'),
       [MHRiskLevelToString(F.Level), F.Score, Round(F.Confidence * 100),
-       MHFindingCategoryToString(F.Category)]));
+       MHFindingCategoryTitle(F.Category)]));
     LLines.Add(F.Summary);
     LLines.Add('');
-    LLines.Add(Format('Впервые: %s · последний раз: %s · повторений: %d',
+    LLines.Add(Format(MHL('Впервые: %s · последний раз: %s · повторений: %d',
+      'First seen: %s · last seen: %s · occurrences: %d'),
       [MHFormatUtcAsLocal(ARow.FirstSeenUtc), MHFormatUtcAsLocal(ARow.LastSeenUtc), ARow.Occurrences]));
     if not F.Process.IsEmpty or (F.Process.Pid <> 0) then
     begin
-      LText := Format('Процесс: %s (PID %d, запущен %s)', [F.ProcessName, F.Process.Pid,
-        MHFormatFileTimeLocal(F.Process.CreateTime)]);
+      LText := Format(MHL('Процесс: %s (PID %d, запущен %s)', 'Process: %s (PID %d, started %s)'),
+        [F.ProcessName, F.Process.Pid, MHFormatFileTimeLocal(F.Process.CreateTime)]);
       if not AHasProcess then
-        LText := LText + ' — сейчас не выполняется';
+        LText := LText + MHL(' — сейчас не выполняется', ' — not running now');
       LLines.Add(LText);
       if AParentName <> '' then
-        LLines.Add(Format('Родительский процесс: %s (PID %d)', [AParentName, F.ParentPid]))
+        LLines.Add(Format(MHL('Родительский процесс: %s (PID %d)', 'Parent process: %s (PID %d)'),
+          [AParentName, F.ParentPid]))
       else if F.ParentPid <> 0 then
-        LLines.Add(Format('Родительский процесс: PID %d (уже завершён или недоступен)', [F.ParentPid]));
+        LLines.Add(Format(MHL('Родительский процесс: PID %d (уже завершён или недоступен)',
+          'Parent process: PID %d (already exited or inaccessible)'), [F.ParentPid]));
     end;
     if F.ImagePath <> '' then
-      LLines.Add('Файл: ' + F.ImagePath)
+      LLines.Add(MHL('Файл: ', 'File: ') + F.ImagePath)
     else
-      LLines.Add('Файл: ' + MH_NO_DATA);
+      LLines.Add(MHL('Файл: ', 'File: ') + MHL(MH_NO_DATA, 'no data'));
     if AHasProcess then
     begin
-      LLines.Add('Подпись: ' + MHSignatureToString(AProcess.Signature));
+      LLines.Add(MHL('Подпись: ', 'Signature: ') + MHSignatureToString(AProcess.Signature));
       if AProcess.Sha256 <> '' then
         LLines.Add('SHA-256: ' + AProcess.Sha256);
-      LLines.Add(Format('Сейчас: CPU %s · память %s · GPU %s (вычисления %s)', [MHFormatMetric(AProcess.Cpu),
+      LLines.Add(Format(MHL('Сейчас: CPU %s · память %s · GPU %s (вычисления %s)',
+        'Now: CPU %s · memory %s · GPU %s (compute %s)'), [MHFormatMetric(AProcess.Cpu),
         MHFormatMetric(MHProcessMemory(AProcess)), MHFormatMetric(AProcess.Gpu),
         MHFormatMetric(AProcess.GpuCompute)]));
     end;
     LLines.Add('');
-    LLines.Add('Почему это подозрительно:');
+    LLines.Add(MHL('Почему это подозрительно:', 'Why this is suspicious:'));
     for LEvidence in F.PositiveEvidence do
     begin
       LText := Format('  + %s (+%d)', [LEvidence.Description, LEvidence.Weight]);
@@ -312,7 +317,7 @@ begin
     end;
     if Length(F.NegativeEvidence) > 0 then
     begin
-      LLines.Add('Что говорит в пользу обычной работы:');
+      LLines.Add(MHL('Что говорит в пользу обычной работы:', 'What points to normal activity:'));
       for LEvidence in F.NegativeEvidence do
       begin
         LText := Format('  − %s (%d)', [LEvidence.Description, LEvidence.Weight]);
@@ -323,16 +328,17 @@ begin
     end;
     if Length(F.MissingData) > 0 then
     begin
-      LLines.Add('Недостающие данные (оценка может быть неточной):');
+      LLines.Add(MHL('Недостающие данные (оценка может быть неточной):',
+        'Missing data (the score may be inaccurate):'));
       for LText in F.MissingData do
         LLines.Add('  • ' + LText);
     end;
     LLines.Add('');
-    LLines.Add('Рекомендации:');
+    LLines.Add(MHL('Рекомендации:', 'Recommendations:'));
     for LText in F.Recommendations do
       LLines.Add('  • ' + LText);
     LLines.Add('');
-    LLines.Add('Версия правил: ' + F.RulesetVersion);
+    LLines.Add(MHL('Версия правил: ', 'Ruleset version: ') + F.RulesetVersion);
     Result := LLines.ToArray;
   finally
     LLines.Free;

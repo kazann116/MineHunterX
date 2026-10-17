@@ -41,7 +41,8 @@ implementation
 
 uses
   Winapi.Windows, Winapi.ActiveX, Winapi.ShellAPI, Winapi.DwmApi,
-  System.SysUtils, System.Variants, System.Win.ComObj, System.Generics.Collections;
+  System.SysUtils, System.Variants, System.Win.ComObj, System.Generics.Collections,
+  MineHunter.Core.Lang;
 
 const
   // WbemScripting: WbemFlagEnum.wbemFlagForwardOnly
@@ -242,7 +243,7 @@ begin
   // COM доступен, но CoUninitialize для него вызывать нельзя.
   if Failed(LInit) and (LInit <> RPC_E_CHANGED_MODE) then
   begin
-    AError := Format('не удалось инициализировать COM (0x%.8x)', [Cardinal(LInit)]);
+    AError := Format(MHL('не удалось инициализировать COM (0x%.8x)', 'failed to initialize COM (0x%.8x)'), [Cardinal(LInit)]);
     Exit(False);
   end;
   try

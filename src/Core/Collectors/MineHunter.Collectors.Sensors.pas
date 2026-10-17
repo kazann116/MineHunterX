@@ -62,7 +62,8 @@ function MHPickCpuTemperature(const AReadings: TArray<TMHTemperatureReading>;
 implementation
 
 uses
-  System.Math, System.StrUtils;
+  System.Math, System.StrUtils,
+  MineHunter.Core.Lang;
 
 function IsPlausible(ACelsius: Double): Boolean;
 begin
@@ -116,7 +117,7 @@ end;
 
 function TMHSensorCollector.GetDisplayName: string;
 begin
-  Result := 'Датчики температуры: накопители, процессор';
+  Result := MHL('Датчики температуры: накопители, процессор', 'Temperature sensors: drives, CPU');
 end;
 
 function TMHSensorCollector.Collect(const ASnapshot: TMHSnapshot): TMHCollectionResult;
@@ -149,15 +150,15 @@ begin
     end;
   LHasCpu := MHPickCpuTemperature(LCpu, LCpuValue);
   if LHasCpu then
-    LReadings := LReadings + [TMHSensorReading.Create(skCpu, 'Процессор',
+    LReadings := LReadings + [TMHSensorReading.Create(skCpu, MHL('Процессор', 'CPU'),
       IfThen(Length(LCpu) > 0, LCpu[0].Source, ''), LCpuValue, 0)];
 
   LNotes := '';
   if not LHasDisk then
-    LNotes := 'Температура накопителей: ' + IfThen(LDiskReason <> '', LDiskReason, 'нет данных') + '.';
+    LNotes := MHL('Температура накопителей: ', 'Drive temperature: ') + IfThen(LDiskReason <> '', LDiskReason, MHL('нет данных', 'no data')) + '.';
   if not LHasCpu then
-    LNotes := Trim(LNotes + ' Температура процессора: ' +
-      IfThen(LCpuReason <> '', LCpuReason, 'нет данных') + '.');
+    LNotes := Trim(LNotes + MHL(' Температура процессора: ', ' CPU temperature: ') +
+      IfThen(LCpuReason <> '', LCpuReason, MHL('нет данных', 'no data')) + '.');
 
   if LHasDisk and LHasCpu then
     LState := ssSuccess

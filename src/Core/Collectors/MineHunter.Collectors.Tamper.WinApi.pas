@@ -39,7 +39,8 @@ implementation
 uses
   Winapi.Windows, Winapi.ActiveX, System.SysUtils, System.Classes, System.Variants,
   System.Win.ComObj, System.Generics.Collections, System.Math, System.StrUtils,
-  MineHunter.Core.Paths, MineHunter.Collectors.Autostart, MineHunter.Analysis.Indicators;
+  MineHunter.Core.Paths, MineHunter.Collectors.Autostart, MineHunter.Analysis.Indicators,
+  MineHunter.Core.Lang;
 
 const
   IFEO_KEY = 'SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options';
@@ -364,7 +365,8 @@ begin
   LInit := CoInitializeEx(nil, COINIT_MULTITHREADED);
   if Failed(LInit) and (LInit <> RPC_E_CHANGED_MODE) then
   begin
-    AError := Format('не удалось инициализировать COM (0x%.8x)', [Cardinal(LInit)]);
+    AError := Format(MHL('не удалось инициализировать COM (0x%.8x)', 'could not initialize COM (0x%.8x)'),
+      [Cardinal(LInit)]);
     Exit(False);
   end;
   try
@@ -477,7 +479,8 @@ begin
                 LEntry := TMHTamperEntry.Create(tpIfeoDebugger, LName, LValue,
                   'HKLM\' + LBase + '\' + LName);
                 LEntry.ImagePath := ExecutableOf(LValue);
-                LEntry.Details := 'при запуске ' + LName + ' вместо неё выполняется указанная команда';
+                LEntry.Details := MHL('при запуске ', 'when ') + LName +
+                  MHL(' вместо неё выполняется указанная команда', ' is launched, the specified command runs instead');
                 AEntries := AEntries + [LEntry];
               end;
             finally
@@ -499,7 +502,8 @@ begin
               LEntry := TMHTamperEntry.Create(tpSilentExitMonitor, LName, LValue,
                 'HKLM\' + SILENT_EXIT_KEY + '\' + LName);
               LEntry.ImagePath := ExecutableOf(LValue);
-              LEntry.Details := 'при завершении ' + LName + ' запускается указанная команда';
+              LEntry.Details := MHL('при завершении ', 'when ') + LName +
+                MHL(' запускается указанная команда', ' exits, the specified command is launched');
               AEntries := AEntries + [LEntry];
             end;
           finally
@@ -509,7 +513,7 @@ begin
       RegCloseKey(LKey);
     end;
   if not LOk then
-    AError := 'раздел Image File Execution Options недоступен';
+    AError := MHL('раздел Image File Execution Options недоступен', 'the Image File Execution Options key is unavailable');
   Result := LOk;
 end;
 

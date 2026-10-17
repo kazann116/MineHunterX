@@ -32,7 +32,8 @@ type
 implementation
 
 uses
-  Winapi.Windows, System.SysUtils;
+  Winapi.Windows, System.SysUtils,
+  MineHunter.Core.Lang;
 
 const
   // ws2def.h
@@ -127,7 +128,7 @@ begin
       Break;
     if LCode <> ERROR_INSUFFICIENT_BUFFER then
     begin
-      AError := Format('%s (код %d)', [SysErrorMessage(LCode), LCode]);
+      AError := Format(MHL('%s (код %d)', '%s (code %d)'), [SysErrorMessage(LCode), LCode]);
       Exit(False);
     end;
     SetLength(ABuffer, Int64(LSize) + BUFFER_SLACK);
@@ -136,7 +137,7 @@ begin
   end;
   if LCode <> NO_ERROR then
   begin
-    AError := Format('%s (код %d)', [SysErrorMessage(LCode), LCode]);
+    AError := Format(MHL('%s (код %d)', '%s (code %d)'), [SysErrorMessage(LCode), LCode]);
     Exit(False);
   end;
   // Таблица могла оказаться пустой уже при первом вызове с nil-буфером.
@@ -146,7 +147,7 @@ begin
   LCount := PDWORD(@ABuffer[0])^;
   if Int64(SizeOf(DWORD)) + Int64(LCount) * ARowSize > Length(ABuffer) then
   begin
-    AError := Format('некорректный размер таблицы: %u строк', [LCount]);
+    AError := Format(MHL('некорректный размер таблицы: %u строк', 'invalid table size: %u rows'), [LCount]);
     Exit(False);
   end;
   ARowCount := Integer(LCount);

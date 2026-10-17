@@ -80,7 +80,8 @@ type
 implementation
 
 uses
-  System.SysUtils, System.Generics.Collections;
+  System.SysUtils, System.Generics.Collections,
+  MineHunter.Core.Lang;
 
 const
   SENSOR_REFRESH_MS = 5000;
@@ -229,7 +230,8 @@ begin
   FPdh := TMHPdhQuery.Create;
   FEngineCounter := FPdh.AddCounter('\GPU Engine(*)\Utilization Percentage');
   if FEngineCounter = 0 then
-    FCounterError := 'счётчики GPU отсутствуют (нужны Windows 10 1709+ и драйвер видеокарты WDDM 2.0+)';
+    FCounterError := MHL('счётчики GPU отсутствуют (нужны Windows 10 1709+ и драйвер видеокарты WDDM 2.0+)',
+      'GPU counters are missing (Windows 10 1709+ and a WDDM 2.0+ graphics driver are required)');
   FProcessMemoryCounter := FPdh.AddCounter('\GPU Process Memory(*)\Dedicated Usage');
   FAdapterMemoryCounter := FPdh.AddCounter('\GPU Adapter Memory(*)\Dedicated Usage');
 end;
@@ -276,12 +278,12 @@ begin
   if FPdh.Collects < 2 then
   begin
     Result.Pending := True;
-    Result.Reason := 'загрузка будет доступна после следующего замера';
+    Result.Reason := MHL('загрузка будет доступна после следующего замера', 'load will be available after the next measurement');
     Exit;
   end;
   if not FPdh.ReadArray(FEngineCounter, LItems) then
   begin
-    Result.Reason := 'счётчики GPU вернули некорректные данные';
+    Result.Reason := MHL('счётчики GPU вернули некорректные данные', 'GPU counters returned invalid data');
     Exit;
   end;
   Result.Engines := ToSamples(LItems);
@@ -311,13 +313,13 @@ begin
   AReason := '';
   if not LoadD3dkmt then
   begin
-    AReason := 'D3DKMT недоступен в этой версии Windows';
+    AReason := MHL('D3DKMT недоступен в этой версии Windows', 'D3DKMT is not available in this version of Windows');
     Exit;
   end;
   LEnum := Default(TD3DKMTEnumAdapters2);
   if (GEnumAdapters2(LEnum) <> STATUS_SUCCESS) or (LEnum.NumAdapters = 0) then
   begin
-    AReason := 'видеоадаптеры не найдены';
+    AReason := MHL('видеоадаптеры не найдены', 'no video adapters found');
     Exit;
   end;
   if LEnum.NumAdapters > MAX_ADAPTERS then
@@ -326,7 +328,7 @@ begin
   LEnum.pAdapters := @LAdapters[0];
   if GEnumAdapters2(LEnum) <> STATUS_SUCCESS then
   begin
-    AReason := 'не удалось перечислить видеоадаптеры';
+    AReason := MHL('не удалось перечислить видеоадаптеры', 'failed to enumerate video adapters');
     Exit;
   end;
   LList := TList<TMHGpuSensor>.Create;
@@ -344,7 +346,7 @@ begin
         if QueryInfo(LAdapters[I].hAdapter, KMTQAITYPE_ADAPTERREGISTRYINFO, @LRegistry, SizeOf(LRegistry)) then
           LName := Trim(string(PWideChar(@LRegistry.AdapterString[0])));
         if LName = '' then
-          LName := Format('Видеоадаптер %d', [LHardware]);
+          LName := Format(MHL('Видеоадаптер %d', 'Video adapter %d'), [LHardware]);
         LPhysCount := 1;
         if not QueryInfo(LAdapters[I].hAdapter, KMTQAITYPE_PHYSICALADAPTERCOUNT, @LPhysCount,
            SizeOf(LPhysCount)) or (LPhysCount = 0) or (LPhysCount > 8) then
@@ -380,7 +382,7 @@ begin
       end;
     Result := LList.ToArray;
     if LHardware = 0 then
-      AReason := 'аппаратные видеоадаптеры не найдены';
+      AReason := MHL('аппаратные видеоадаптеры не найдены', 'no hardware video adapters found');
   finally
     LList.Free;
   end;
@@ -407,7 +409,7 @@ begin
   end;
   if FNvml = 0 then
   begin
-    FNvmlError := 'драйвер NVIDIA (nvml.dll) не найден';
+    FNvmlError := MHL('драйвер NVIDIA (nvml.dll) не найден', 'NVIDIA driver (nvml.dll) not found');
     Exit;
   end;
   @LInit := GetProcAddress(FNvml, 'nvmlInit_v2');
@@ -421,12 +423,13 @@ begin
   if not (Assigned(LInit) and Assigned(FNvmlShutdown) and Assigned(FNvmlGetCount) and
           Assigned(FNvmlGetHandle) and Assigned(FNvmlGetTemperature)) then
   begin
-    FNvmlError := 'nvml.dll не содержит нужных функций';
+    FNvmlError := MHL('nvml.dll не содержит нужных функций', 'nvml.dll does not contain the required functions');
     Exit;
   end;
   if LInit() <> NVML_SUCCESS then
   begin
-    FNvmlError := 'NVML не инициализирован (видеокарта NVIDIA не найдена или драйвер не отвечает)';
+    FNvmlError := MHL('NVML не инициализирован (видеокарта NVIDIA не найдена или драйвер не отвечает)',
+      'NVML is not initialized (no NVIDIA graphics card found or the driver is not responding)');
     Exit;
   end;
   FNvmlReady := True;
@@ -451,7 +454,7 @@ begin
   end;
   if (FNvmlGetCount(LCount) <> NVML_SUCCESS) or (LCount = 0) then
   begin
-    AReason := 'видеокарты NVIDIA не найдены';
+    AReason := MHL('видеокарты NVIDIA не найдены', 'no NVIDIA graphics cards found');
     Exit;
   end;
   LList := TList<TMHGpuSensor>.Create;
@@ -530,7 +533,7 @@ begin
   if not LHasTemperature then
   begin
     if LD3dReason = '' then
-      LD3dReason := 'драйвер видеокарты не сообщает температуру';
+      LD3dReason := MHL('драйвер видеокарты не сообщает температуру', 'the graphics driver does not report temperature');
     FSensorReason := LD3dReason + '; NVML: ' + LNvmlReason;
   end;
 end;
@@ -549,7 +552,7 @@ begin
       on E: Exception do
       begin
         FSensors := nil;
-        FSensorReason := 'ошибка опроса датчиков: ' + E.Message;
+        FSensorReason := MHL('ошибка опроса датчиков: ', 'sensor polling error: ') + E.Message;
       end;
     end;
   end;

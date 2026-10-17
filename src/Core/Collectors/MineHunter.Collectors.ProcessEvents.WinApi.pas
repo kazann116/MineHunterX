@@ -202,7 +202,8 @@ type
 implementation
 
 uses
-  System.DateUtils;
+  System.DateUtils,
+  MineHunter.Core.Lang;
 
 const
   KERNEL_PROCESS_PROVIDER: TGUID = '{22FB2CD6-0E7B-422B-A0C7-2FAD1FD0E716}';
@@ -452,7 +453,8 @@ begin
   if LStatus <> ERROR_SUCCESS then
   begin
     AAccessDenied := LStatus = ERROR_ACCESS_DENIED;
-    AError := 'провайдер событий процессов не включён: ' + SysErrorMessage(LStatus);
+    AError := MHL('провайдер событий процессов не включён: ', 'the process event provider is not enabled: ') +
+      SysErrorMessage(LStatus);
     StopSession;
     Exit(False);
   end;
@@ -465,7 +467,8 @@ begin
   FConsumer := OpenTraceW(LLogfile);
   if FConsumer = INVALID_PROCESSTRACE_HANDLE then
   begin
-    AError := 'не удалось подключиться к сеансу событий: ' + SysErrorMessage(GetLastError);
+    AError := MHL('не удалось подключиться к сеансу событий: ', 'failed to connect to the event session: ') +
+      SysErrorMessage(GetLastError);
     StopSession;
     Exit(False);
   end;

@@ -58,7 +58,7 @@ implementation
 
 uses
   System.Math, System.StrUtils, System.Hash,
-  MineHunter.Core.Paths, MineHunter.Analysis.Indicators;
+  MineHunter.Core.Paths, MineHunter.Core.Lang, MineHunter.Analysis.Indicators;
 
 const
   /// Обновления Windows блокируют и намеренно — это слабее, чем блокировка антивирусов.
@@ -139,31 +139,31 @@ var
 begin
   LToken := MHFindObfuscatedCommand(AEntry.Value);
   if LToken <> '' then
-    AddEvidence(AEvidence, 'OBFUSCATED_COMMAND', 'Команда скрыта (закодирована)', 35, LToken)
+    AddEvidence(AEvidence, 'OBFUSCATED_COMMAND', MHL('Команда скрыта (закодирована)', 'The command is obfuscated (encoded)'), 35, LToken)
   else
   begin
     LToken := MHFindHiddenScriptLaunch(AEntry.Value);
     if LToken <> '' then
-      AddEvidence(AEvidence, 'HIDDEN_SCRIPT', 'Сценарий запускается скрыто', 20, LToken);
+      AddEvidence(AEvidence, 'HIDDEN_SCRIPT', MHL('Сценарий запускается скрыто', 'A script is launched hidden'), 20, LToken);
   end;
   LToken := MHFindMinerCommandToken(AEntry.Value);
   if (LToken <> '') or ((AEntry.ImagePath <> '') and MHIsKnownMinerName(AEntry.ImagePath)) then
   begin
     if LToken = '' then
       LToken := ExtractFileName(AEntry.ImagePath);
-    AddEvidence(AEvidence, 'MINER_CMDLINE', 'Команда запускает майнер', 40, LToken);
+    AddEvidence(AEvidence, 'MINER_CMDLINE', MHL('Команда запускает майнер', 'The command launches a miner'), 40, LToken);
     AMining := True;
   end;
   if (AEntry.ImagePath <> '') and MHIsSuspiciousLocation(AEntry.ImagePath, LReason) then
-    AddEvidence(AEvidence, 'SUSPICIOUS_LOCATION', 'Программа находится в необычном месте', 20, LReason)
+    AddEvidence(AEvidence, 'SUSPICIOUS_LOCATION', MHL('Программа находится в необычном месте', 'The program is located in an unusual place'), 20, LReason)
   else if (AEntry.ImagePath <> '') and MHFindRandomLookingFolder(AEntry.ImagePath, LFolder) then
-    AddEvidence(AEvidence, 'RANDOM_FOLDER', 'Программа в папке со случайным именем', 20, LFolder);
+    AddEvidence(AEvidence, 'RANDOM_FOLDER', MHL('Программа в папке со случайным именем', 'The program is in a randomly named folder'), 20, LFolder);
   if (AEntry.ImagePath <> '') and ASnapshot.FindFile(AEntry.ImagePath, LFile) then
     case LFile.Signature of
       sgUnsigned:
-        AddEvidence(AEvidence, 'UNSIGNED', 'Файл без цифровой подписи', 10);
+        AddEvidence(AEvidence, 'UNSIGNED', MHL('Файл без цифровой подписи', 'The file has no digital signature'), 10);
       sgSignedUntrusted:
-        AddEvidence(AEvidence, 'SIGNATURE_INVALID', 'Подпись недействительна', 25, LFile.Error);
+        AddEvidence(AEvidence, 'SIGNATURE_INVALID', MHL('Подпись недействительна', 'The signature is invalid'), 25, LFile.Error);
     end;
 end;
 
@@ -207,7 +207,8 @@ begin
   AFinding.Confidence := 1.0;
   AFinding.RulesetVersion := ARulesetVersion;
   AFinding.DetectedAtUtc := ASnapshot.TimestampUtc;
-  AFinding.Summary := Format('%s Оценка %d из 100 (%s). Это повод для проверки, а не диагноз.',
+  AFinding.Summary := Format(MHL('%s Оценка %d из 100 (%s). Это повод для проверки, а не диагноз.',
+    '%s Score %d out of 100 (%s). This is a reason to check, not a diagnosis.'),
     [ASummary, AFinding.Score, MHRiskLevelToString(AFinding.Level)]);
   AFinding.Key := AKey;
   AFinding.Id := FindingId(AKey);
@@ -227,30 +228,39 @@ begin
   LEvidence := nil;
   LMining := False;
   AddEvidence(LEvidence, EV_WMI_PERSISTENCE,
-    'Подписка WMI выполняет команду по событию — скрытый автозапуск, которого нет в обычных списках', 50,
+    MHL('Подписка WMI выполняет команду по событию — скрытый автозапуск, которого нет в обычных списках',
+    'A WMI subscription runs a command on an event — a hidden autostart missing from the usual lists'), 50,
     AEntry.Name + ': ' + Copy(AEntry.Value, 1, 200));
   if AEntry.Details.Contains('сценарий') then
-    AddEvidence(LEvidence, 'WMI_SCRIPT', 'Подписка содержит встроенный сценарий (VBScript/JScript)', 10);
+    AddEvidence(LEvidence, 'WMI_SCRIPT', MHL('Подписка содержит встроенный сценарий (VBScript/JScript)',
+      'The subscription contains an embedded script (VBScript/JScript)'), 10);
   CommandEvidence(ASnapshot, AEntry, LEvidence, LMining);
   if AEntry.Details.Contains('не привязана') then
-    AddEvidence(LEvidence, EV_INERT, 'Подписка не привязана к событию и сама не срабатывает', -20);
+    AddEvidence(LEvidence, EV_INERT, MHL('Подписка не привязана к событию и сама не срабатывает',
+      'The subscription is not bound to an event and does not fire on its own'), -20);
   if SignedVendorFile(ASnapshot, AEntry.ImagePath, LSigner) and
      not HasPositiveBeyond(LEvidence, EV_WMI_PERSISTENCE) then
-    AddEvidence(LEvidence, 'SIGNED_TRUSTED', 'Запускает подписанную программу из Program Files', -20, LSigner);
-  LRecommend := ['Посмотрите подписку в PowerShell от имени администратора: Get-CimInstance ' +
+    AddEvidence(LEvidence, 'SIGNED_TRUSTED', MHL('Запускает подписанную программу из Program Files',
+      'Launches a signed program from Program Files'), -20, LSigner);
+  LRecommend := [MHL('Посмотрите подписку в PowerShell от имени администратора: Get-CimInstance ',
+    'Inspect the subscription in PowerShell as administrator: Get-CimInstance ') +
     '-Namespace root\subscription -ClassName CommandLineEventConsumer, ActiveScriptEventConsumer.',
-    'Подписки WMI создают и программы управления компьютером в организации, и резервное копирование — ' +
-    'не удаляйте подписку, если знаете, какая программа её создала.'];
+    MHL('Подписки WMI создают и программы управления компьютером в организации, и резервное копирование — ',
+    'WMI subscriptions are also created by corporate computer management tools and backup software — ') +
+    MHL('не удаляйте подписку, если знаете, какая программа её создала.',
+    'do not delete the subscription if you know which program created it.')];
   if LMining then
   begin
-    LRecommend := LRecommend + ['Команда подписки запускает майнер — проверьте файл в Microsoft Defender.'];
+    LRecommend := LRecommend + [MHL('Команда подписки запускает майнер — проверьте файл в Microsoft Defender.',
+      'The subscription command launches a miner — scan the file with Microsoft Defender.')];
     LCategory := fcMining;
   end
   else
     LCategory := fcPersistence;
   Result := Finish(ASnapshot, AThresholds, AEntry.ImagePath, AEntry.Name, 'tamper:wmi:' + AEntry.Name.ToLower,
-    'Скрытый автозапуск через WMI: ' + AEntry.Name,
-    'Подписка «' + AEntry.Name + '» запускает: ' + Copy(AEntry.Value, 1, 300) + '.',
+    MHL('Скрытый автозапуск через WMI: ', 'Hidden autostart via WMI: ') + AEntry.Name,
+    MHL('Подписка «', 'Subscription "') + AEntry.Name + MHL('» запускает: ', '" launches: ') +
+    Copy(AEntry.Value, 1, 300) + '.',
     LCategory, LEvidence, LRecommend, ARuleset, AFinding);
 end;
 
@@ -282,10 +292,12 @@ begin
     Exit;
   if LManaged then
     AddEvidence(AEvidence, EV_CORPORATE_POLICY,
-      'Задано политикой на компьютере организации (обычно это делает администратор)', -10)
+      MHL('Задано политикой на компьютере организации (обычно это делает администратор)',
+      'Set by policy on an organization computer (usually done by the administrator)'), -10)
   else
     AddEvidence(AEvidence, EV_POLICY_NO_DOMAIN,
-      'Задано через политику, хотя компьютер не управляется организацией — так делают вредоносные программы',
+      MHL('Задано через политику, хотя компьютер не управляется организацией — так делают вредоносные программы',
+      'Set via policy although the computer is not managed by an organization — this is what malware does'),
       10);
 end;
 
@@ -320,38 +332,43 @@ begin
       if MHIsExecutableExtension(LEntry.Name) then
       begin
         LWeight := 45;
-        LReason := 'Из проверки антивирусом исключены все файлы этого типа — так прячут программы и сценарии';
+        LReason := MHL('Из проверки антивирусом исключены все файлы этого типа — так прячут программы и сценарии',
+          'All files of this type are excluded from antivirus scanning — this is how programs and scripts are hidden');
       end
       else
       begin
         LWeight := 10;
-        LReason := 'Исключение антивируса по расширению файлов';
+        LReason := MHL('Исключение антивируса по расширению файлов', 'Antivirus exclusion by file extension');
       end;
     end
     else if LKind.StartsWith('IP') then
     begin
       LWeight := 10;
-      LReason := 'Исключение антивируса по IP-адресу';
+      LReason := MHL('Исключение антивируса по IP-адресу', 'Antivirus exclusion by IP address');
     end
     else if IsBroadPath(LEntry.Name) then
     begin
       LWeight := 45;
-      LReason := 'Из проверки антивирусом исключён целый диск или системная папка';
+      LReason := MHL('Из проверки антивирусом исключён целый диск или системная папка',
+        'An entire drive or a system folder is excluded from antivirus scanning');
     end
     else if MHIsSuspiciousLocation(LEntry.ImagePath, LFolder) then
     begin
       LWeight := 45;
-      LReason := 'Из проверки антивирусом исключена папка в необычном месте — так майнеры защищают себя';
+      LReason := MHL('Из проверки антивирусом исключена папка в необычном месте — так майнеры защищают себя',
+        'A folder in an unusual place is excluded from antivirus scanning — this is how miners protect themselves');
     end
     else if MHFindRandomLookingFolder(LEntry.ImagePath, LFolder) then
     begin
       LWeight := 45;
-      LReason := 'Из проверки антивирусом исключена папка со случайным именем';
+      LReason := MHL('Из проверки антивирусом исключена папка со случайным именем',
+        'A randomly named folder is excluded from antivirus scanning');
     end
     else
     begin
       LWeight := 15;
-      LReason := 'Исключение антивируса — убедитесь, что добавляли его сами (например, папку проектов)';
+      LReason := MHL('Исключение антивируса — убедитесь, что добавляли его сами (например, папку проектов)',
+        'Antivirus exclusion — make sure you added it yourself (for example, a projects folder)');
     end;
     if LWeight > LBest then
     begin
@@ -377,28 +394,34 @@ begin
   AddEvidence(LEvidence, EV_AV_EXCLUSION, LBestText, LBest, LNames);
   if LMasquerade <> '' then
     AddEvidence(LEvidence, 'MASQUERADE',
-      'Исключены программы с именами системных файлов Windows, но вне системной папки', 40, LMasquerade);
+      MHL('Исключены программы с именами системных файлов Windows, но вне системной папки',
+      'Excluded programs have Windows system file names but are outside the system folder'), 40, LMasquerade);
   if LArtifacts <> '' then
   begin
     AddEvidence(LEvidence, EV_MINER_ARTIFACT,
-      'Рядом лежит драйвер WinRing0, которым пользуется майнер XMRig', 40, LArtifacts);
+      MHL('Рядом лежит драйвер WinRing0, которым пользуется майнер XMRig',
+      'The WinRing0 driver used by the XMRig miner is located nearby'), 40, LArtifacts);
     LMining := True;
   end;
   if LHidden > 0 then
-    AddEvidence(LEvidence, EV_HIDDEN_FILE, 'Исключённые программы скрыты атрибутами «скрытый» и «системный»', 20,
-      Format('%d файл(ов)', [LHidden]));
+    AddEvidence(LEvidence, EV_HIDDEN_FILE, MHL('Исключённые программы скрыты атрибутами «скрытый» и «системный»',
+      'Excluded programs are concealed with the "hidden" and "system" attributes'), 20,
+      Format(MHL('%d файл(ов)', '%d file(s)'), [LHidden]));
   if LProgramDataExe > 0 then
     AddEvidence(LEvidence, EV_PROGRAMDATA_EXE,
-      'Из проверки исключены отдельные программы в ProgramData — обычные программы так не делают', 20,
-      Format('%d программ(ы)', [LProgramDataExe]));
+      MHL('Из проверки исключены отдельные программы в ProgramData — обычные программы так не делают',
+      'Individual programs in ProgramData are excluded from scanning — normal programs do not do this'), 20,
+      Format(MHL('%d программ(ы)', '%d program(s)'), [LProgramDataExe]));
   if LMinerName then
   begin
-    AddEvidence(LEvidence, 'MINER_NAME', 'Из проверки исключена программа с именем известного майнера', 35);
+    AddEvidence(LEvidence, 'MINER_NAME', MHL('Из проверки исключена программа с именем известного майнера',
+      'A program named like a known miner is excluded from scanning'), 35);
     LMining := True;
   end;
   PolicyEvidence(AEntries, LEvidence);
   if (LMissing > 0) and (LMissing = Length(AEntries)) then
-    AddEvidence(LEvidence, EV_FILES_GONE, 'Исключённых файлов уже нет на диске (осталась только запись)', -15);
+    AddEvidence(LEvidence, EV_FILES_GONE, MHL('Исключённых файлов уже нет на диске (осталась только запись)',
+      'The excluded files are no longer on disk (only the entry remains)'), -15);
   if LMining then
     LCategory := fcMining
   else
@@ -406,19 +429,25 @@ begin
   if LIsFiles and (Length(AEntries) > 1) then
   begin
     LDir := ExtractFileDir(AEntries[0].ImagePath);
-    LTitle := Format('Исключены из проверки Defender: %d программ(ы) в %s', [Length(AEntries), LDir]);
+    LTitle := Format(MHL('Исключены из проверки Defender: %d программ(ы) в %s',
+      'Excluded from Defender scanning: %d program(s) in %s'), [Length(AEntries), LDir]);
   end
   else
   begin
     LDir := AEntries[0].Name;
-    LTitle := 'Исключение Microsoft Defender: ' + AEntries[0].Name;
+    LTitle := MHL('Исключение Microsoft Defender: ', 'Microsoft Defender exclusion: ') + AEntries[0].Name;
   end;
   Result := Finish(ASnapshot, AThresholds, '', LDir, 'tamper:defender:' + DefenderGroupKey(AEntries[0]),
-    LTitle, Format('Microsoft Defender не проверяет: %s.', [LNames]), LCategory, LEvidence,
-    ['Если вы не добавляли эти исключения, удалите их: «Безопасность Windows» → «Защита от вирусов и угроз» → ' +
-     '«Управление настройками» → «Исключения» (исключения, заданные политикой, удаляются в разделе реестра ' +
-     'HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Exclusions от имени администратора).',
-     'Затем полностью проверьте компьютер Microsoft Defender; файлы можно поместить в карантин из карточки находки.'],
+    LTitle, Format(MHL('Microsoft Defender не проверяет: %s.', 'Microsoft Defender does not scan: %s.'), [LNames]),
+    LCategory, LEvidence,
+    [MHL('Если вы не добавляли эти исключения, удалите их: «Безопасность Windows» → «Защита от вирусов и угроз» → ',
+     'If you did not add these exclusions, remove them: "Windows Security" → "Virus & threat protection" → ') +
+     MHL('«Управление настройками» → «Исключения» (исключения, заданные политикой, удаляются в разделе реестра ',
+     '"Manage settings" → "Exclusions" (exclusions set by policy are removed in the registry key ') +
+     MHL('HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Exclusions от имени администратора).',
+     'HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Exclusions as administrator).'),
+     MHL('Затем полностью проверьте компьютер Microsoft Defender; файлы можно поместить в карантин из карточки находки.',
+     'Then run a full Microsoft Defender scan; files can be quarantined from the finding card.')],
     ARuleset, AFinding);
 end;
 
@@ -452,7 +481,8 @@ begin
       if LWeight > LBest then
       begin
         LCode := EV_ACCESSIBILITY_HIJACK;
-        LReason := 'Подменены специальные возможности экрана входа — так получают доступ к компьютеру без пароля';
+        LReason := MHL('Подменены специальные возможности экрана входа — так получают доступ к компьютеру без пароля',
+          'Sign-in screen accessibility tools are replaced — this is how the computer is accessed without a password');
       end;
     end
     else if MHIsProtectedToolName(LEntry.Name) then
@@ -461,7 +491,8 @@ begin
       if LWeight > LBest then
       begin
         LCode := EV_EXECUTION_HIJACK;
-        LReason := 'Запуск антивируса или программы мониторинга заблокирован — так майнеры не дают себя увидеть и удалить';
+        LReason := MHL('Запуск антивируса или программы мониторинга заблокирован — так майнеры не дают себя увидеть и удалить',
+          'Launching an antivirus or monitoring tool is blocked — this is how miners avoid being seen and removed');
       end;
     end
     else if InList(ExtractFileName(LEntry.ImagePath), DEV_DEBUGGERS) then
@@ -470,7 +501,8 @@ begin
       if LWeight > LBest then
       begin
         LCode := EV_DEV_TOOL;
-        LReason := 'Отладчик разработчика назначен для программы (обычно это сделали намеренно)';
+        LReason := MHL('Отладчик разработчика назначен для программы (обычно это сделали намеренно)',
+          'A developer debugger is assigned to the program (usually done on purpose)');
       end;
     end
     else
@@ -479,7 +511,8 @@ begin
       if LWeight > LBest then
       begin
         LCode := EV_EXECUTION_HIJACK;
-        LReason := 'Запуск программы перехвачен: вместо неё выполняется другая команда';
+        LReason := MHL('Запуск программы перехвачен: вместо неё выполняется другая команда',
+          'Program launch is hijacked: another command runs instead');
       end;
     end;
     LBest := Max(LBest, LWeight);
@@ -491,15 +524,19 @@ begin
   CommandEvidence(ASnapshot, LFirst, LEvidence, LMining);
   if (LCode = EV_EXECUTION_HIJACK) and (LBest < 60) and SignedVendorFile(ASnapshot, LFirst.ImagePath, LSigner) and
      not HasPositiveBeyond(LEvidence, EV_EXECUTION_HIJACK) then
-    AddEvidence(LEvidence, 'SIGNED_TRUSTED', 'Вместо программы запускается подписанная программа из Program Files',
-      -15, LSigner);
+    AddEvidence(LEvidence, 'SIGNED_TRUSTED', MHL('Вместо программы запускается подписанная программа из Program Files',
+      'A signed program from Program Files runs instead'), -15, LSigner);
   Result := Finish(ASnapshot, AThresholds, LFirst.ImagePath, LTargets, 'tamper:ifeo:' + LFirst.Value.ToLower,
-    'Перехват запуска программ: ' + LTargets,
-    Format('При запуске %s Windows выполняет: %s.', [LTargets, LFirst.Value]), fcPersistence, LEvidence,
-    ['Если вы не настраивали замену этих программ, удалите значение Debugger в разделах ' +
-     'HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\<программа> ' +
-     '(редактор реестра от имени администратора).',
-     'Если перехвачен запуск антивируса — после удаления перезагрузите компьютер и выполните полную проверку.'],
+    MHL('Перехват запуска программ: ', 'Program launch hijack: ') + LTargets,
+    Format(MHL('При запуске %s Windows выполняет: %s.', 'When %s starts, Windows runs: %s.'), [LTargets, LFirst.Value]),
+    fcPersistence, LEvidence,
+    [MHL('Если вы не настраивали замену этих программ, удалите значение Debugger в разделах ',
+     'If you did not configure replacement of these programs, delete the Debugger value in the keys ') +
+     MHL('HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\<программа> ',
+     'HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\<program> ') +
+     MHL('(редактор реестра от имени администратора).', '(Registry Editor as administrator).'),
+     MHL('Если перехвачен запуск антивируса — после удаления перезагрузите компьютер и выполните полную проверку.',
+     'If an antivirus launch was hijacked, restart the computer after removal and run a full scan.')],
     ARuleset, AFinding);
 end;
 
@@ -513,17 +550,21 @@ begin
   LEvidence := nil;
   LMining := False;
   AddEvidence(LEvidence, EV_SILENT_EXIT,
-    'При завершении программы Windows запускает другую команду — малоизвестный способ автозапуска', 40,
+    MHL('При завершении программы Windows запускает другую команду — малоизвестный способ автозапуска',
+    'When a program exits, Windows runs another command — a little-known autostart method'), 40,
     AEntry.Name + ' → ' + AEntry.Value);
   CommandEvidence(ASnapshot, AEntry, LEvidence, LMining);
   if SignedVendorFile(ASnapshot, AEntry.ImagePath, LSigner) and
      not HasPositiveBeyond(LEvidence, EV_SILENT_EXIT) then
-    AddEvidence(LEvidence, 'SIGNED_TRUSTED', 'Запускается подписанная программа из Program Files', -15, LSigner);
+    AddEvidence(LEvidence, 'SIGNED_TRUSTED', MHL('Запускается подписанная программа из Program Files',
+      'A signed program from Program Files is launched'), -15, LSigner);
   Result := Finish(ASnapshot, AThresholds, AEntry.ImagePath, AEntry.Name, 'tamper:silentexit:' + AEntry.Name.ToLower,
-    'Запуск при завершении программы: ' + AEntry.Name,
-    Format('При завершении %s запускается: %s.', [AEntry.Name, AEntry.Value]), fcPersistence, LEvidence,
-    ['Если вы не настраивали мониторинг завершения программ, удалите раздел ' + AEntry.Location +
-     ' (редактор реестра от имени администратора).'], ARuleset, AFinding);
+    MHL('Запуск при завершении программы: ', 'Launch on program exit: ') + AEntry.Name,
+    Format(MHL('При завершении %s запускается: %s.', 'When %s exits, this runs: %s.'), [AEntry.Name, AEntry.Value]),
+    fcPersistence, LEvidence,
+    [MHL('Если вы не настраивали мониторинг завершения программ, удалите раздел ',
+     'If you did not configure program exit monitoring, delete the key ') + AEntry.Location +
+     MHL(' (редактор реестра от имени администратора).', ' (Registry Editor as administrator).')], ARuleset, AFinding);
 end;
 
 function AnalyzeHosts(const ASnapshot: TMHSnapshot; const AEntries: TArray<TMHTamperEntry>;
@@ -558,23 +599,29 @@ begin
   if LCount = 0 then
     Exit;
   if LCount > 5 then
-    LDomains := LDomains + Format(' и ещё %d', [LCount - 5]);
+    LDomains := LDomains + Format(MHL(' и ещё %d', ' and %d more'), [LCount - 5]);
   LEvidence := nil;
   if LSecurity > 0 then
     AddEvidence(LEvidence, EV_HOSTS_BLOCK,
-      'Файл hosts блокирует сайты антивирусов — так вредоносные программы мешают себя обнаружить', 50, LDomains)
+      MHL('Файл hosts блокирует сайты антивирусов — так вредоносные программы мешают себя обнаружить',
+      'The hosts file blocks antivirus sites — this is how malware prevents its detection'), 50, LDomains)
   else
   begin
-    AddEvidence(LEvidence, EV_HOSTS_BLOCK, 'Файл hosts блокирует обновления Windows и Defender', 35, LDomains);
+    AddEvidence(LEvidence, EV_HOSTS_BLOCK, MHL('Файл hosts блокирует обновления Windows и Defender',
+      'The hosts file blocks Windows and Defender updates'), 35, LDomains);
     AddEvidence(LEvidence, EV_UPDATES_ONLY,
-      'Обновления иногда отключают так намеренно — проверьте, делали ли это вы', -10);
+      MHL('Обновления иногда отключают так намеренно — проверьте, делали ли это вы',
+      'Updates are sometimes disabled this way on purpose — check whether you did it'), -10);
   end;
   Result := Finish(ASnapshot, AThresholds, '', 'hosts', 'tamper:hosts',
-    Format('Файл hosts блокирует %d сайт(ов) защиты', [LCount]),
-    'В файле ' + LFirst.Location + ' перенаправлены: ' + LDomains + '.', fcSuspicious, LEvidence,
-    ['Откройте файл hosts в Блокноте от имени администратора и удалите строки с этими сайтами, ' +
-     'если не добавляли их сами.',
-     'После этого запустите обновление и проверку Microsoft Defender.'], ARuleset, AFinding);
+    Format(MHL('Файл hosts блокирует %d сайт(ов) защиты', 'The hosts file blocks %d security site(s)'), [LCount]),
+    MHL('В файле ', 'Redirected in file ') + LFirst.Location + MHL(' перенаправлены: ', ': ') + LDomains + '.',
+    fcSuspicious, LEvidence,
+    [MHL('Откройте файл hosts в Блокноте от имени администратора и удалите строки с этими сайтами, ',
+     'Open the hosts file in Notepad as administrator and delete the lines with these sites ') +
+     MHL('если не добавляли их сами.', 'if you did not add them yourself.'),
+     MHL('После этого запустите обновление и проверку Microsoft Defender.',
+     'Then run a Microsoft Defender update and scan.')], ARuleset, AFinding);
 end;
 
 function AnalyzeHostsRelocated(const ASnapshot: TMHSnapshot; const AEntry: TMHTamperEntry;
@@ -584,12 +631,16 @@ var
 begin
   LEvidence := nil;
   AddEvidence(LEvidence, EV_HOSTS_RELOCATED,
-    'Каталог файла hosts перенесён — так подменяют разрешение адресов незаметно для пользователя', 55,
+    MHL('Каталог файла hosts перенесён — так подменяют разрешение адресов незаметно для пользователя',
+    'The hosts file folder has been moved — this is how name resolution is spoofed unnoticed by the user'), 55,
     AEntry.Value);
   Result := Finish(ASnapshot, AThresholds, '', 'hosts', 'tamper:hosts-relocated',
-    'Файл hosts перенесён в другое место', AEntry.Details + '.', fcSuspicious, LEvidence,
-    ['Верните значение DataBasePath в разделе ' + AEntry.Location + ' к %SystemRoot%\System32\drivers\etc ' +
-     '(редактор реестра от имени администратора) и проверьте компьютер антивирусом.'], ARuleset, AFinding);
+    MHL('Файл hosts перенесён в другое место', 'The hosts file has been moved elsewhere'), AEntry.Details + '.',
+    fcSuspicious, LEvidence,
+    [MHL('Верните значение DataBasePath в разделе ', 'Restore the DataBasePath value in the key ') + AEntry.Location +
+     MHL(' к %SystemRoot%\System32\drivers\etc ', ' to %SystemRoot%\System32\drivers\etc ') +
+     MHL('(редактор реестра от имени администратора) и проверьте компьютер антивирусом.',
+     '(Registry Editor as administrator) and scan the computer with an antivirus.')], ARuleset, AFinding);
 end;
 
 /// Отключение защиты Microsoft Defender политиками.
@@ -615,8 +666,9 @@ begin
   LEntry := AEntries[0];
   if IsDefenderPolicy(LEntry.Name) then
   begin
-    LTitle := 'Защита Microsoft Defender отключена политикой';
-    LText := 'Защита Microsoft Defender отключена политикой — компьютер остаётся без антивируса';
+    LTitle := MHL('Защита Microsoft Defender отключена политикой', 'Microsoft Defender protection is disabled by policy');
+    LText := MHL('Защита Microsoft Defender отключена политикой — компьютер остаётся без антивируса',
+      'Microsoft Defender protection is disabled by policy — the computer is left without an antivirus');
     LWeight := 45;
     LKey := 'tamper:policy:defender';
   end
@@ -625,26 +677,29 @@ begin
     LKey := 'tamper:policy:' + LEntry.Details.ToLower + ':' + LEntry.Name.ToLower;
     if SameText(LEntry.Name, 'DisableTaskMgr') then
     begin
-      LTitle := 'Диспетчер задач отключён';
-      LText := 'Диспетчер задач отключён политикой — так майнеры мешают увидеть нагрузку';
+      LTitle := MHL('Диспетчер задач отключён', 'Task Manager is disabled');
+      LText := MHL('Диспетчер задач отключён политикой — так майнеры мешают увидеть нагрузку',
+        'Task Manager is disabled by policy — this is how miners keep you from seeing the load');
       LWeight := 40;
     end
     else if SameText(LEntry.Name, 'DisableRegistryTools') then
     begin
-      LTitle := 'Редактор реестра отключён';
-      LText := 'Редактор реестра отключён политикой — так мешают удалить автозапуск';
+      LTitle := MHL('Редактор реестра отключён', 'Registry Editor is disabled');
+      LText := MHL('Редактор реестра отключён политикой — так мешают удалить автозапуск',
+        'Registry Editor is disabled by policy — this prevents removing the autostart');
       LWeight := 35;
     end
     else if SameText(LEntry.Name, 'DisableCMD') then
     begin
-      LTitle := 'Командная строка отключена';
-      LText := 'Командная строка отключена политикой';
+      LTitle := MHL('Командная строка отключена', 'Command Prompt is disabled');
+      LText := MHL('Командная строка отключена политикой', 'Command Prompt is disabled by policy');
       LWeight := 20;
     end
     else
     begin
-      LTitle := 'Контроль учётных записей (UAC) отключён';
-      LText := 'Контроль учётных записей отключён — программы получают права администратора без запроса';
+      LTitle := MHL('Контроль учётных записей (UAC) отключён', 'User Account Control (UAC) is disabled');
+      LText := MHL('Контроль учётных записей отключён — программы получают права администратора без запроса',
+        'User Account Control is disabled — programs get administrator rights without a prompt');
       LWeight := 20;
     end;
   end;
@@ -652,9 +707,12 @@ begin
   AddEvidence(LEvidence, EV_POLICY_RESTRICTION, LText, LWeight, LValues);
   PolicyEvidence(AEntries, LEvidence);
   Result := Finish(ASnapshot, AThresholds, '', LEntry.Name, LKey, LTitle, LText + '.', fcSuspicious, LEvidence,
-    ['Если компьютер не управляется организацией, удалите эти значения в разделе ' + LEntry.Location +
-     ' (редактор реестра от имени администратора) и перезагрузите компьютер.',
-     'В организации такие запреты может задать администратор — уточните у него.'], ARuleset, AFinding);
+    [MHL('Если компьютер не управляется организацией, удалите эти значения в разделе ',
+     'If the computer is not managed by an organization, delete these values in the key ') + LEntry.Location +
+     MHL(' (редактор реестра от имени администратора) и перезагрузите компьютер.',
+     ' (Registry Editor as administrator) and restart the computer.'),
+     MHL('В организации такие запреты может задать администратор — уточните у него.',
+     'In an organization, such restrictions may be set by the administrator — check with them.')], ARuleset, AFinding);
 end;
 
 function MHAnalyzeTamper(const ASnapshot: TMHSnapshot; const AThresholds: TMHRiskThresholds;
@@ -762,15 +820,17 @@ begin
           else if LEntry.Details.StartsWith('путь') and (LPath <> '') and (LExcluded <> '') then
             AExcludedFromAv := (LPath = LExcluded) or LPath.StartsWith(LExcluded + '\');
           if AExcludedFromAv then
-            AddEvidence(Result, EV_AV_EXCLUDED, 'Программа исключена из проверки антивирусом', 25,
+            AddEvidence(Result, EV_AV_EXCLUDED, MHL('Программа исключена из проверки антивирусом',
+              'The program is excluded from antivirus scanning'), 25,
               LEntry.Name);
         end;
       tpWmiSubscription, tpIfeoDebugger, tpSilentExitMonitor:
         if not LLinked and (LPath <> '') and SameText(MHNormalizePath(LEntry.ImagePath), LPath) then
         begin
           LLinked := True;
-          AddEvidence(Result, EV_TAMPER_LINK, 'Программу запускает скрытый механизм: ' +
-            MHTamperKindToString(LEntry.Kind), 20, LEntry.Name);
+          AddEvidence(Result, EV_TAMPER_LINK, MHL('Программу запускает скрытый механизм: ',
+            'The program is launched by a hidden mechanism: ') +
+            MHTamperKindTitle(LEntry.Kind), 20, LEntry.Name);
         end;
     end;
 end;

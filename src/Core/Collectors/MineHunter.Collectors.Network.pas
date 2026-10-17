@@ -64,6 +64,9 @@ function MHNetworkToHostPort(AValue: Cardinal): Word;
 
 implementation
 
+uses
+  MineHunter.Core.Lang;
+
 const
   /// Значения MIB_TCP_STATE (tcpmib.h) 1..12.
   TCP_STATE_NAMES: array[1..12] of string = ('CLOSED', 'LISTEN', 'SYN_SENT', 'SYN_RCVD',
@@ -84,8 +87,8 @@ var
   LMapped: Boolean;
 begin
   if Length(ABytes) <> 16 then
-    raise EArgumentException.CreateFmt('IPv6-адрес должен состоять из 16 байт, получено %d',
-      [Length(ABytes)]);
+    raise EArgumentException.CreateFmt(MHL('IPv6-адрес должен состоять из 16 байт, получено %d',
+      'An IPv6 address must consist of 16 bytes, got %d'), [Length(ABytes)]);
   for I := 0 to 7 do
     LGroups[I] := (Word(ABytes[I * 2]) shl 8) or ABytes[I * 2 + 1];
 
@@ -172,7 +175,7 @@ end;
 
 function TMHNetworkCollector.GetDisplayName: string;
 begin
-  Result := 'Сетевые соединения';
+  Result := MHL('Сетевые соединения', 'Network connections');
 end;
 
 function TMHNetworkCollector.Collect(const ASnapshot: TMHSnapshot): TMHCollectionResult;
@@ -218,8 +221,8 @@ begin
     begin
       Inc(LFailed);
       if LError = '' then
-        LError := 'причина неизвестна';
-      LErrors := LErrors + [Format('таблица %s: %s', [TABLE_NAMES[I], LError])];
+        LError := MHL('причина неизвестна', 'unknown reason');
+      LErrors := LErrors + [Format(MHL('таблица %s: %s', 'table %s: %s'), [TABLE_NAMES[I], LError])];
     end;
   end;
 
@@ -231,12 +234,12 @@ begin
   else if LFailed = Length(TABLE_NAMES) then
   begin
     LState := ssError;
-    LMessage := 'Не удалось получить сетевые таблицы: ' + string.Join('; ', LErrors) + '.';
+    LMessage := MHL('Не удалось получить сетевые таблицы: ', 'Failed to get network tables: ') + string.Join('; ', LErrors) + '.';
   end
   else
   begin
     LState := ssPartial;
-    LMessage := 'Часть сетевых таблиц недоступна: ' + string.Join('; ', LErrors) + '.';
+    LMessage := MHL('Часть сетевых таблиц недоступна: ', 'Some network tables are unavailable: ') + string.Join('; ', LErrors) + '.';
   end;
 
   Result := TMHCollectionResult.Create(TMHSourceStatus.Create(SourceIdValue, LState,
