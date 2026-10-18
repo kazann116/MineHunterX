@@ -100,6 +100,7 @@
         <DCCReference Include="..\Core\MineHunter.Core.CheckReport.pas"/>
         <DCCReference Include="..\Core\MineHunter.Analysis.Launches.pas"/>
         <DCCReference Include="..\Core\MineHunter.Analysis.Disks.pas"/>
+        <DCCReference Include="..\Core\MineHunter.Analysis.Acknowledge.pas"/>
         <DCCReference Include="..\Core\MineHunter.Core.FileScan.pas"/>
         <DCCReference Include="..\Core\MineHunter.Core.FileScan.WinApi.pas"/>
         <DCCReference Include="..\Core\MineHunter.Core.Updates.pas"/>

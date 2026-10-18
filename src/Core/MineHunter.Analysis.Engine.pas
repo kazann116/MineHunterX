@@ -104,6 +104,7 @@ type
     FLock: TCriticalSection;
     FSettings: TMHAnalyzerSettings;
     FExclusions: TArray<TMHExclusion>;
+    FAcknowledged: TArray<TMHAcknowledgement>;
     FCpuCount: Integer;
     FSelfPid: Cardinal;
     FStates: TObjectDictionary<string, TProcessState>;
@@ -128,6 +129,8 @@ type
     procedure SetSettings(const AValue: TMHAnalyzerSettings);
     function GetExclusions: TArray<TMHExclusion>;
     procedure SetExclusions(const AValue: TArray<TMHExclusion>);
+    function GetAcknowledged: TArray<TMHAcknowledgement>;
+    procedure SetAcknowledged(const AValue: TArray<TMHAcknowledgement>);
   public
     /// ALogicalCpuCount — для пересчёта «% машины» в «% ядра»;
     /// ASelfPid — собственный процесс, который не анализируется.
@@ -142,6 +145,8 @@ type
     function TotalSamples: Integer;
     property Settings: TMHAnalyzerSettings read GetSettings write SetSettings;
     property Exclusions: TArray<TMHExclusion> read GetExclusions write SetExclusions;
+    /// Находки, отмеченные проверенными: не возвращаются, пока не изменятся.
+    property Acknowledged: TArray<TMHAcknowledgement> read GetAcknowledged write SetAcknowledged;
   end;
 
   /// Причина замедления в понятном виде (для панели «Почему компьютер тормозит»).
@@ -170,7 +175,7 @@ implementation
 uses
   System.Math, System.StrUtils, System.Hash, System.DateUtils, System.Generics.Defaults,
   MineHunter.Core.Paths, MineHunter.Core.Lang, MineHunter.Analysis.Tamper, MineHunter.Analysis.Launches,
-  MineHunter.Analysis.Disks;
+  MineHunter.Analysis.Disks, MineHunter.Analysis.Acknowledge;
 
 const
   MINUTE = 1 / MinsPerDay;
@@ -285,6 +290,26 @@ begin
   FLock.Enter;
   try
     Result := Copy(FExclusions);
+  finally
+    FLock.Leave;
+  end;
+end;
+
+function TMHThreatAnalyzer.GetAcknowledged: TArray<TMHAcknowledgement>;
+begin
+  FLock.Enter;
+  try
+    Result := Copy(FAcknowledged);
+  finally
+    FLock.Leave;
+  end;
+end;
+
+procedure TMHThreatAnalyzer.SetAcknowledged(const AValue: TArray<TMHAcknowledgement>);
+begin
+  FLock.Enter;
+  try
+    FAcknowledged := Copy(AValue);
   finally
     FLock.Leave;
   end;
@@ -597,7 +622,7 @@ begin
         if Result = 0 then
           Result := CompareStr(A.Key, B.Key);
       end));
-    Result := LList.ToArray;
+    Result := MHFilterAcknowledged(LList.ToArray, GetAcknowledged);
   finally
     LSeen.Free;
     LList.Free;

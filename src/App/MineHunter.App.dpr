@@ -27,6 +27,7 @@ uses
   MineHunter.Core.CheckReport in '..\Core\MineHunter.Core.CheckReport.pas',
   MineHunter.Analysis.Launches in '..\Core\MineHunter.Analysis.Launches.pas',
   MineHunter.Analysis.Disks in '..\Core\MineHunter.Analysis.Disks.pas',
+  MineHunter.Analysis.Acknowledge in '..\Core\MineHunter.Analysis.Acknowledge.pas',
   MineHunter.Core.FileScan in '..\Core\MineHunter.Core.FileScan.pas',
   MineHunter.Core.FileScan.WinApi in '..\Core\MineHunter.Core.FileScan.WinApi.pas',
   MineHunter.Core.Updates in '..\Core\MineHunter.Core.Updates.pas',

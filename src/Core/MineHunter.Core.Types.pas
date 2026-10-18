@@ -488,6 +488,18 @@ type
     function Matches(const AKey, ASha256: string): Boolean;
   end;
 
+  /// Находка, отмеченная пользователем как проверенная («не беспокоить»).
+  TMHAcknowledgement = record
+  public
+    Key: string;
+    /// Отпечаток содержимого находки (MHFindingFingerprint).
+    Fingerprint: string;
+    /// Уровень на момент отметки: рост риска выше него снова даёт тревогу.
+    Level: TMHRiskLevel;
+    Title: string;
+    CreatedUtc: TDateTime;
+  end;
+
   /// Статистика ряда значений.
   TMHStat = record
   public

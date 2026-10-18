@@ -12,7 +12,7 @@ uses
   MineHunter.Core.Settings, MineHunter.Analysis.Engine, MineHunter.Analysis.Baseline,
   MineHunter.App.DashboardView, MineHunter.App.Tiles, MineHunter.Core.Quarantine,
   MineHunter.App.Notifier, MineHunter.Core.Inventory, MineHunter.Core.Energy, MineHunter.App.DisksPage,
-  MineHunter.App.ListViews,
+  MineHunter.App.ListViews, MineHunter.Analysis.Acknowledge,
   MineHunter.Core.CheckReport, MineHunter.Core.Updates;
 
 type
@@ -271,6 +271,11 @@ type
     FHistoryResultInventoryStart: TDateTime;
     FHistoryResultHours: Integer;
     FAppearanceBox: TGroupBox;
+    FAckButton: TButton;
+    FAckBox: TGroupBox;
+    FAckList: TListView;
+    FAckRemove: TButton;
+    FAckKeys: TArray<string>;
     FDisksSheet: TTabSheet;
     FDisksPage: TMHDisksPage;
     FCbLanguage: TComboBox;
@@ -288,6 +293,10 @@ type
     FUpdateCount: Integer;
     procedure CreateAppearanceControls;
     procedure CreateDisksPage;
+    procedure AckClick(Sender: TObject);
+    procedure AckRemoveClick(Sender: TObject);
+    procedure AckSelect(Sender: TObject; Item: TListItem; Selected: Boolean);
+    procedure CreateAcknowledgeControls;
     procedure FormMouseWheel(Sender: TObject; Shift: TShiftState; WheelDelta: Integer;
       MousePos: TPoint; var Handled: Boolean);
     procedure AppearanceChange(Sender: TObject);
@@ -397,6 +406,12 @@ type
     property QuarantineList: TListView read FQuarantineList;
     /// Строит план исправления выбранной находки, спрашивает подтверждение и выполняет.
     procedure RemediateSelected;
+    /// «Проверено, не беспокоить» для выбранной находки (с подтверждением).
+    procedure AcknowledgeSelected;
+    /// Снимает отметку «проверено» с выделенной строки в настройках.
+    procedure RemoveSelectedAcknowledgement;
+    property AckButton: TButton read FAckButton;
+    property AckList: TListView read FAckList;
     /// Перечитывает список карантина в настройках.
     procedure RefreshQuarantine;
     /// Восстановить / удалить навсегда выделенный в списке объект карантина.
@@ -576,6 +591,7 @@ begin
   CreateBackgroundSettings;
   CreateCheckAndChangesControls;
   CreateAppearanceControls;
+  CreateAcknowledgeControls;
   cbHistoryPeriod.Items.Clear;
   cbHistoryPeriod.Items.Add(MHTr('1 час'));
   cbHistoryPeriod.Items.Add(MHTr('6 часов'));
@@ -725,6 +741,129 @@ begin
     Exit;
   LBox.VertScrollBar.Position := LBox.VertScrollBar.Position - (WheelDelta * 60) div WHEEL_DELTA; // тачпад присылает доли шага
   Handled := True;
+end;
+
+procedure TMainForm.CreateAcknowledgeControls;
+begin
+  // Кнопка в карточке находки — рядом с «Исправить…».
+  FAckButton := TButton.Create(Self);
+  FAckButton.Parent := pnlCardButtons;
+  FAckButton.SetBounds(FRemediateButton.Left + FRemediateButton.Width + 8, FRemediateButton.Top, 300, 30);
+  FAckButton.Caption := MHL('Проверено, не беспокоить…', 'Checked, do not alert…');
+  FAckButton.Hint := MHL('Находка перестанет быть тревогой. Если в ней появится что-то новое (новое исключение, ' +
+    'значение политики, запись автозапуска) или риск вырастет — она вернётся.',
+    'The finding stops alerting. If something new appears in it (a new exclusion, policy value, autostart ' +
+    'entry) or the risk grows, it comes back.');
+  FAckButton.ShowHint := True;
+  FAckButton.Enabled := False;
+  FAckButton.OnClick := AckClick;
+
+  // Список отметок в настройках — под «Внешний вид и обновления».
+  FAckBox := TGroupBox.Create(Self);
+  FAckBox.Parent := sbSettings;
+  FAckBox.SetBounds(gbActionLog.Left, FAppearanceBox.Top + FAppearanceBox.Height + 16, gbActionLog.Width, 200);
+  FAckBox.Caption := MHL('Проверенные находки («не беспокоить»)', 'Checked findings ("do not alert")');
+  FAckList := TListView.Create(Self);
+  FAckList.Parent := FAckBox;
+  FAckList.SetBounds(12, 24, FAckBox.Width - 24, 126);
+  FAckList.ViewStyle := vsReport;
+  FAckList.ReadOnly := True;
+  FAckList.RowSelect := True;
+  FAckList.HideSelection := False;
+  with FAckList.Columns.Add do
+  begin
+    Caption := MHL('Находка', 'Finding');
+    Width := 360;
+  end;
+  with FAckList.Columns.Add do
+  begin
+    Caption := MHL('Уровень', 'Level');
+    Width := 140;
+  end;
+  with FAckList.Columns.Add do
+  begin
+    Caption := MHL('Когда', 'When');
+    Width := 110;
+  end;
+  FAckList.OnSelectItem := AckSelect;
+  FAckRemove := TButton.Create(Self);
+  FAckRemove.Parent := FAckBox;
+  FAckRemove.SetBounds(12, 158, 220, 30);
+  FAckRemove.Caption := MHL('Снять отметку', 'Remove the mark');
+  FAckRemove.Enabled := False;
+  FAckRemove.OnClick := AckRemoveClick;
+  RefreshExclusions;
+end;
+
+procedure TMainForm.AckClick(Sender: TObject);
+begin
+  AcknowledgeSelected;
+end;
+
+procedure TMainForm.AckRemoveClick(Sender: TObject);
+begin
+  RemoveSelectedAcknowledgement;
+end;
+
+procedure TMainForm.AckSelect(Sender: TObject; Item: TListItem; Selected: Boolean);
+begin
+  FAckRemove.Enabled := FAckList.Selected <> nil;
+end;
+
+procedure TMainForm.AcknowledgeSelected;
+var
+  LRow: TMHFindingRow;
+  LSettings: TMHAppSettings;
+  LRecord: TMHActionRecord;
+begin
+  if not SelectedFinding(LRow) or (LRow.Finding.Key = '') then
+    Exit;
+  if not FConfirm(Format(MHL('Отметить находку «%s» проверенной?' + sLineBreak + sLineBreak +
+    'Она перестанет быть тревогой. Если в ней появится что-то новое или риск вырастет, MineHunter X ' +
+    'снова сообщит о ней. Отметку можно снять в «Настройки → Проверенные находки».',
+    'Mark the finding "%s" as checked?' + sLineBreak + sLineBreak +
+    'It will stop alerting. If something new appears in it or the risk grows, MineHunter X will report it ' +
+    'again. You can remove the mark in Settings → Checked findings.'), [LRow.Finding.Title])) then
+    Exit;
+  LSettings := FServices.Settings;
+  MHSetAcknowledgement(LSettings, MHAcknowledgementFor(LRow.Finding, FServices.Clock.NowUtc));
+  ChangeSettings(LSettings);
+  if FServices.ActionLog <> nil then
+  begin
+    LRecord.TimestampUtc := FServices.Clock.NowUtc;
+    LRecord.Action := 'acknowledge';
+    LRecord.Target := LRow.Finding.Title;
+    LRecord.Result := MHL('Отмечено как проверенное', 'Marked as checked');
+    LRecord.Success := True;
+    try
+      FServices.ActionLog.LogAction(LRecord);
+    except
+      on E: Exception do
+        FServices.Logger.Log(llWarning, 'actions', E.Message);
+    end;
+  end;
+  FFindingsModel.Remove(LRow.Finding.Key);
+  FSelectedFindingKey := '';
+  lblCardStatus.Caption := MHL('Находка отмечена проверенной.', 'The finding is marked as checked.');
+  RefreshFindingsList;
+  RefreshExclusions;
+  RefreshActionLog;
+end;
+
+procedure TMainForm.RemoveSelectedAcknowledgement;
+var
+  LSettings: TMHAppSettings;
+  LKey: string;
+begin
+  if (FAckList = nil) or (FAckList.Selected = nil) then
+    Exit;
+  if FAckList.Selected.Index > High(FAckKeys) then
+    Exit;
+  LKey := FAckKeys[FAckList.Selected.Index];
+  LSettings := FServices.Settings;
+  if MHRemoveAcknowledgement(LSettings, LKey) then
+    ChangeSettings(LSettings);
+  RefreshExclusions;
 end;
 
 procedure TMainForm.CreateDisksPage;
@@ -1926,6 +2065,8 @@ begin
   btnExportCard.Enabled := LHasFinding;
   if FRemediateButton <> nil then
     FRemediateButton.Enabled := LHasFinding and FHasLastSnapshot and (FServices.Quarantine <> nil);
+  if FAckButton <> nil then
+    FAckButton.Enabled := LHasFinding and (LRow.Finding.Key <> '');
 end;
 
 procedure TMainForm.pnlCardChartResize(Sender: TObject);
@@ -2375,6 +2516,7 @@ procedure TMainForm.RefreshExclusions;
 var
   LExclusion: TMHExclusion;
   LItem: TListItem;
+  LAck: TMHAcknowledgement;
 begin
   lvExclusions.Items.BeginUpdate;
   try
@@ -2394,6 +2536,25 @@ begin
     lvExclusions.Items.EndUpdate;
   end;
   btnRemoveExclusion.Enabled := lvExclusions.Items.Count > 0;
+  if FAckList <> nil then
+  begin
+    FAckKeys := nil;
+    FAckList.Items.BeginUpdate;
+    try
+      FAckList.Items.Clear;
+      for LAck in FServices.Settings.Acknowledged do
+      begin
+        LItem := FAckList.Items.Add;
+        LItem.Caption := LAck.Title;
+        LItem.SubItems.Add(MHRiskLevelToString(LAck.Level));
+        LItem.SubItems.Add(FormatDateTime('dd.mm.yyyy', TTimeZone.Local.ToLocalTime(LAck.CreatedUtc)));
+        FAckKeys := FAckKeys + [LAck.Key];
+      end;
+    finally
+      FAckList.Items.EndUpdate;
+    end;
+    FAckRemove.Enabled := False;
+  end;
 end;
 
 procedure TMainForm.btnRemoveExclusionClick(Sender: TObject);

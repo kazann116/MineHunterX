@@ -64,6 +64,7 @@ type
     [Test] procedure Appearance_SettingsExportImportAndUpdates;
     [Test] procedure Disks_PageTablesScanAndActions;
     [Test] procedure Scroll_ListKeepsPositionAndWheelScrollsPage;
+    [Test] procedure Findings_AcknowledgeAndRemoveMark;
   end;
 
 implementation
@@ -1248,6 +1249,41 @@ begin
     SetWindowPos(FForm.Handle, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE or SWP_NOSIZE or SWP_NOACTIVATE);
     FForm.Hide;
   end;
+end;
+
+procedure TMainFormSmokeTests.Findings_AcknowledgeAndRemoveMark;
+var
+  LAsked: string;
+begin
+  FServices.Scanner.ScanOnce;
+  FForm.SelectFinding('test:finding');
+  Assert.IsTrue(FForm.AckButton.Enabled);
+  LAsked := '';
+  FForm.ConfirmAction :=
+    function(const AQuestion: string): Boolean
+    begin
+      LAsked := AQuestion;
+      Result := False;
+    end;
+  FForm.AcknowledgeSelected;
+  Assert.IsTrue(LAsked.Contains('test finding'), LAsked);
+  Assert.AreEqual(0, Integer(Length(FServices.Settings.Acknowledged)), 'Без подтверждения ничего не меняется');
+  FForm.ConfirmAction :=
+    function(const AQuestion: string): Boolean
+    begin
+      Result := True;
+    end;
+  FForm.SelectFinding('test:finding');
+  FForm.AcknowledgeSelected;
+  Assert.AreEqual(1, Integer(Length(FServices.Settings.Acknowledged)));
+  Assert.AreEqual('test:finding', FServices.Settings.Acknowledged[0].Key);
+  Assert.AreEqual(0, FForm.lvFindings.Items.Count, 'Находка сразу убрана из тревог');
+  Assert.AreEqual(1, FForm.AckList.Items.Count);
+  Assert.AreEqual('acknowledge', FServices.ActionLog.LoadActions(1)[0].Action);
+  FForm.AckList.Items[0].Selected := True;
+  FForm.RemoveSelectedAcknowledgement;
+  Assert.AreEqual(0, Integer(Length(FServices.Settings.Acknowledged)));
+  Assert.AreEqual(0, FForm.AckList.Items.Count);
 end;
 
 initialization

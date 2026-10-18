@@ -78,6 +78,8 @@ type
     FileScanWeekly: Boolean;
     /// Время завершения последней проверки файлов (UTC, 0 — не выполнялась).
     LastFileScanUtc: TDateTime;
+    /// Находки, отмеченные проверенными.
+    Acknowledged: TArray<TMHAcknowledgement>;
     Language: TMHUiLanguage;
     Theme: TMHUiTheme;
     class function Default: TMHAppSettings; static;
@@ -124,6 +126,11 @@ function MHAddExclusion(var ASettings: TMHAppSettings; const AExclusion: TMHExcl
 function MHRemoveExclusion(var ASettings: TMHAppSettings; const AKey, ASha256: string): Boolean;
 /// Есть ли исключение, действующее для программы (см. TMHExclusion.Matches).
 function MHIsExcluded(const ASettings: TMHAppSettings; const AKey, ASha256: string): Boolean;
+
+/// Добавляет или заменяет отметку «проверено» для ключа находки.
+procedure MHSetAcknowledgement(var ASettings: TMHAppSettings; const AAck: TMHAcknowledgement);
+/// Снимает отметку; False — её не было.
+function MHRemoveAcknowledgement(var ASettings: TMHAppSettings; const AKey: string): Boolean;
 
 /// Атомарная запись текста в UTF-8 без BOM: <имя>.tmp -> FlushFileBuffers ->
 /// MoveFileEx(REPLACE_EXISTING or WRITE_THROUGH). Каталог создаётся при
@@ -199,6 +206,7 @@ begin
   Result.CheckForUpdates := False;
   Result.FileScanWeekly := False;
   Result.LastFileScanUtc := 0;
+  Result.Acknowledged := nil;
   Result.Language := ulRussian;
   Result.Theme := utLight;
 end;
@@ -268,6 +276,34 @@ begin
     if SameExclusion(ASettings.Exclusions[I], Trim(AKey), Trim(ASha256)) then
     begin
       Delete(ASettings.Exclusions, I, 1);
+      Exit(True);
+    end;
+  Result := False;
+end;
+
+procedure MHSetAcknowledgement(var ASettings: TMHAppSettings; const AAck: TMHAcknowledgement);
+var
+  I: Integer;
+begin
+  if AAck.Key = '' then
+    Exit;
+  for I := 0 to High(ASettings.Acknowledged) do
+    if SameText(ASettings.Acknowledged[I].Key, AAck.Key) then
+    begin
+      ASettings.Acknowledged[I] := AAck;
+      Exit;
+    end;
+  ASettings.Acknowledged := ASettings.Acknowledged + [AAck];
+end;
+
+function MHRemoveAcknowledgement(var ASettings: TMHAppSettings; const AKey: string): Boolean;
+var
+  I: Integer;
+begin
+  for I := 0 to High(ASettings.Acknowledged) do
+    if SameText(ASettings.Acknowledged[I].Key, AKey) then
+    begin
+      Delete(ASettings.Acknowledged, I, 1);
       Exit(True);
     end;
   Result := False;
@@ -367,6 +403,7 @@ var
   LRoot, LAnalyzer, LThresholds, LItem: TJSONObject;
   LArray: TJSONArray;
   LExclusion: TMHExclusion;
+  LAck: TMHAcknowledgement;
 begin
   LRoot := TJSONObject.Create;
   try
@@ -414,6 +451,18 @@ begin
       LItem.AddPair('comment', LExclusion.Comment);
       LItem.AddPair('created', DateToJsonValue(LExclusion.CreatedUtc));
     end;
+    LArray := TJSONArray.Create;
+    LRoot.AddPair('acknowledged', LArray);
+    for LAck in ASettings.Acknowledged do
+    begin
+      LItem := TJSONObject.Create;
+      LArray.AddElement(LItem);
+      LItem.AddPair('key', LAck.Key);
+      LItem.AddPair('fingerprint', LAck.Fingerprint);
+      LItem.AddPair('level', TJSONNumber.Create(Ord(LAck.Level)));
+      LItem.AddPair('title', LAck.Title);
+      LItem.AddPair('created', DateToJsonValue(LAck.CreatedUtc));
+    end;
     // EncodeBelow32 обязателен: без него управляющие символы попадут в JSON как есть.
     Result := LRoot.ToJSON([TJSONAncestor.TJSONOutputOption.EncodeBelow32]);
   finally
@@ -428,6 +477,7 @@ var
   LValue: TJSONValue;
   LArray: TJSONArray;
   LExclusion: TMHExclusion;
+  LAck: TMHAcknowledgement;
   LDefaults: TMHAppSettings;
   I: Integer;
 begin
@@ -508,6 +558,27 @@ begin
         LExclusion.Comment := ReadString(LItemObj, 'comment');
         LExclusion.CreatedUtc := ReadDate(LItemObj, 'created');
         Result.Exclusions := Result.Exclusions + [LExclusion];
+      end;
+    end;
+
+    LValue := LRoot.GetValue('acknowledged');
+    if LValue is TJSONArray then
+    begin
+      LArray := TJSONArray(LValue);
+      for I := 0 to LArray.Count - 1 do
+      begin
+        if not (LArray.Items[I] is TJSONObject) then
+          Continue;
+        LItemObj := TJSONObject(LArray.Items[I]);
+        LAck := Default(TMHAcknowledgement);
+        LAck.Key := ReadString(LItemObj, 'key');
+        LAck.Fingerprint := ReadString(LItemObj, 'fingerprint');
+        LAck.Level := TMHRiskLevel(EnsureRange(ReadInt(LItemObj, 'level', Ord(rlHighlySuspicious)),
+          Ord(Low(TMHRiskLevel)), Ord(High(TMHRiskLevel))));
+        LAck.Title := ReadString(LItemObj, 'title');
+        LAck.CreatedUtc := ReadDate(LItemObj, 'created');
+        if (LAck.Key <> '') and (LAck.Fingerprint <> '') then
+          MHSetAcknowledgement(Result, LAck);
       end;
     end;
   finally

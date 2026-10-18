@@ -504,6 +504,7 @@ begin
   begin
     FAnalyzer.Settings := FSettings.Analyzer;
     FAnalyzer.Exclusions := FSettings.Exclusions;
+    FAnalyzer.Acknowledged := FSettings.Acknowledged;
   end;
   if FBaselines <> nil then
     FBaselines.LearningDays := FSettings.LearningDays;
