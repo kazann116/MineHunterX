@@ -1,4 +1,4 @@
-# MineHunter X — публичный API библиотеки
+﻿# MineHunter X — публичный API библиотеки
 
 Библиотека (`src/Core`, `src/Storage`) не зависит от VCL и может использоваться без интерфейса
 (служба, консольная утилита, другое приложение). Все модели — записи (`record`), время — UTC.
@@ -84,6 +84,7 @@ end;
 | `gpu` | `TMHGpuCollector` | `IMHGpuApi` (мощность — NVML, `mkGpuPowerWatts`) |
 | `sensors` | `TMHSensorCollector` | `IMHSensorApi` |
 | `tamper` | `TMHTamperCollector` | `IMHTamperApi` |
+| `netadapters` | `TMHNetAdapterCollector` | `IMHNetAdapterApi` (`GetIfTable2`; скорость — по разнице счётчиков) |
 | `disks` | `TMHDiskCollector` | `IMHDiskApi` (WMI Storage, PDH PhysicalDisk, разделы) |
 | `self` | `TMHSelfMonitorCollector` | — |
 
@@ -106,6 +107,11 @@ end;
 - `MHAnalyzeTamper` (`MineHunter.Analysis.Tamper`) — признаки вмешательства в защиту, группировка
   по папке/команде/политике, связь с файлами-артефактами.
 - `MHAnalyzeLaunches` (`MineHunter.Analysis.Launches`) — частые короткие запуски по `TMHSnapshot.Launches`.
+- `MHFindingFingerprint`, `MHIsAcknowledged`, `MHFilterAcknowledged` (`MineHunter.Analysis.Acknowledge`) —
+  «Проверено, не беспокоить»: отпечаток содержимого находки (`TMHAcknowledgement`); анализатор
+  (`TMHThreatAnalyzer.Acknowledged`) скрывает отмеченные, пока отпечаток совпадает и риск не вырос.
+- По устройствам: `TMHSnapshot.GpuAdapters` (`TMHGpuAdapterInfo` — по адаптеру LUID) и
+  `TMHSnapshot.NetAdapters` (`TMHNetAdapterInfo`).
 
 ## Хранилище, настройки, отчёты, действия
 
@@ -123,6 +129,8 @@ end;
 - `IMHInventoryHistory`, `MHInventoryFromSnapshot` (`MineHunter.Core.Inventory`) — учёт «что изменилось»
   (хранилище схемы 3).
 - `MHBuildCheckReport` (`MineHunter.Core.CheckReport`) — отчёт «Проверить сейчас».
+- `IMHLaunchHistory` (`MineHunter.Core.Launches`) — журнал запусков (`TMHLaunchRecord`, таблица `launches`
+  схемы 4, хранится не меньше 30 дней и не больше 300 000 записей); `TMHSnapshot.LaunchEvents`.
 - `MHAnalyzeDisks`, `MHVolumeSpaceLevel`, `MHTopIoProcesses` (`MineHunter.Analysis.Disks`) — правила по
   дискам и «кто грузит диск»; `TMHSnapshot.Disks` / `Volumes`, `TMHProcessInfo.IoRead` / `IoWrite`.
 - `TMHFileScanner`, `MHClassifyFile` (`MineHunter.Core.FileScan`, ФС — `IMHFileScanFs`) — проверка файлов

@@ -331,6 +331,46 @@ type
     Source: string;
   end;
 
+  /// Видеокарта (физический адаптер).
+  TMHGpuAdapterInfo = record
+  public
+    /// «luid_0x…_0x…_phys_N» — как в счётчиках GPU Engine.
+    Key: string;
+    Name: string;
+    /// Загрузка — самый загруженный движок, как в диспетчере задач.
+    HasLoad: Boolean;
+    LoadPercent: Double;
+    ComputePercent: Double;
+    HasMemory: Boolean;
+    MemoryBytes: Double;
+    HasTemperature: Boolean;
+    TemperatureCelsius: Double;
+    HasPower: Boolean;
+    PowerWatts: Double;
+  end;
+
+  TMHNetAdapterKind = (nkOther, nkEthernet, nkWifi, nkMobile, nkVirtual);
+
+  /// Сетевой адаптер.
+  TMHNetAdapterInfo = record
+  public
+    Index: Cardinal;
+    /// Имя подключения («Ethernet», «Беспроводная сеть»).
+    Name: string;
+    /// Описание устройства («Realtek PCIe GbE Family Controller»).
+    Description: string;
+    Kind: TMHNetAdapterKind;
+    /// Физическое устройство (не виртуальное и не туннель).
+    Physical: Boolean;
+    Connected: Boolean;
+    /// Скорость подключения, бит/с (0 — неизвестна).
+    LinkSpeedBps: UInt64;
+    /// Скорость приёма и передачи, байт/с (появляется со второго опроса).
+    HasRate: Boolean;
+    ReceiveBytesPerSec: Double;
+    SendBytesPerSec: Double;
+  end;
+
   /// Тип физического диска.
   TMHDiskMedia = (dmUnknown, dmHdd, dmSsd);
   /// Состояние диска по оценке Windows (Storage Management, учитывает SMART).
@@ -584,6 +624,9 @@ type
     Volumes: TArray<TMHVolumeInfo>;
     /// Запуски и завершения программ с прошлого снимка (для журнала запусков).
     LaunchEvents: TArray<TMHLaunchRecord>;
+    /// Видеокарты и сетевые адаптеры по отдельности.
+    GpuAdapters: TArray<TMHGpuAdapterInfo>;
+    NetAdapters: TArray<TMHNetAdapterInfo>;
     class function Create(ASequence: UInt64;
       ATimestampUtc: TDateTime): TMHSnapshot; static;
     function FindProcess(const AId: TMHProcessId; out AInfo: TMHProcessInfo): Boolean;
@@ -611,6 +654,8 @@ type
     Disks: TArray<TMHDiskInfo>;
     Volumes: TArray<TMHVolumeInfo>;
     LaunchEvents: TArray<TMHLaunchRecord>;
+    GpuAdapters: TArray<TMHGpuAdapterInfo>;
+    NetAdapters: TArray<TMHNetAdapterInfo>;
     /// Контекст передаётся, только если HasContext = True.
     HasContext: Boolean;
     Context: TMHContextInfo;

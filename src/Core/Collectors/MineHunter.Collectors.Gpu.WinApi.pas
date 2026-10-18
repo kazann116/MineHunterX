@@ -356,6 +356,9 @@ begin
           LSensor := Default(TMHGpuSensor);
           LSensor.AdapterName := LName;
           LSensor.Source := 'D3DKMT';
+          // Тот же вид, что в именах счётчиков GPU Engine: «luid_0x<старшая>_0x<младшая>_phys_N».
+          LSensor.Adapter := Format('luid_0x%.8x_0x%.8x_phys_%d',
+            [Cardinal(LAdapters[I].AdapterLuidHigh), LAdapters[I].AdapterLuidLow, J]);
           LPerf := Default(TD3DKMTAdapterPerfData);
           LPerf.PhysicalAdapterIndex := J;
           // 0 — драйвер не сообщает температуру.

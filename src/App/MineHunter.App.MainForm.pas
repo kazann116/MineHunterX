@@ -525,7 +525,7 @@ end;
 
 const
   PAGE_TITLES: array[TMHPage] of string =
-    ('Обзор', 'Процессы', 'Находки', 'Диски', 'Запуски', 'История', 'Настройки');
+    ('Обзор', 'Процессы', 'Находки', 'Устройства', 'Запуски', 'История', 'Настройки');
   PROCESS_COLUMN_TITLES: array[TMHProcessColumn] of string =
     ('Имя', 'PID', 'CPU', 'Память', 'GPU', 'Рабочий набор', 'Частная память', 'Потоки', 'Доступ',
      'Путь', 'Риск', 'Подпись');
@@ -1814,6 +1814,7 @@ begin
   UpdateTray;
   if FDisksPage <> nil then
   begin
+    FDisksPage.RecordHistory(ASnapshot);
     if GetActivePage = pgDisks then
       FDisksPage.UpdateSnapshot(ASnapshot);
     FDisksPage.CheckSchedule(ASnapshot);

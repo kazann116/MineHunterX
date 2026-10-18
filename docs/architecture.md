@@ -1,4 +1,4 @@
-# MineHunter X — архитектура
+﻿# MineHunter X — архитектура
 
 ## Слои
 
@@ -129,7 +129,8 @@ Composition root — `TMHAppServices.RegisterDefaults`. Тесты собира�
 | `sensors` | `MineHunter.Collectors.Sensors` (+ `.WinApi`) | Температура накопителей (`IOCTL_STORAGE_QUERY_PROPERTY`, `StorageDeviceTemperatureProperty`, без прав администратора; раз в минуту) и процессора из LibreHardwareMonitor/OpenHardwareMonitor (WMI, если запущены; раз в 10 с). |
 | `processes` | `MineHunter.Collectors.Processes` (+ `.WinApi`) | Все процессы: PID + время создания, PPID, имя, путь, CPU (дельта), рабочий набор, частная память, потоки, уровень доступа. |
 | `self` | `MineHunter.Collectors.SelfMonitor` | CPU, рабочий набор и приватная память самого MineHunter — для контроля требований «≤ 2% CPU» и «≤ 200 МБ». Первый замер — `ssPartial`: CPU считается по разнице двух замеров. |
-| `processevents` | `MineHunter.Collectors.ProcessEvents` (+ `.WinApi`) | Запуски и завершения процессов из ETW (провайдер Microsoft-Windows-Kernel-Process, сеанс реального времени, поля — через TDH). Сводка по программам за 30 минут (`TMHLaunchStat`): запуски, короткие запуски, родитель. Нужны права администратора, иначе — `ssUnavailable` с `RequiresElevation`. |
+| `processevents` | `MineHunter.Collectors.ProcessEvents` (+ `.WinApi`) | Запуски и завершения процессов из ETW (провайдер Microsoft-Windows-Kernel-Process, сеанс реального времени, поля — через TDH). Сводка по программам за 30 минут (`TMHLaunchStat`): запуски, короткие запуски, родитель. Записи журнала запусков (`TMHSnapshot.LaunchEvents`). Без прав администратора — опрос по изменениям списка процессов: `ssPartial` с `RequiresElevation`. |
+| `netadapters` | `MineHunter.Collectors.NetAdapters` (+ `.WinApi`) | Сетевые адаптеры по отдельности (`GetIfTable2`): тип, подключение, скорость канала, приём и передача по разнице счётчиков. Фильтры, loopback и виртуальные адаптеры без трафика отбрасываются. |
 | `tamper` | `MineHunter.Collectors.Tamper` (+ `.WinApi`) | Подписки WMI (`root\subscription`), исключения Defender (в т.ч. политики), IFEO/SilentProcessExit, hosts, ограничивающие политики; кэш 120 с, `IMHCacheInvalidation`. |
 
 ## Исправление, фон, отчёт, интерфейс

@@ -50,6 +50,8 @@ type
   /// Датчик видеокарты.
   TMHGpuSensor = record
     AdapterName: string;
+    /// «luid_0x…_0x…_phys_N» (D3DKMT); '' — неизвестен (NVML).
+    Adapter: string;
     /// 'D3DKMT' или 'NVML'.
     Source: string;
     HasTemperature: Boolean;
@@ -104,7 +106,7 @@ function MHIsComputeEngineType(const AEngineType: string): Boolean;
 implementation
 
 uses
-  System.Math,
+  System.Math, System.Generics.Defaults,
   MineHunter.Core.Lang;
 
 const
@@ -197,6 +199,123 @@ type
     HasMemory: Boolean;
   end;
 
+/// Видеокарты по отдельности из сумм по движкам («luid…_phys_N_eng_K») и датчиков.
+function BuildAdapters(APerEngine: TDictionary<string, Double>; ACompute: TDictionary<string, Boolean>;
+  const AAdapterMemory: TArray<TMHGpuCounterSample>; const ASensors: TArray<TMHGpuSensor>): TArray<TMHGpuAdapterInfo>;
+var
+  LList: TList<TMHGpuAdapterInfo>;
+  LInfo: TMHGpuAdapterInfo;
+  LPair: TPair<string, Double>;
+  LSample: TMHGpuCounterSample;
+  LSensor: TMHGpuSensor;
+  LAdapter: string;
+  LEng, I, J: Integer;
+  LPid: Cardinal;
+  LFound: Boolean;
+
+  function IndexOf(const AKey: string): Integer;
+  var
+    K: Integer;
+  begin
+    for K := 0 to LList.Count - 1 do
+      if SameText(LList[K].Key, AKey) then
+        Exit(K);
+    LInfo := Default(TMHGpuAdapterInfo);
+    LInfo.Key := AKey;
+    Result := LList.Add(LInfo);
+  end;
+
+begin
+  LList := TList<TMHGpuAdapterInfo>.Create;
+  try
+    for LPair in APerEngine do
+    begin
+      LEng := Pos('_eng_', LPair.Key.ToLower);
+      if LEng = 0 then
+        Continue;
+      I := IndexOf(Copy(LPair.Key, 1, LEng - 1));
+      LInfo := LList[I];
+      LInfo.HasLoad := True;
+      LInfo.LoadPercent := Max(LInfo.LoadPercent, Min(100.0, LPair.Value));
+      if ACompute.ContainsKey(LPair.Key) then
+        LInfo.ComputePercent := Max(LInfo.ComputePercent, Min(100.0, LPair.Value));
+      LList[I] := LInfo;
+    end;
+    for LSample in AAdapterMemory do
+    begin
+      // «luid_0x…_0x…_phys_0» — без PID.
+      LAdapter := LSample.InstanceName;
+      if not LAdapter.StartsWith('luid_', True) then
+      begin
+        if not MHParseGpuProcessMemoryInstance(LSample.InstanceName, LPid, LAdapter) then
+          Continue;
+      end;
+      I := IndexOf(LAdapter);
+      LInfo := LList[I];
+      LInfo.HasMemory := True;
+      LInfo.MemoryBytes := LInfo.MemoryBytes + Max(0.0, LSample.Value);
+      LList[I] := LInfo;
+    end;
+    // Имена и температура — из датчиков D3DKMT (по LUID); мощность NVML — по имени.
+    for LSensor in ASensors do
+    begin
+      LFound := False;
+      if LSensor.Adapter <> '' then
+        for J := 0 to LList.Count - 1 do
+          if SameText(LList[J].Key, LSensor.Adapter) then
+          begin
+            LInfo := LList[J];
+            LInfo.Name := LSensor.AdapterName;
+            if LSensor.HasTemperature then
+            begin
+              LInfo.HasTemperature := True;
+              LInfo.TemperatureCelsius := LSensor.TemperatureCelsius;
+            end;
+            LList[J] := LInfo;
+            LFound := True;
+          end;
+      if not LFound and (LSensor.Adapter = '') then
+        for J := 0 to LList.Count - 1 do
+          if (LList[J].Name <> '') and (SameText(LList[J].Name, LSensor.AdapterName) or
+             LList[J].Name.Contains(LSensor.AdapterName) or LSensor.AdapterName.Contains(LList[J].Name)) then
+          begin
+            LInfo := LList[J];
+            if LSensor.HasPower then
+            begin
+              LInfo.HasPower := True;
+              LInfo.PowerWatts := LSensor.PowerWatts;
+            end;
+            if LSensor.HasTemperature and not LInfo.HasTemperature then
+            begin
+              LInfo.HasTemperature := True;
+              LInfo.TemperatureCelsius := LSensor.TemperatureCelsius;
+            end;
+            LList[J] := LInfo;
+          end;
+    end;
+    // Безымянный адаптер без нагрузки и памяти — не видеокарта пользователя
+    // (Basic Render, удалённый дисплей); с нагрузкой остаётся всегда.
+    for J := LList.Count - 1 downto 0 do
+      if (LList[J].Name = '') and (LList[J].LoadPercent < 0.5) and (LList[J].MemoryBytes <= 0) then
+        LList.Delete(J);
+    for J := 0 to LList.Count - 1 do
+      if LList[J].Name = '' then
+      begin
+        LInfo := LList[J];
+        LInfo.Name := Format(MHL('Видеокарта %d', 'GPU %d'), [J]);
+        LList[J] := LInfo;
+      end;
+    LList.Sort(TComparer<TMHGpuAdapterInfo>.Construct(
+      function(const A, B: TMHGpuAdapterInfo): Integer
+      begin
+        Result := CompareText(A.Key, B.Key);
+      end));
+    Result := LList.ToArray;
+  finally
+    LList.Free;
+  end;
+end;
+
 function TMHGpuCollector.Collect(const ASnapshot: TMHSnapshot): TMHCollectionResult;
 var
   LNow: TDateTime;
@@ -224,7 +343,9 @@ var
   LState: TMHSourceState;
   LNotes: string;
   LReadings: TArray<TMHSensorReading>;
+  LAdapterInfos: TArray<TMHGpuAdapterInfo>;
 begin
+  LAdapterInfos := nil;
   LNow := ASnapshot.TimestampUtc;
   if LNow = 0 then
     LNow := FClock.NowUtc;
@@ -308,6 +429,9 @@ begin
       else
         LMetrics.Add(TMHMetric.NoData(mkGpuMemoryBytes, LNow));
 
+      // Видеокарты по отдельности: самый загруженный движок адаптера и его видеопамять.
+      LAdapterInfos := BuildAdapters(LPerEngine, LComputeEngines, LCounters.AdapterMemory, LSensors);
+
       // Процессы снимка без экземпляров GPU не используют видеокарту: 0%, как в диспетчере задач.
       for LInfo in ASnapshot.Processes do
       begin
@@ -382,6 +506,7 @@ begin
     Result.Metrics := LMetrics.ToArray;
     Result.ProcessDetails := LDetails.ToArray;
     Result.Sensors := LReadings;
+    Result.GpuAdapters := LAdapterInfos;
   finally
     LSeen.Free;
     LPids.Free;

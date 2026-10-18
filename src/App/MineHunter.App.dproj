@@ -110,6 +110,8 @@
         <DCCReference Include="MineHunter.App.Theme.pas"/>
         <DCCReference Include="..\Core\Collectors\MineHunter.Collectors.ProcessEvents.pas"/>
         <DCCReference Include="..\Core\Collectors\MineHunter.Collectors.Disks.pas"/>
+        <DCCReference Include="..\Core\Collectors\MineHunter.Collectors.NetAdapters.pas"/>
+        <DCCReference Include="..\Core\Collectors\MineHunter.Collectors.NetAdapters.WinApi.pas"/>
         <DCCReference Include="..\Core\Collectors\MineHunter.Collectors.Disks.WinApi.pas"/>
         <DCCReference Include="..\Core\Collectors\MineHunter.Collectors.ProcessEvents.WinApi.pas"/>
         <DCCReference Include="..\Core\MineHunter.Core.SelfAutostart.WinApi.pas"/>

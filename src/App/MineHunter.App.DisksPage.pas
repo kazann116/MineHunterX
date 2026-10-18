@@ -17,7 +17,8 @@ interface
 uses
   System.SysUtils, System.Classes, System.SyncObjs, Vcl.Controls, Vcl.StdCtrls, Vcl.ExtCtrls,
   Vcl.ComCtrls,
-  MineHunter.Core.Types, MineHunter.Core.FileScan, MineHunter.App.Bootstrap;
+  System.Generics.Collections,
+  MineHunter.Core.Types, MineHunter.Core.FileScan, MineHunter.App.Bootstrap, MineHunter.App.Chart;
 
 type
   TMHConfirmQuestion = reference to function(const AQuestion: string): Boolean;
@@ -52,6 +53,20 @@ type
     FScanRoots: TArray<string>;
     FLastProgressTick: UInt64;
     FInitializing: Boolean;
+    FTabs: TPageControl;
+    FDiskTab, FNetTab, FGpuTab: TTabSheet;
+    FNet: TListView;
+    FGpu: TListView;
+    FDiskChart, FNetChart, FGpuChart: TMHLineChart;
+    FHistory: TObjectDictionary<string, TMHSeriesBuffer>;
+    FDiskKeys, FNetKeys, FGpuKeys: TArray<string>;
+    FLastSnapshot: TMHSnapshot;
+    procedure AddPoint(const AKey: string; AKind: TMHMetricKind; AValue: Double; ATime: TDateTime);
+    procedure ShowChart(AChart: TMHLineChart; AList: TListView; const AKeys: TArray<string>;
+      const ATitle: string);
+    procedure DeviceSelect(Sender: TObject; Item: TListItem; Selected: Boolean);
+    procedure UpdateNetwork(const ASnapshot: TMHSnapshot);
+    procedure UpdateGpus(const ASnapshot: TMHSnapshot);
     function NewList(AParent: TWinControl; AAlign: TAlign; AHeight: Integer;
       const AColumns: array of string; const AWidths: array of Integer): TListView;
     function NewCaption(AParent: TWinControl; const AText: string): TLabel;
@@ -75,6 +90,14 @@ type
     destructor Destroy; override;
     /// Обновляет таблицы по снимку (вызывается на каждом цикле, когда страница видна).
     procedure UpdateSnapshot(const ASnapshot: TMHSnapshot);
+    /// Накопление истории для графиков устройств (на каждом цикле, даже если страница скрыта).
+    procedure RecordHistory(const ASnapshot: TMHSnapshot);
+    property NetView: TListView read FNet;
+    property GpuView: TListView read FGpu;
+    property Tabs: TPageControl read FTabs;
+    property DiskChart: TMHLineChart read FDiskChart;
+    property NetChart: TMHLineChart read FNetChart;
+    property GpuChart: TMHLineChart read FGpuChart;
     /// Запускает проверку файлов (ASilent — плановая: итог уведомлением).
     procedure StartScan(ASilent: Boolean = False);
     procedure CancelScan;
@@ -103,11 +126,16 @@ const
 implementation
 
 uses
-  Winapi.Windows, System.Math, System.DateUtils, System.Generics.Collections, System.Generics.Defaults,
+  Winapi.Windows, System.Math, System.DateUtils, System.Generics.Defaults,
   Vcl.Graphics,
   MineHunter.Core.Lang, MineHunter.Core.Settings, MineHunter.Core.Actions, MineHunter.Core.Interfaces,
   MineHunter.Core.FileScan.WinApi, MineHunter.Collectors.Disks, MineHunter.Analysis.Disks,
-  MineHunter.App.Display, MineHunter.App.ListViews;
+  MineHunter.App.Display, MineHunter.App.ListViews, MineHunter.Collectors.NetAdapters;
+
+const
+  /// Точек истории на устройство: 10 минут при опросе раз в 2 с.
+  HISTORY_POINTS = 300;
+  TOTAL_KEY = 'total';
 
 const
   THREAD_MODE_BACKGROUND_BEGIN = $00010000;
@@ -118,7 +146,8 @@ const
 constructor TMHDisksPage.Create(AOwner: TComponent; ASheet: TWinControl; AServices: TMHAppServices;
   const AConfirm: TMHConfirmQuestion; const ANotice: TMHNotice);
 var
-  LTop, LScanPanel, LButtons: TPanel;
+  LTop, LScanPanel, LButtons, LDiskPanel, LNetPanel, LGpuPanel: TPanel;
+  LHost: TWinControl;
 begin
   inherited Create(AOwner);
   FSheet := ASheet;
@@ -126,9 +155,25 @@ begin
   FConfirm := AConfirm;
   FNotice := ANotice;
   FScanFs := TMHWinFileScanFs.Create;
+  FHistory := TObjectDictionary<string, TMHSeriesBuffer>.Create([doOwnsValues]);
+
+  // Вкладки: диски (с проверкой файлов), сеть, видеокарты.
+  FTabs := TPageControl.Create(Self);
+  FTabs.Parent := ASheet;
+  FTabs.Align := alClient;
+  FDiskTab := TTabSheet.Create(Self);
+  FDiskTab.PageControl := FTabs;
+  FDiskTab.Caption := MHL('Диски', 'Disks');
+  FNetTab := TTabSheet.Create(Self);
+  FNetTab.PageControl := FTabs;
+  FNetTab.Caption := MHL('Сеть', 'Network');
+  FGpuTab := TTabSheet.Create(Self);
+  FGpuTab.PageControl := FTabs;
+  FGpuTab.Caption := MHL('Видеокарты', 'Graphics cards');
+  LHost := FDiskTab;
 
   LTop := TPanel.Create(Self);
-  LTop.Parent := ASheet;
+  LTop.Parent := LHost;
   LTop.Align := alTop;
   LTop.Height := 28;
   LTop.BevelOuter := bvNone;
@@ -140,26 +185,43 @@ begin
     '(часть сведений доступна только с правами администратора).', 'Disks are detected automatically. Wear, ' +
     'errors and power-on hours come from the disks themselves (some data requires administrator rights).');
 
-  NewCaption(ASheet, MHL('Физические диски', 'Physical disks'));
-  FDisks := NewList(ASheet, alTop, 130,
+  NewCaption(LHost, MHL('Физические диски (строка «Всего» — все диски вместе; выберите диск, чтобы увидеть график)',
+    'Physical disks ("Total" row is all disks together; select a disk to see its chart)'));
+  LDiskPanel := TPanel.Create(Self);
+  LDiskPanel.Parent := LHost;
+  LDiskPanel.Top := 10000;
+  LDiskPanel.Align := alTop;
+  LDiskPanel.Height := 160;
+  LDiskPanel.BevelOuter := bvNone;
+  FDiskChart := TMHLineChart.Create(Self);
+  FDiskChart.Parent := LDiskPanel;
+  FDiskChart.Align := alRight;
+  FDiskChart.Width := 340;
+  FDiskChart.SetFixedRange(0, 100);
+  FDiskChart.Formatter :=
+    function(AValue: Double): string
+    begin
+      Result := FormatFloat('0', AValue) + ' %';
+    end;
+  FDisks := NewList(LDiskPanel, alClient, 0,
     [MHL('Диск', 'Disk'), MHL('Модель', 'Model'), MHL('Тип', 'Type'), MHL('Объём', 'Size'),
      MHL('Разделы', 'Volumes'), MHL('Занят', 'Busy'), MHL('Чтение', 'Read'), MHL('Запись', 'Write'),
      MHL('Температура', 'Temperature'), MHL('Состояние', 'Health'), MHL('Износ', 'Wear'),
      MHL('Ошибки', 'Errors'), MHL('Наработка', 'Power-on')],
-    [40, 170, 175, 70, 70, 50, 75, 75, 135, 120, 55, 60, 75]);
-  NewCaption(ASheet, MHL('Разделы', 'Volumes'));
-  FVolumes := NewList(ASheet, alTop, 160,
+    [55, 170, 175, 70, 70, 50, 75, 75, 135, 120, 55, 60, 75]);
+  NewCaption(LHost, MHL('Разделы', 'Volumes'));
+  FVolumes := NewList(LHost, alTop, 160,
     [MHL('Раздел', 'Volume'), MHL('Метка', 'Label'), MHL('ФС', 'FS'), MHL('Всего', 'Total'),
      MHL('Свободно', 'Free'), MHL('Свободно, %', 'Free, %'), MHL('Диск', 'Disk'), MHL('Состояние', 'State')],
     [60, 160, 55, 80, 80, 80, 50, 260]);
-  NewCaption(ASheet, MHL('Кто больше всего читает и пишет (все операции ввода-вывода процесса)',
+  NewCaption(LHost, MHL('Кто больше всего читает и пишет (все операции ввода-вывода процесса)',
     'Top readers and writers (all process I/O)'));
-  FIo := NewList(ASheet, alTop, 110,
+  FIo := NewList(LHost, alTop, 110,
     [MHL('Программа', 'Program'), 'PID', MHL('Чтение', 'Read'), MHL('Запись', 'Write'), MHL('Путь', 'Path')],
     [170, 60, 90, 90, 480]);
 
   LScanPanel := TPanel.Create(Self);
-  LScanPanel.Parent := ASheet;
+  LScanPanel.Parent := LHost;
   LScanPanel.Top := 10000; // под таблицами дисков, над результатами проверки
   LScanPanel.Align := alTop;
   LScanPanel.Height := 64;
@@ -201,7 +263,7 @@ begin
     FLblScan.Caption := MHL('Файлы ещё не проверялись.', 'Files have not been scanned yet.');
 
   LButtons := TPanel.Create(Self);
-  LButtons.Parent := ASheet;
+  LButtons.Parent := LHost;
   LButtons.Align := alBottom;
   LButtons.Height := 40;
   LButtons.BevelOuter := bvNone;
@@ -220,10 +282,68 @@ begin
   FBtnAllow.SetBounds(384, 6, 180, 28);
   FBtnAllow.Caption := MHL('Это мой файл…', 'This is my file…');
   FBtnAllow.OnClick := AllowClick;
-  FHitsView := NewList(ASheet, alClient, 0,
+  FHitsView := NewList(LHost, alClient, 0,
     [MHL('Оценка', 'Score'), MHL('Уровень', 'Level'), MHL('Что найдено', 'What was found'), MHL('Файл', 'File'),
      MHL('Размер', 'Size')], [55, 140, 330, 480, 80]);
   FHitsView.OnSelectItem := HitSelect;
+  FDisks.OnSelectItem := DeviceSelect;
+
+  // Вкладка «Сеть».
+  LNetPanel := TPanel.Create(Self);
+  LNetPanel.Parent := FNetTab;
+  LNetPanel.Align := alTop;
+  LNetPanel.Height := 30;
+  LNetPanel.BevelOuter := bvNone;
+  with TLabel.Create(Self) do
+  begin
+    Parent := LNetPanel;
+    SetBounds(8, 8, 1000, 15);
+    ShowAccelChar := False;
+    Caption := MHL('Каждый сетевой адаптер отдельно и «Всего». Выберите адаптер — график приёма и передачи за 10 минут.',
+      'Each network adapter separately and "Total". Select an adapter to see receive and send over 10 minutes.');
+  end;
+  FNet := NewList(FNetTab, alTop, 300,
+    [MHL('Адаптер', 'Adapter'), MHL('Тип', 'Type'), MHL('Состояние', 'State'), MHL('Скорость канала', 'Link speed'),
+     MHL('Приём', 'Receive'), MHL('Передача', 'Send'), MHL('Устройство', 'Device')],
+    [170, 140, 110, 110, 95, 95, 360]);
+  FNet.OnSelectItem := DeviceSelect;
+  FNetChart := TMHLineChart.Create(Self);
+  FNetChart.Parent := FNetTab;
+  FNetChart.Align := alClient;
+  FNetChart.Formatter :=
+    function(AValue: Double): string
+    begin
+      Result := MHFormatRate(AValue);
+    end;
+
+  // Вкладка «Видеокарты».
+  LGpuPanel := TPanel.Create(Self);
+  LGpuPanel.Parent := FGpuTab;
+  LGpuPanel.Align := alTop;
+  LGpuPanel.Height := 30;
+  LGpuPanel.BevelOuter := bvNone;
+  with TLabel.Create(Self) do
+  begin
+    Parent := LGpuPanel;
+    SetBounds(8, 8, 1000, 15);
+    ShowAccelChar := False;
+    Caption := MHL('Каждая видеокарта отдельно и «Всего». Выберите видеокарту — график загрузки за 10 минут.',
+      'Each graphics card separately and "Total". Select a card to see its load over 10 minutes.');
+  end;
+  FGpu := NewList(FGpuTab, alTop, 200,
+    [MHL('Видеокарта', 'Graphics card'), MHL('Загрузка', 'Load'), MHL('Вычисления', 'Compute'),
+     MHL('Видеопамять', 'Video memory'), MHL('Температура', 'Temperature'), MHL('Мощность', 'Power')],
+    [300, 90, 100, 110, 110, 90]);
+  FGpu.OnSelectItem := DeviceSelect;
+  FGpuChart := TMHLineChart.Create(Self);
+  FGpuChart.Parent := FGpuTab;
+  FGpuChart.Align := alClient;
+  FGpuChart.SetFixedRange(0, 100);
+  FGpuChart.Formatter :=
+    function(AValue: Double): string
+    begin
+      Result := FormatFloat('0', AValue) + ' %';
+    end;
   UpdateButtons;
 end;
 
@@ -232,6 +352,7 @@ begin
   // Проверка отменяется (отмена проверяется на каждом файле) и дожидается завершения.
   FScanCancel := True;
   FreeAndNil(FScanThread);
+  FHistory.Free;
   inherited;
 end;
 
@@ -297,6 +418,8 @@ var
   LList: TList<TMHProcessInfo>;
   LInfo: TMHProcessInfo;
   I, LTop: Integer;
+  LTotalSize: Int64;
+  LTotalRead, LTotalWrite, LBusiest: Double;
 
   function IoTotal(const AInfo: TMHProcessInfo): Double;
   begin
@@ -308,6 +431,8 @@ var
   end;
 
 begin
+  FLastSnapshot := ASnapshot;
+  FDiskKeys := nil;
   LTop := MHListTopIndex(FDisks);
   FDisks.Items.BeginUpdate;
   try
@@ -363,6 +488,31 @@ begin
       else
         LItem.SubItems.Add(MH_NO_DATA);
       LItem.SubItems.Add(HoursText(LDisk.PowerOnHours));
+      FDiskKeys := FDiskKeys + ['disk:' + IntToStr(LDisk.Number)];
+    end;
+    if Length(ASnapshot.Disks) > 1 then
+    begin
+      LItem := FDisks.Items.Add;
+      LItem.Caption := MHL('Всего', 'Total');
+      LItem.SubItems.Add(Format(MHL('дисков: %d', 'disks: %d'), [Length(ASnapshot.Disks)]));
+      LItem.SubItems.Add('');
+      LTotalSize := 0;
+      LTotalRead := 0;
+      LTotalWrite := 0;
+      LBusiest := 0;
+      for LDisk in ASnapshot.Disks do
+      begin
+        LTotalSize := LTotalSize + LDisk.SizeBytes;
+        LTotalRead := LTotalRead + LDisk.ReadBytesPerSec;
+        LTotalWrite := LTotalWrite + LDisk.WriteBytesPerSec;
+        LBusiest := Max(LBusiest, LDisk.ActivePercent);
+      end;
+      LItem.SubItems.Add(MHFormatSize(LTotalSize));
+      LItem.SubItems.Add('');
+      LItem.SubItems.Add(FormatFloat('0', LBusiest) + ' %');
+      LItem.SubItems.Add(MHFormatRate(LTotalRead));
+      LItem.SubItems.Add(MHFormatRate(LTotalWrite));
+      FDiskKeys := FDiskKeys + ['disk:' + TOTAL_KEY];
     end;
   finally
     FDisks.Items.EndUpdate;
@@ -445,6 +595,237 @@ begin
     MHRestoreListTop(FIo, LTop);
   finally
     LList.Free;
+  end;
+  UpdateNetwork(ASnapshot);
+  UpdateGpus(ASnapshot);
+  ShowChart(FDiskChart, FDisks, FDiskKeys, MHL('Занятость диска (10 мин)', 'Disk busy (10 min)'));
+  ShowChart(FNetChart, FNet, FNetKeys, MHL('Приём + передача (10 мин)', 'Receive + send (10 min)'));
+  ShowChart(FGpuChart, FGpu, FGpuKeys, MHL('Загрузка видеокарты (10 мин)', 'GPU load (10 min)'));
+end;
+
+procedure TMHDisksPage.AddPoint(const AKey: string; AKind: TMHMetricKind; AValue: Double; ATime: TDateTime);
+var
+  LBuffer: TMHSeriesBuffer;
+begin
+  if not FHistory.TryGetValue(AKey, LBuffer) then
+  begin
+    LBuffer := TMHSeriesBuffer.Create(HISTORY_POINTS);
+    FHistory.Add(AKey, LBuffer);
+  end;
+  LBuffer.Add(TMHMetric.Available(AKind, AValue, ATime));
+end;
+
+procedure TMHDisksPage.RecordHistory(const ASnapshot: TMHSnapshot);
+var
+  LDisk: TMHDiskInfo;
+  LNet: TMHNetAdapterInfo;
+  LGpu: TMHGpuAdapterInfo;
+  LTime: TDateTime;
+  LMax, LSum: Double;
+  LAny: Boolean;
+begin
+  LTime := ASnapshot.TimestampUtc;
+  LMax := 0;
+  LAny := False;
+  for LDisk in ASnapshot.Disks do
+    if LDisk.HasActivity then
+    begin
+      AddPoint('disk:' + IntToStr(LDisk.Number), mkDiskActivePercent, LDisk.ActivePercent, LTime);
+      LMax := Max(LMax, LDisk.ActivePercent);
+      LAny := True;
+    end;
+  if LAny then
+    AddPoint('disk:' + TOTAL_KEY, mkDiskActivePercent, LMax, LTime);
+  LSum := 0;
+  LAny := False;
+  for LNet in ASnapshot.NetAdapters do
+    if LNet.HasRate then
+    begin
+      AddPoint('net:' + IntToStr(LNet.Index), mkNetworkBytesPerSec, LNet.ReceiveBytesPerSec + LNet.SendBytesPerSec, LTime);
+      LSum := LSum + LNet.ReceiveBytesPerSec + LNet.SendBytesPerSec;
+      LAny := True;
+    end;
+  if LAny then
+    AddPoint('net:' + TOTAL_KEY, mkNetworkBytesPerSec, LSum, LTime);
+  LMax := 0;
+  LAny := False;
+  for LGpu in ASnapshot.GpuAdapters do
+    if LGpu.HasLoad then
+    begin
+      AddPoint('gpu:' + LGpu.Key.ToLower, mkGpuPercent, LGpu.LoadPercent, LTime);
+      LMax := Max(LMax, LGpu.LoadPercent);
+      LAny := True;
+    end;
+  if LAny then
+    AddPoint('gpu:' + TOTAL_KEY, mkGpuPercent, LMax, LTime);
+end;
+
+procedure TMHDisksPage.ShowChart(AChart: TMHLineChart; AList: TListView; const AKeys: TArray<string>;
+  const ATitle: string);
+var
+  LKey: string;
+  LBuffer: TMHSeriesBuffer;
+  LIndex: Integer;
+begin
+  // Выбранное устройство, иначе — «Всего» (последняя строка), иначе — единственное.
+  LIndex := -1;
+  if (AList.Selected <> nil) and (AList.Selected.Index <= High(AKeys)) then
+    LIndex := AList.Selected.Index
+  else if Length(AKeys) > 0 then
+    LIndex := High(AKeys);
+  if LIndex < 0 then
+  begin
+    AChart.SetPoints(nil);
+    AChart.Title := ATitle;
+    Exit;
+  end;
+  LKey := AKeys[LIndex];
+  if FHistory.TryGetValue(LKey, LBuffer) then
+    AChart.SetPoints(LBuffer.ToArray)
+  else
+    AChart.SetPoints(nil);
+  AChart.Title := ATitle + ': ' + AList.Items[LIndex].Caption;
+end;
+
+procedure TMHDisksPage.DeviceSelect(Sender: TObject; Item: TListItem; Selected: Boolean);
+begin
+  if Selected then
+  begin
+    ShowChart(FDiskChart, FDisks, FDiskKeys, MHL('Занятость диска (10 мин)', 'Disk busy (10 min)'));
+    ShowChart(FNetChart, FNet, FNetKeys, MHL('Приём + передача (10 мин)', 'Receive + send (10 min)'));
+    ShowChart(FGpuChart, FGpu, FGpuKeys, MHL('Загрузка видеокарты (10 мин)', 'GPU load (10 min)'));
+  end;
+end;
+
+procedure TMHDisksPage.UpdateNetwork(const ASnapshot: TMHSnapshot);
+var
+  LNet: TMHNetAdapterInfo;
+  LItem: TListItem;
+  LTop: Integer;
+  LRx, LTx: Double;
+  LConnected: Integer;
+begin
+  FNetKeys := nil;
+  LTop := MHListTopIndex(FNet);
+  FNet.Items.BeginUpdate;
+  try
+    FNet.Items.Clear;
+    LRx := 0;
+    LTx := 0;
+    LConnected := 0;
+    for LNet in ASnapshot.NetAdapters do
+    begin
+      LItem := FNet.Items.Add;
+      LItem.Caption := LNet.Name;
+      LItem.SubItems.Add(MHNetAdapterKindToString(LNet.Kind));
+      if LNet.Connected then
+      begin
+        LItem.SubItems.Add(MHL('подключён', 'connected'));
+        Inc(LConnected);
+      end
+      else
+        LItem.SubItems.Add(MHL('не подключён', 'disconnected'));
+      LItem.SubItems.Add(MHFormatLinkSpeed(LNet.LinkSpeedBps));
+      if LNet.HasRate then
+      begin
+        LItem.SubItems.Add(MHFormatRate(LNet.ReceiveBytesPerSec));
+        LItem.SubItems.Add(MHFormatRate(LNet.SendBytesPerSec));
+        LRx := LRx + LNet.ReceiveBytesPerSec;
+        LTx := LTx + LNet.SendBytesPerSec;
+      end
+      else
+      begin
+        LItem.SubItems.Add(MH_NO_DATA);
+        LItem.SubItems.Add(MH_NO_DATA);
+      end;
+      LItem.SubItems.Add(LNet.Description);
+      FNetKeys := FNetKeys + ['net:' + IntToStr(LNet.Index)];
+    end;
+    if Length(ASnapshot.NetAdapters) > 0 then
+    begin
+      LItem := FNet.Items.Add;
+      LItem.Caption := MHL('Всего', 'Total');
+      LItem.SubItems.Add(Format(MHL('адаптеров: %d', 'adapters: %d'), [Length(ASnapshot.NetAdapters)]));
+      LItem.SubItems.Add(Format(MHL('подключено: %d', 'connected: %d'), [LConnected]));
+      LItem.SubItems.Add('');
+      LItem.SubItems.Add(MHFormatRate(LRx));
+      LItem.SubItems.Add(MHFormatRate(LTx));
+      FNetKeys := FNetKeys + ['net:' + TOTAL_KEY];
+    end;
+  finally
+    FNet.Items.EndUpdate;
+  end;
+  MHRestoreListTop(FNet, LTop);
+end;
+
+procedure TMHDisksPage.UpdateGpus(const ASnapshot: TMHSnapshot);
+var
+  LGpu: TMHGpuAdapterInfo;
+  LItem: TListItem;
+  LMaxLoad, LMaxCompute, LMemory, LPower: Double;
+  LHasPower: Boolean;
+begin
+  FGpuKeys := nil;
+  FGpu.Items.BeginUpdate;
+  try
+    FGpu.Items.Clear;
+    LMaxLoad := 0;
+    LMaxCompute := 0;
+    LMemory := 0;
+    LPower := 0;
+    LHasPower := False;
+    for LGpu in ASnapshot.GpuAdapters do
+    begin
+      LItem := FGpu.Items.Add;
+      LItem.Caption := LGpu.Name;
+      if LGpu.HasLoad then
+      begin
+        LItem.SubItems.Add(FormatFloat('0', LGpu.LoadPercent) + ' %');
+        LItem.SubItems.Add(FormatFloat('0', LGpu.ComputePercent) + ' %');
+      end
+      else
+      begin
+        LItem.SubItems.Add(MH_NO_DATA);
+        LItem.SubItems.Add(MH_NO_DATA);
+      end;
+      if LGpu.HasMemory then
+        LItem.SubItems.Add(MHFormatSize(LGpu.MemoryBytes))
+      else
+        LItem.SubItems.Add(MH_NO_DATA);
+      if LGpu.HasTemperature then
+        LItem.SubItems.Add(FormatFloat('0', LGpu.TemperatureCelsius) + ' °C')
+      else
+        LItem.SubItems.Add(MHL('не сообщает', 'not reported'));
+      if LGpu.HasPower then
+        LItem.SubItems.Add(FormatFloat('0', LGpu.PowerWatts) + MHL(' Вт', ' W'))
+      else
+        LItem.SubItems.Add(MH_NO_DATA);
+      LMaxLoad := Max(LMaxLoad, LGpu.LoadPercent);
+      LMaxCompute := Max(LMaxCompute, LGpu.ComputePercent);
+      LMemory := LMemory + LGpu.MemoryBytes;
+      if LGpu.HasPower then
+      begin
+        LPower := LPower + LGpu.PowerWatts;
+        LHasPower := True;
+      end;
+      FGpuKeys := FGpuKeys + ['gpu:' + LGpu.Key.ToLower];
+    end;
+    if Length(ASnapshot.GpuAdapters) > 1 then
+    begin
+      LItem := FGpu.Items.Add;
+      LItem.Caption := MHL('Всего', 'Total');
+      LItem.SubItems.Add(FormatFloat('0', LMaxLoad) + ' %');
+      LItem.SubItems.Add(FormatFloat('0', LMaxCompute) + ' %');
+      LItem.SubItems.Add(MHFormatSize(LMemory));
+      LItem.SubItems.Add('');
+      if LHasPower then
+        LItem.SubItems.Add(FormatFloat('0', LPower) + MHL(' Вт', ' W'))
+      else
+        LItem.SubItems.Add('');
+      FGpuKeys := FGpuKeys + ['gpu:' + TOTAL_KEY];
+    end;
+  finally
+    FGpu.Items.EndUpdate;
   end;
 end;
 

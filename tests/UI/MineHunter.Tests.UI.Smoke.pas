@@ -66,6 +66,7 @@ type
     [Test] procedure Scroll_ListKeepsPositionAndWheelScrollsPage;
     [Test] procedure Findings_AcknowledgeAndRemoveMark;
     [Test] procedure Launches_PageShowsJournalWithFilter;
+    [Test] procedure Devices_NetworkAndGpuTabsWithTotalsAndCharts;
   end;
 
 implementation
@@ -307,21 +308,22 @@ begin
     Assert.IsNotNull(LForm.Services);
     LForm.Services.Scanner.ScanOnce;
     Assert.AreEqual(1, LForm.SnapshotCount);
-    Assert.AreEqual(13, LForm.lvSources.Items.Count);
+    Assert.AreEqual(14, LForm.lvSources.Items.Count);
     Assert.AreEqual('system', LForm.lvSources.Items[0].Caption);
     Assert.AreEqual('processes', LForm.lvSources.Items[1].Caption);
     Assert.AreEqual('processevents', LForm.lvSources.Items[2].Caption);
     Assert.AreEqual('gpu', LForm.lvSources.Items[3].Caption);
     Assert.AreEqual('sensors', LForm.lvSources.Items[4].Caption);
-    Assert.AreEqual('disks', LForm.lvSources.Items[5].Caption);
-    Assert.AreEqual('autostart', LForm.lvSources.Items[6].Caption);
-    Assert.AreEqual('tamper', LForm.lvSources.Items[7].Caption);
-    Assert.AreEqual('network', LForm.lvSources.Items[8].Caption);
-    Assert.AreEqual('files', LForm.lvSources.Items[9].Caption);
-    Assert.AreEqual('context', LForm.lvSources.Items[10].Caption);
-    Assert.AreEqual('self', LForm.lvSources.Items[11].Caption);
-    Assert.AreEqual('storage', LForm.lvSources.Items[12].Caption);
-    Assert.AreEqual(MHFormatSourceState(ssSuccess), LForm.lvSources.Items[12].SubItems[0],
+    Assert.AreEqual('netadapters', LForm.lvSources.Items[5].Caption);
+    Assert.AreEqual('disks', LForm.lvSources.Items[6].Caption);
+    Assert.AreEqual('autostart', LForm.lvSources.Items[7].Caption);
+    Assert.AreEqual('tamper', LForm.lvSources.Items[8].Caption);
+    Assert.AreEqual('network', LForm.lvSources.Items[9].Caption);
+    Assert.AreEqual('files', LForm.lvSources.Items[10].Caption);
+    Assert.AreEqual('context', LForm.lvSources.Items[11].Caption);
+    Assert.AreEqual('self', LForm.lvSources.Items[12].Caption);
+    Assert.AreEqual('storage', LForm.lvSources.Items[13].Caption);
+    Assert.AreEqual(MHFormatSourceState(ssSuccess), LForm.lvSources.Items[13].SubItems[0],
       'История стандартной конфигурации записывается');
     Assert.IsNotNull(LForm.Services.Analyzer, 'Стандартный анализатор угроз подключён');
     Assert.IsNotNull(LForm.Services.Baselines, 'Профиль нормы подключён');
@@ -1117,7 +1119,8 @@ begin
         LForm.NavigateTo(pgDisks);
         Assert.AreEqual(Ord(pgDisks), Ord(LForm.ActivePage));
         LServices.Scanner.ScanOnce;
-        Assert.AreEqual(2, LPage.DisksView.Items.Count, 'Каждый физический диск — строкой');
+        Assert.AreEqual(3, LPage.DisksView.Items.Count, 'Каждый физический диск — строкой и «Всего»');
+        Assert.AreEqual('Всего', LPage.DisksView.Items[2].Caption);
         Assert.AreEqual('ST2000DM008', LPage.DisksView.Items[0].SubItems[0]);
         Assert.AreEqual('C: D:', LPage.DisksView.Items[0].SubItems[3]);
         Assert.AreEqual(3, LPage.VolumesView.Items.Count);
@@ -1321,6 +1324,64 @@ begin
   FForm.LaunchesPage.FilterEdit.Text := 'APP3'; // OnChange перечитывает журнал
   Assert.AreEqual(1, FForm.LaunchesPage.List.Items.Count);
   Assert.AreEqual('app3.exe', FForm.LaunchesPage.List.Items[0].SubItems[0]);
+end;
+
+procedure TMainFormSmokeTests.Devices_NetworkAndGpuTabsWithTotalsAndCharts;
+var
+  LPage: TMHDisksPage;
+  LSnapshot: TMHSnapshot;
+  LNet: TMHNetAdapterInfo;
+  LGpu: TMHGpuAdapterInfo;
+  I: Integer;
+begin
+  LPage := FForm.DisksPage;
+  Assert.AreEqual(3, LPage.Tabs.PageCount, 'Диски, сеть, видеокарты');
+  for I := 1 to 5 do
+  begin
+    LSnapshot := TMHSnapshot.Create(I, FServices.Clock.NowUtc + I / SecsPerDay);
+    LNet := Default(TMHNetAdapterInfo);
+    LNet.Index := 5;
+    LNet.Name := 'Ethernet';
+    LNet.Kind := nkEthernet;
+    LNet.Physical := True;
+    LNet.Connected := True;
+    LNet.LinkSpeedBps := 1000000000;
+    LNet.HasRate := True;
+    LNet.ReceiveBytesPerSec := 1000 * I;
+    LNet.SendBytesPerSec := 100;
+    LSnapshot.NetAdapters := [LNet];
+    LNet.Index := 6;
+    LNet.Name := 'Wi-Fi';
+    LNet.Kind := nkWifi;
+    LNet.ReceiveBytesPerSec := 500;
+    LSnapshot.NetAdapters := LSnapshot.NetAdapters + [LNet];
+    LGpu := Default(TMHGpuAdapterInfo);
+    LGpu.Key := 'luid_a_phys_0';
+    LGpu.Name := 'GPU A';
+    LGpu.HasLoad := True;
+    LGpu.LoadPercent := 10 * I;
+    LGpu.HasPower := True;
+    LGpu.PowerWatts := 50;
+    LSnapshot.GpuAdapters := [LGpu];
+    LGpu.Key := 'luid_b_phys_0';
+    LGpu.Name := 'GPU B';
+    LGpu.LoadPercent := 5;
+    LSnapshot.GpuAdapters := LSnapshot.GpuAdapters + [LGpu];
+    LPage.RecordHistory(LSnapshot);
+  end;
+  LPage.UpdateSnapshot(LSnapshot);
+  Assert.AreEqual(3, LPage.NetView.Items.Count, 'Два адаптера и «Всего»');
+  Assert.AreEqual('Всего', LPage.NetView.Items[2].Caption);
+  Assert.AreEqual('проводная (Ethernet)', LPage.NetView.Items[0].SubItems[0]);
+  Assert.AreEqual(3, LPage.GpuView.Items.Count, 'Две видеокарты и «Всего»');
+  Assert.AreEqual('50 %', LPage.GpuView.Items[2].SubItems[0], 'Всего — самая загруженная');
+  Assert.AreEqual('100 Вт', LPage.GpuView.Items[2].SubItems[4], 'Мощность суммируется');
+  // График по умолчанию — «Всего»; выбор строки — график этого устройства.
+  Assert.AreEqual(5, Integer(Length(LPage.NetChart.Points)));
+  Assert.IsTrue(LPage.NetChart.Title.Contains('Всего'));
+  LPage.GpuView.Items[1].Selected := True;
+  Assert.IsTrue(LPage.GpuChart.Title.Contains('GPU B'), LPage.GpuChart.Title);
+  Assert.AreEqual(5.0, LPage.GpuChart.Points[0].Value, 0.01);
 end;
 
 initialization

@@ -35,9 +35,12 @@ var
 
 const
   // Пары «русский текст» → «английский текст». Ключи — без символа «&».
-  TRANSLATIONS: array[0..223] of array[0..1] of string = (
+  TRANSLATIONS: array[0..226] of array[0..1] of string = (
     // Навигация и страницы
     ('Обзор', 'Overview'),
+    ('Устройства', 'Devices'),
+    ('Запуски', 'Launches'),
+    ('Диски', 'Disks'),
     ('Процессы', 'Processes'),
     ('Находки', 'Findings'),
     ('История', 'History'),

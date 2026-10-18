@@ -107,6 +107,7 @@
         <DCCReference Include="Unit\MineHunter.Tests.FileScan.pas"/>
         <DCCReference Include="Unit\MineHunter.Tests.Acknowledge.pas"/>
         <DCCReference Include="Unit\MineHunter.Tests.Launches.pas"/>
+        <DCCReference Include="Unit\MineHunter.Tests.Devices.pas"/>
         <DCCReference Include="..\src\Core\MineHunter.Core.Updates.pas"/>
         <DCCReference Include="..\src\Core\MineHunter.Core.Updates.WinApi.pas"/>
         <DCCReference Include="..\src\App\MineHunter.App.Lang.pas"/>
@@ -115,6 +116,8 @@
         <DCCReference Include="Unit\MineHunter.Tests.CoreLanguage.pas"/>
         <DCCReference Include="..\src\Core\Collectors\MineHunter.Collectors.ProcessEvents.pas"/>
         <DCCReference Include="..\src\Core\Collectors\MineHunter.Collectors.Disks.pas"/>
+        <DCCReference Include="..\src\Core\Collectors\MineHunter.Collectors.NetAdapters.pas"/>
+        <DCCReference Include="..\src\Core\Collectors\MineHunter.Collectors.NetAdapters.WinApi.pas"/>
         <DCCReference Include="..\src\Core\Collectors\MineHunter.Collectors.Disks.WinApi.pas"/>
         <DCCReference Include="Unit\MineHunter.Tests.Disks.pas"/>
         <DCCReference Include="..\src\Core\Collectors\MineHunter.Collectors.ProcessEvents.WinApi.pas"/>

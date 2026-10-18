@@ -444,6 +444,10 @@ begin
     ASnapshot.Volumes := ASnapshot.Volumes + AResult.Volumes;
   if Length(AResult.LaunchEvents) > 0 then
     ASnapshot.LaunchEvents := ASnapshot.LaunchEvents + AResult.LaunchEvents;
+  if Length(AResult.GpuAdapters) > 0 then
+    ASnapshot.GpuAdapters := ASnapshot.GpuAdapters + AResult.GpuAdapters;
+  if Length(AResult.NetAdapters) > 0 then
+    ASnapshot.NetAdapters := ASnapshot.NetAdapters + AResult.NetAdapters;
   // Контекст — от первого источника, который его передал.
   if AResult.HasContext and not ASnapshot.Context.Available then
   begin
