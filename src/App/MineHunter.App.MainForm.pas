@@ -12,6 +12,7 @@ uses
   MineHunter.Core.Settings, MineHunter.Analysis.Engine, MineHunter.Analysis.Baseline,
   MineHunter.App.DashboardView, MineHunter.App.Tiles, MineHunter.Core.Quarantine,
   MineHunter.App.Notifier, MineHunter.Core.Inventory, MineHunter.Core.Energy, MineHunter.App.DisksPage,
+  MineHunter.App.ListViews,
   MineHunter.Core.CheckReport, MineHunter.Core.Updates;
 
 type
@@ -287,6 +288,8 @@ type
     FUpdateCount: Integer;
     procedure CreateAppearanceControls;
     procedure CreateDisksPage;
+    procedure FormMouseWheel(Sender: TObject; Shift: TShiftState; WheelDelta: Integer;
+      MousePos: TPoint; var Handled: Boolean);
     procedure AppearanceChange(Sender: TObject);
     procedure UpdatesClick(Sender: TObject);
     procedure CheckUpdatesClick(Sender: TObject);
@@ -536,6 +539,7 @@ begin
     MHApplyTheme(FServices.Settings.Theme);
 
   CreateDisksPage;
+  OnMouseWheel := FormMouseWheel;
   lbNav.Items.Clear;
   for LPage := Low(TMHPage) to High(TMHPage) do
     lbNav.Items.Add(MHTr(PAGE_TITLES[LPage]));
@@ -700,6 +704,29 @@ begin
   end;
 end;
 
+procedure TMainForm.FormMouseWheel(Sender: TObject; Shift: TShiftState; WheelDelta: Integer;
+  MousePos: TPoint; var Handled: Boolean);
+var
+  LControl: TWinControl;
+  LBox: TScrollBox;
+begin
+  // Колесо над таблицей, списком или многострочным полем прокручивает их самих.
+  LControl := FindVCLWindow(MousePos);
+  if (LControl = nil) or (LControl is TCustomListView) or (LControl is TCustomMemo) or
+     (LControl is TCustomListBox) or ((LControl is TCustomComboBox) and TCustomComboBox(LControl).DroppedDown) then
+    Exit;
+  // Иначе — ближайшая прокручиваемая страница («Обзор», «Настройки»).
+  while (LControl <> nil) and not (LControl is TScrollBox) do
+    LControl := LControl.Parent;
+  if LControl = nil then
+    Exit;
+  LBox := TScrollBox(LControl);
+  if not LBox.VertScrollBar.IsScrollBarVisible then
+    Exit;
+  LBox.VertScrollBar.Position := LBox.VertScrollBar.Position - (WheelDelta * 60) div WHEEL_DELTA; // тачпад присылает доли шага
+  Handled := True;
+end;
+
 procedure TMainForm.CreateDisksPage;
 var
   LAction: TAction;
@@ -845,7 +872,9 @@ var
   LItem: TListItem;
   LStatus: TMHSourceStatus;
   LMessage: string;
+  LTop: Integer;
 begin
+  LTop := MHListTopIndex(lvSources);
   lvSources.Items.BeginUpdate;
   try
     lvSources.Items.Clear;
@@ -863,6 +892,7 @@ begin
   finally
     lvSources.Items.EndUpdate;
   end;
+  MHRestoreListTop(lvSources, LTop);
 end;
 
 procedure TMainForm.UpdateEvents;
@@ -870,13 +900,14 @@ var
   LVersion: UInt64;
   LEntries: TArray<TMHLogEntry>;
   LItem: TListItem;
-  I: Integer;
+  I, LTop: Integer;
 begin
   LVersion := FServices.LogReader.Version;
   if LVersion = FLastLogVersion then
     Exit;
   FLastLogVersion := LVersion;
   LEntries := FServices.LogReader.Entries;
+  LTop := MHListTopIndex(lvEvents);
   lvEvents.Items.BeginUpdate;
   try
     lvEvents.Items.Clear;
@@ -892,6 +923,9 @@ begin
   finally
     lvEvents.Items.EndUpdate;
   end;
+  // Новые события добавляются сверху; если пользователь читает старые — не сбрасываем прокрутку.
+  if LTop > 0 then
+    MHRestoreListTop(lvEvents, LTop);
 end;
 
 procedure TMainForm.UpdateProcesses(const ASnapshot: TMHSnapshot);
@@ -909,19 +943,23 @@ end;
 
 procedure TMainForm.RefreshProcessList;
 var
-  LIndex: Integer;
+  LIndex, LTop: Integer;
 begin
   FUpdatingProcesses := True;
+  // Обновление не должно возвращать прокрутку к выделенной строке: пользователь
+  // может смотреть другую часть таблицы.
+  LTop := MHListTopIndex(lvProcesses);
   try
     lvProcesses.Items.Count := FProcessModel.Count;
     LIndex := -1;
     if FHasSelectedProcess then
       LIndex := FProcessModel.IndexOf(FSelectedProcess);
-    lvProcesses.ItemIndex := LIndex;
-    if LIndex >= 0 then
+    MHSetItemIndexQuiet(lvProcesses, LIndex);
+    if (LIndex >= 0) and not lvProcesses.Items[LIndex].Focused then
       lvProcesses.Items[LIndex].Focused := True;
     lvProcesses.Invalidate;
   finally
+    MHRestoreListTop(lvProcesses, LTop);
     FUpdatingProcesses := False;
   end;
   lblProcCount.Caption := Format(MHTr('Показано %d из %d'),
@@ -1697,17 +1735,19 @@ end;
 
 procedure TMainForm.RefreshFindingsList;
 var
-  LIndex: Integer;
+  LIndex, LTop: Integer;
 begin
   FUpdatingFindings := True;
+  LTop := MHListTopIndex(lvFindings);
   try
     lvFindings.Items.Count := FFindingsModel.Count;
     LIndex := -1;
     if FSelectedFindingKey <> '' then
       LIndex := FFindingsModel.IndexOfKey(FSelectedFindingKey);
-    lvFindings.ItemIndex := LIndex;
+    MHSetItemIndexQuiet(lvFindings, LIndex);
     lvFindings.Invalidate;
   finally
+    MHRestoreListTop(lvFindings, LTop);
     FUpdatingFindings := False;
   end;
   if FFindingsModel.Mode = fmActive then

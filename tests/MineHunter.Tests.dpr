@@ -60,6 +60,7 @@ uses
   MineHunter.Core.SelfAutostart.WinApi in '..\src\Core\MineHunter.Core.SelfAutostart.WinApi.pas',
   MineHunter.App.Notifier in '..\src\App\MineHunter.App.Notifier.pas',
   MineHunter.App.DisksPage in '..\src\App\MineHunter.App.DisksPage.pas',
+  MineHunter.App.ListViews in '..\src\App\MineHunter.App.ListViews.pas',
   MineHunter.Tests.Background in 'Unit\MineHunter.Tests.Background.pas',
   MineHunter.Collectors.Gpu in '..\src\Core\Collectors\MineHunter.Collectors.Gpu.pas',
   MineHunter.Collectors.Gpu.WinApi in '..\src\Core\Collectors\MineHunter.Collectors.Gpu.WinApi.pas',

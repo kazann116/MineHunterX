@@ -119,6 +119,7 @@
         <DCCReference Include="..\src\Core\MineHunter.Core.SelfAutostart.WinApi.pas"/>
         <DCCReference Include="..\src\App\MineHunter.App.Notifier.pas"/>
         <DCCReference Include="..\src\App\MineHunter.App.DisksPage.pas"/>
+        <DCCReference Include="..\src\App\MineHunter.App.ListViews.pas"/>
         <DCCReference Include="Unit\MineHunter.Tests.Background.pas"/>
         <DCCReference Include="..\src\Core\Collectors\MineHunter.Collectors.Gpu.pas"/>
         <DCCReference Include="..\src\Core\Collectors\MineHunter.Collectors.Gpu.WinApi.pas"/>

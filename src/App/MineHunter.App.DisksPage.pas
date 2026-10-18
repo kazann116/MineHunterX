@@ -107,7 +107,7 @@ uses
   Vcl.Graphics,
   MineHunter.Core.Lang, MineHunter.Core.Settings, MineHunter.Core.Actions, MineHunter.Core.Interfaces,
   MineHunter.Core.FileScan.WinApi, MineHunter.Collectors.Disks, MineHunter.Analysis.Disks,
-  MineHunter.App.Display;
+  MineHunter.App.Display, MineHunter.App.ListViews;
 
 const
   THREAD_MODE_BACKGROUND_BEGIN = $00010000;
@@ -296,7 +296,7 @@ var
   LNumber: Integer;
   LList: TList<TMHProcessInfo>;
   LInfo: TMHProcessInfo;
-  I: Integer;
+  I, LTop: Integer;
 
   function IoTotal(const AInfo: TMHProcessInfo): Double;
   begin
@@ -308,6 +308,7 @@ var
   end;
 
 begin
+  LTop := MHListTopIndex(FDisks);
   FDisks.Items.BeginUpdate;
   try
     FDisks.Items.Clear;
@@ -366,7 +367,9 @@ begin
   finally
     FDisks.Items.EndUpdate;
   end;
+  MHRestoreListTop(FDisks, LTop);
 
+  LTop := MHListTopIndex(FVolumes);
   FVolumes.Items.BeginUpdate;
   try
     FVolumes.Items.Clear;
@@ -396,6 +399,7 @@ begin
   finally
     FVolumes.Items.EndUpdate;
   end;
+  MHRestoreListTop(FVolumes, LTop);
 
   LList := TList<TMHProcessInfo>.Create;
   try
@@ -419,6 +423,7 @@ begin
           LB := LB + B.IoWrite.Value;
         Result := CompareValue(LB, LA);
       end));
+    LTop := MHListTopIndex(FIo);
     FIo.Items.BeginUpdate;
     try
       FIo.Items.Clear;
@@ -437,6 +442,7 @@ begin
     finally
       FIo.Items.EndUpdate;
     end;
+    MHRestoreListTop(FIo, LTop);
   finally
     LList.Free;
   end;

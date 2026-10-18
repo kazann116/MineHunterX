@@ -49,6 +49,7 @@ MinVersion=10.0
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 UninstallDisplayIcon={app}\{#AppExe}
+SetupIconFile={#RepoDir}\src\App\MineHunter.ico
 UninstallDisplayName={#AppName}
 ; Restart Manager закрывает запущенную программу перед обновлением (она завершается
 ; по WM_QUERYENDSESSION, а не прячется в трей).

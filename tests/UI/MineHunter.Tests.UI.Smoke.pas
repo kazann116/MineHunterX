@@ -63,6 +63,7 @@ type
     [Test] procedure CheckNow_ReportChangesEnergyAndPrice;
     [Test] procedure Appearance_SettingsExportImportAndUpdates;
     [Test] procedure Disks_PageTablesScanAndActions;
+    [Test] procedure Scroll_ListKeepsPositionAndWheelScrollsPage;
   end;
 
 implementation
@@ -80,6 +81,7 @@ uses
   MineHunter.Core.SelfAutostart, MineHunter.Core.CheckReport, MineHunter.Core.Updates,
   MineHunter.Tests.Appearance, MineHunter.Tests.Disks, MineHunter.Tests.FileScan,
   MineHunter.Collectors.Disks, MineHunter.Core.FileScan, MineHunter.App.DisksPage,
+  Winapi.CommCtrl, Vcl.Forms, Vcl.Controls, System.Types, MineHunter.App.ListViews,
   MineHunter.Tests.Fakes;
 
 var
@@ -1189,6 +1191,62 @@ begin
     GTestDiskApi := nil;
     GTestQuarantineOps := nil;
     CheckSynchronize(0);
+  end;
+end;
+
+procedure TMainFormSmokeTests.Scroll_ListKeepsPositionAndWheelScrollsPage;
+var
+  I, LTop: Integer;
+  LRect: TRect;
+  LHandled: Boolean;
+  LPoint: TPoint;
+begin
+  // Окно показывается: прокрутка и поиск окна под курсором требуют настоящей геометрии.
+  FForm.SetBounds(0, 0, 1200, 800);
+  FForm.Show;
+  // Поверх остальных окон: поиск окна под курсором (WindowFromPoint) не должен попасть в чужое окно.
+  SetWindowPos(FForm.Handle, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE or SWP_NOSIZE or SWP_NOACTIVATE);
+  try
+    for I := 1 to 150 do
+      FProcApi.Add(1000 + I, 4, Format('proc%.3d.exe', [I]), FAKE_BASE_TIME + UInt64(I));
+    FServices.Scanner.ScanOnce;
+    FForm.NavigateTo(pgProcesses);
+    Application.ProcessMessages;
+    Assert.IsTrue(FForm.lvProcesses.Items.Count > 100, 'строк: ' + IntToStr(FForm.lvProcesses.Items.Count));
+    // Пользователь выбрал строку вверху и прокрутил таблицу вниз.
+    FForm.lvProcesses.ItemIndex := 1;
+    Application.ProcessMessages;
+    Assert.IsTrue(ListView_GetItemRect(FForm.lvProcesses.Handle, 0, LRect, LVIR_BOUNDS), 'прямоугольник строки');
+    ListView_Scroll(FForm.lvProcesses.Handle, 0, (LRect.Bottom - LRect.Top) * 80);
+    LTop := MHListTopIndex(FForm.lvProcesses);
+    Assert.IsTrue(LTop > 50, IntToStr(LTop));
+    FServices.Scanner.ScanOnce;
+    Application.ProcessMessages;
+    Assert.AreEqual(LTop, MHListTopIndex(FForm.lvProcesses), 'Обновление не возвращает к выделенной строке');
+    Assert.AreEqual(1, FForm.lvProcesses.ItemIndex, 'Выделение сохранено');
+
+    // Колесо над «Обзором» прокручивает страницу.
+    FForm.NavigateTo(pgDashboard);
+    FForm.ClientHeight := 400; // страница не помещается — появляется полоса прокрутки
+    Application.ProcessMessages;
+    FForm.sbDashboard.VertScrollBar.Position := 0;
+    LPoint := FForm.sbDashboard.ClientToScreen(Point(FForm.sbDashboard.ClientWidth div 2, 20));
+    LHandled := False;
+    FForm.OnMouseWheel(FForm, [], -WHEEL_DELTA, LPoint, LHandled);
+    Assert.IsTrue(LHandled, 'колесо не обработано; под курсором: ' + FindVCLWindow(LPoint).ClassName + ', полоса: ' +
+      BoolToStr(FForm.sbDashboard.VertScrollBar.IsScrollBarVisible, True));
+    Assert.IsTrue(FForm.sbDashboard.VertScrollBar.Position > 0, 'Страница прокручена колесом');
+    // Над таблицей колесо достаётся самой таблице.
+    LPoint := FForm.lvSources.ClientToScreen(Point(10, 10));
+    if FindVCLWindow(LPoint) = FForm.lvSources then
+    begin
+      LHandled := False;
+      FForm.OnMouseWheel(FForm, [], -WHEEL_DELTA, LPoint, LHandled);
+      Assert.IsFalse(LHandled);
+    end;
+  finally
+    SetWindowPos(FForm.Handle, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE or SWP_NOSIZE or SWP_NOACTIVATE);
+    FForm.Hide;
   end;
 end;
 
