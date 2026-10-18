@@ -12,11 +12,11 @@ uses
   MineHunter.Core.Settings, MineHunter.Analysis.Engine, MineHunter.Analysis.Baseline,
   MineHunter.App.DashboardView, MineHunter.App.Tiles, MineHunter.Core.Quarantine,
   MineHunter.App.Notifier, MineHunter.Core.Inventory, MineHunter.Core.Energy, MineHunter.App.DisksPage,
-  MineHunter.App.ListViews, MineHunter.Analysis.Acknowledge,
+  MineHunter.App.ListViews, MineHunter.App.LaunchesPage, MineHunter.Analysis.Acknowledge,
   MineHunter.Core.CheckReport, MineHunter.Core.Updates;
 
 type
-  TMHPage = (pgDashboard, pgProcesses, pgFindings, pgDisks, pgHistory, pgSettings);
+  TMHPage = (pgDashboard, pgProcesses, pgFindings, pgDisks, pgLaunches, pgHistory, pgSettings);
 
   /// Подтверждение опасного действия пользователем.
   TMHConfirmFunc = reference to function(const AQuestion: string): Boolean;
@@ -278,6 +278,7 @@ type
     FAckKeys: TArray<string>;
     FDisksSheet: TTabSheet;
     FDisksPage: TMHDisksPage;
+    FLaunchesPage: TMHLaunchesPage;
     FCbLanguage: TComboBox;
     FCbTheme: TComboBox;
     FChkUpdates: TCheckBox;
@@ -455,6 +456,8 @@ type
     property UpdateHttp: IMHHttpGet read FUpdateHttp write FUpdateHttp;
     /// Страница «Диски» (диски, разделы, проверка файлов).
     property DisksPage: TMHDisksPage read FDisksPage;
+    /// Страница «Запуски» (журнал запусков программ).
+    property LaunchesPage: TMHLaunchesPage read FLaunchesPage;
     property LanguageCombo: TComboBox read FCbLanguage;
     property ThemeCombo: TComboBox read FCbTheme;
     property UpdatesCheckBox: TCheckBox read FChkUpdates;
@@ -522,7 +525,7 @@ end;
 
 const
   PAGE_TITLES: array[TMHPage] of string =
-    ('Обзор', 'Процессы', 'Находки', 'Диски', 'История', 'Настройки');
+    ('Обзор', 'Процессы', 'Находки', 'Диски', 'Запуски', 'История', 'Настройки');
   PROCESS_COLUMN_TITLES: array[TMHProcessColumn] of string =
     ('Имя', 'PID', 'CPU', 'Память', 'GPU', 'Рабочий набор', 'Частная память', 'Потоки', 'Доступ',
      'Путь', 'Риск', 'Подпись');
@@ -717,6 +720,8 @@ begin
     pgDisks:
       if FHasLastSnapshot then
         FDisksPage.UpdateSnapshot(FLastSnapshot);
+    pgLaunches:
+      FLaunchesPage.Reload;
   end;
 end;
 
@@ -869,6 +874,7 @@ end;
 procedure TMainForm.CreateDisksPage;
 var
   LAction: TAction;
+  LSheet: TTabSheet;
 begin
   // Вкладка создаётся в коде и ставится на место, соответствующее pgDisks.
   FDisksSheet := TTabSheet.Create(Self);
@@ -890,11 +896,23 @@ begin
         FTray.ShowBalloonHint;
       end;
     end);
-  // Навигация: Ctrl+4 — «Диски», Ctrl+5 — «История», Ctrl+6 — «Настройки».
+  // Журнал запусков — следующая страница.
+  LSheet := TTabSheet.Create(Self);
+  LSheet.PageControl := pcMain;
+  LSheet.PageIndex := Ord(pgLaunches);
+  LSheet.Caption := PAGE_TITLES[pgLaunches];
+  FLaunchesPage := TMHLaunchesPage.Create(Self, LSheet, FServices);
+  // Навигация: Ctrl+4 — «Диски», Ctrl+5 — «Запуски», Ctrl+6 — «История», Ctrl+7 — «Настройки».
   actNavHistory.Tag := Ord(pgHistory);
-  actNavHistory.ShortCut := ShortCut(Ord('5'), [ssCtrl]);
+  actNavHistory.ShortCut := ShortCut(Ord('6'), [ssCtrl]);
   actNavSettings.Tag := Ord(pgSettings);
-  actNavSettings.ShortCut := ShortCut(Ord('6'), [ssCtrl]);
+  actNavSettings.ShortCut := ShortCut(Ord('7'), [ssCtrl]);
+  LAction := TAction.Create(Self);
+  LAction.ActionList := alMain;
+  LAction.Caption := PAGE_TITLES[pgLaunches];
+  LAction.Tag := Ord(pgLaunches);
+  LAction.ShortCut := ShortCut(Ord('5'), [ssCtrl]);
+  LAction.OnExecute := actNavExecute;
   LAction := TAction.Create(Self);
   LAction.ActionList := alMain;
   LAction.Caption := PAGE_TITLES[pgDisks];
@@ -1800,6 +1818,8 @@ begin
       FDisksPage.UpdateSnapshot(ASnapshot);
     FDisksPage.CheckSchedule(ASnapshot);
   end;
+  if FLaunchesPage <> nil then
+    FLaunchesPage.UpdateSnapshot(ASnapshot, GetActivePage = pgLaunches);
   // Отчёт «Проверить сейчас» — по первому снимку, собранному после сброса кэшей.
   if FCheckPending and (FServices.Scanner.LastRefreshSequence > FCheckBaseline) and
      (ASnapshot.Sequence >= FServices.Scanner.LastRefreshSequence) then

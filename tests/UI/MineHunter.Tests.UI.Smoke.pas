@@ -65,6 +65,7 @@ type
     [Test] procedure Disks_PageTablesScanAndActions;
     [Test] procedure Scroll_ListKeepsPositionAndWheelScrollsPage;
     [Test] procedure Findings_AcknowledgeAndRemoveMark;
+    [Test] procedure Launches_PageShowsJournalWithFilter;
   end;
 
 implementation
@@ -1284,6 +1285,42 @@ begin
   FForm.RemoveSelectedAcknowledgement;
   Assert.AreEqual(0, Integer(Length(FServices.Settings.Acknowledged)));
   Assert.AreEqual(0, FForm.AckList.Items.Count);
+end;
+
+procedure TMainFormSmokeTests.Launches_PageShowsJournalWithFilter;
+var
+  LSnapshot: TMHSnapshot;
+  LRecord: TMHLaunchRecord;
+  LNow: TDateTime;
+  I: Integer;
+begin
+  LNow := FServices.Clock.NowUtc;
+  LSnapshot := TMHSnapshot.Create(1, LNow);
+  for I := 1 to 3 do
+  begin
+    LRecord := Default(TMHLaunchRecord);
+    LRecord.Pid := 1000 + I;
+    LRecord.CreateTime := UInt64(133000000000000000) + UInt64(I) * UInt64(10000000);
+    LRecord.StartUtc := LNow - I / MinsPerDay;
+    LRecord.Name := Format('app%d.exe', [I]);
+    LRecord.ImagePath := 'C:\Apps\' + LRecord.Name;
+    LRecord.ParentName := 'explorer.exe';
+    LRecord.Source := 'poll';
+    if I = 2 then
+      LRecord.ExitUtc := LRecord.StartUtc + 5 / SecsPerDay;
+    LSnapshot.LaunchEvents := LSnapshot.LaunchEvents + [LRecord];
+  end;
+  FServices.Storage.SaveSnapshot(LSnapshot);
+  FForm.NavigateTo(pgLaunches);
+  Assert.AreEqual(Ord(pgLaunches), Ord(FForm.ActivePage));
+  Assert.AreEqual(3, FForm.LaunchesPage.List.Items.Count);
+  Assert.AreEqual('app1.exe', FForm.LaunchesPage.List.Items[0].SubItems[0], 'Новые первыми');
+  Assert.AreEqual('explorer.exe', FForm.LaunchesPage.List.Items[0].SubItems[2]);
+  Assert.AreEqual('работает', FForm.LaunchesPage.List.Items[0].SubItems[3]);
+  Assert.IsTrue(FForm.LaunchesPage.List.Items[1].SubItems[3].Contains('5'), 'app2 работала 5 с');
+  FForm.LaunchesPage.FilterEdit.Text := 'APP3'; // OnChange перечитывает журнал
+  Assert.AreEqual(1, FForm.LaunchesPage.List.Items.Count);
+  Assert.AreEqual('app3.exe', FForm.LaunchesPage.List.Items[0].SubItems[0]);
 end;
 
 initialization

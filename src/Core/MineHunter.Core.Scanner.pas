@@ -442,6 +442,8 @@ begin
     ASnapshot.Disks := ASnapshot.Disks + AResult.Disks;
   if Length(AResult.Volumes) > 0 then
     ASnapshot.Volumes := ASnapshot.Volumes + AResult.Volumes;
+  if Length(AResult.LaunchEvents) > 0 then
+    ASnapshot.LaunchEvents := ASnapshot.LaunchEvents + AResult.LaunchEvents;
   // Контекст — от первого источника, который его передал.
   if AResult.HasContext and not ASnapshot.Context.Available then
   begin

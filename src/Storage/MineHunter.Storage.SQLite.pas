@@ -37,7 +37,7 @@ uses
   System.SysUtils, System.SyncObjs,
   FireDAC.Comp.Client,
   MineHunter.Core.Types, MineHunter.Core.Interfaces, MineHunter.Analysis.Baseline,
-  MineHunter.Core.Inventory;
+  MineHunter.Core.Inventory, MineHunter.Core.Launches;
 
 type
   EMHStorageError = class(EMHError);
@@ -57,9 +57,12 @@ type
   end;
 
   TMHSQLiteRepository = class(TInterfacedObject, IMHRepository, IMHMetricHistory,
-    IMHFindingHistory, IMHActionLog, IMHBaselineStore, IMHInventoryHistory)
+    IMHFindingHistory, IMHActionLog, IMHBaselineStore, IMHInventoryHistory, IMHLaunchHistory)
   public const
-    SchemaVersion = 3;
+    SchemaVersion = 4;
+    /// Журнал запусков: срок хранения не меньше этого и не больше MaxLaunchRows строк.
+    MinLaunchRetentionDays = 30;
+    MaxLaunchRows = 300000;
     /// Учёт хранится не меньше этого срока (даже при короткой истории снимков).
     MinInventoryRetentionDays = 30;
     MaxInventoryRows = 20000;
@@ -78,7 +81,9 @@ type
     FInsertSnapshot, FInsertMetric, FInsertSource, FInsertProcess: TFDQuery;
     FUpsertFinding, FInsertAction: TFDQuery;
     FUpsertInventory: TFDQuery;
+    FUpsertLaunch: TFDQuery;
     FLastInventoryUtc: TDateTime;
+    procedure SaveLaunchesLocked(const ASnapshot: TMHSnapshot);
     procedure SaveInventoryLocked(const ASnapshot: TMHSnapshot);
     procedure Log(ALevel: TMHLogLevel; const AMessage: string);
     procedure CheckOpen;
@@ -145,6 +150,10 @@ type
     function LoadInventoryChanges(ASinceUtc: TDateTime; AMaxCount: Integer): TArray<TMHInventoryItem>;
     function InventoryStartUtc: TDateTime;
 
+    { IMHLaunchHistory }
+    function LoadLaunches(AFromUtc, AToUtc: TDateTime; const AFilter: string;
+      AMaxCount: Integer): TArray<TMHLaunchRecord>;
+
     { IMHBaselineStore }
     /// Сохраняет (заменяет) профиль нормы контекста ABaseline.Context.
     procedure SaveBaseline(const ABaseline: TMHBaseline);
@@ -197,7 +206,7 @@ const
   // Для 64-битных значений используется тип BIGINT: FireDAC читает колонки
   // SQLite типа INTEGER как 32-битные. id INTEGER PRIMARY KEY — псевдоним rowid.
 
-  MIGRATIONS: array[1..3] of string = (
+  MIGRATIONS: array[1..4] of string = (
     'CREATE TABLE snapshots(' +
     '  id INTEGER PRIMARY KEY,' +
     '  seq BIGINT NOT NULL,' +
@@ -268,8 +277,33 @@ const
     '  last_seen BIGINT NOT NULL,' +
     '  PRIMARY KEY(kind, key)) WITHOUT ROWID;' +
     'CREATE INDEX ix_inventory_first_seen ON inventory(first_seen);' +
-    'CREATE INDEX ix_inventory_last_seen ON inventory(last_seen);'
+    'CREATE INDEX ix_inventory_last_seen ON inventory(last_seen);',
+
+    // 4: журнал запусков программ.
+    'CREATE TABLE launches(' +
+    '  pid BIGINT NOT NULL,' +
+    '  create_time BIGINT NOT NULL,' +
+    '  start_ts BIGINT NOT NULL,' +
+    '  exit_ts BIGINT,' +
+    '  name TEXT NOT NULL,' +
+    '  image_path TEXT,' +
+    '  parent_pid BIGINT NOT NULL,' +
+    '  parent_name TEXT,' +
+    '  source TEXT NOT NULL,' +
+    '  PRIMARY KEY(pid, create_time)) WITHOUT ROWID;' +
+    'CREATE INDEX ix_launches_start ON launches(start_ts);'
   );
+
+  // Запуск и завершение одного экземпляра приходят разными записями: объединяем.
+  UPSERT_LAUNCH_SQL =
+    'INSERT INTO launches(pid, create_time, start_ts, exit_ts, name, image_path, parent_pid, parent_name, source) ' +
+    'VALUES (:pid, :ct, :start, :exit, :name, :path, :ppid, :pname, :source) ' +
+    'ON CONFLICT(pid, create_time) DO UPDATE SET ' +
+    '  exit_ts = COALESCE(excluded.exit_ts, launches.exit_ts),' +
+    '  name = CASE WHEN excluded.name <> '''' THEN excluded.name ELSE launches.name END,' +
+    '  image_path = COALESCE(excluded.image_path, launches.image_path),' +
+    '  parent_pid = CASE WHEN excluded.parent_pid <> 0 THEN excluded.parent_pid ELSE launches.parent_pid END,' +
+    '  parent_name = COALESCE(excluded.parent_name, launches.parent_name)';
 
   UPSERT_INVENTORY_SQL =
     'INSERT INTO inventory(kind, key, name, details, image_path, first_seen, last_seen) ' +
@@ -500,6 +534,7 @@ begin
   FreeAndNil(FUpsertFinding);
   FreeAndNil(FInsertAction);
   FreeAndNil(FUpsertInventory);
+  FreeAndNil(FUpsertLaunch);
   if FConnection <> nil then
   begin
     try
@@ -616,6 +651,7 @@ begin
   FInsertAction := NewQuery('INSERT INTO actions(ts, action, target, result, success) ' +
     'VALUES (:ts, :action, :target, :result, :success)');
   FUpsertInventory := NewQuery(UPSERT_INVENTORY_SQL);
+  FUpsertLaunch := NewQuery(UPSERT_LAUNCH_SQL);
 end;
 
 function TMHSQLiteRepository.GetOptions: TMHStorageOptions;
@@ -734,6 +770,7 @@ begin
         FInsertProcess.ExecSQL;
       end;
       SaveInventoryLocked(ASnapshot);
+      SaveLaunchesLocked(ASnapshot);
       FConnection.Commit;
     except
       FConnection.Rollback;
@@ -776,6 +813,10 @@ begin
   LDeleted := FConnection.ExecSQL('DELETE FROM snapshots WHERE ts < :cutoff', [LCutoff]);
   LOther := FConnection.ExecSQL('DELETE FROM findings WHERE last_seen < :cutoff', [LCutoff]);
   // Учёт «что изменилось» мал и нужен за неделю и дольше — хранится не меньше месяца.
+  Inc(LOther, FConnection.ExecSQL('DELETE FROM launches WHERE start_ts < :cutoff',
+    [MHUtcToUnixMs(FClock.NowUtc - Max(FOptions.RetentionDays, MinLaunchRetentionDays))]));
+  Inc(LOther, FConnection.ExecSQL('DELETE FROM launches WHERE (pid, create_time) IN (SELECT pid, create_time ' +
+    'FROM launches ORDER BY start_ts DESC LIMIT -1 OFFSET :n)', [MaxLaunchRows]));
   Inc(LOther, FConnection.ExecSQL('DELETE FROM inventory WHERE last_seen < :cutoff',
     [MHUtcToUnixMs(FClock.NowUtc - Max(FOptions.RetentionDays, MinInventoryRetentionDays))]));
   Inc(LOther, FConnection.ExecSQL('DELETE FROM inventory WHERE (kind, key) IN (SELECT kind, key FROM inventory ' +
@@ -1161,6 +1202,94 @@ begin
   end;
 end;
 
+procedure TMHSQLiteRepository.SaveLaunchesLocked(const ASnapshot: TMHSnapshot);
+var
+  LRecord: TMHLaunchRecord;
+  LExit, LPath, LParent: Variant;
+begin
+  for LRecord in ASnapshot.LaunchEvents do
+  begin
+    if (LRecord.CreateTime = 0) or (LRecord.StartUtc = 0) then
+      Continue;
+    if LRecord.ExitUtc > 0 then
+      LExit := MHUtcToUnixMs(LRecord.ExitUtc)
+    else
+      LExit := Null;
+    if FOptions.StoreProcessPaths and (LRecord.ImagePath <> '') then
+      LPath := LRecord.ImagePath
+    else
+      LPath := Null;
+    if LRecord.ParentName <> '' then
+      LParent := LRecord.ParentName
+    else
+      LParent := Null;
+    SetParam(FUpsertLaunch, 'pid', Int64(LRecord.Pid), ftLargeint);
+    SetParam(FUpsertLaunch, 'ct', Int64(LRecord.CreateTime), ftLargeint);
+    SetParam(FUpsertLaunch, 'start', MHUtcToUnixMs(LRecord.StartUtc), ftLargeint);
+    SetParam(FUpsertLaunch, 'exit', LExit, ftLargeint);
+    SetParam(FUpsertLaunch, 'name', LRecord.Name, ftWideString);
+    SetParam(FUpsertLaunch, 'path', LPath, ftWideString);
+    SetParam(FUpsertLaunch, 'ppid', Int64(LRecord.ParentPid), ftLargeint);
+    SetParam(FUpsertLaunch, 'pname', LParent, ftWideString);
+    SetParam(FUpsertLaunch, 'source', LRecord.Source, ftWideString);
+    FUpsertLaunch.ExecSQL;
+  end;
+end;
+
+function TMHSQLiteRepository.LoadLaunches(AFromUtc, AToUtc: TDateTime; const AFilter: string;
+  AMaxCount: Integer): TArray<TMHLaunchRecord>;
+var
+  LQuery: TFDQuery;
+  LList: TList<TMHLaunchRecord>;
+  LRecord: TMHLaunchRecord;
+  LSql: string;
+begin
+  if AMaxCount <= 0 then
+    Exit(nil);
+  FLock.Enter;
+  try
+    CheckOpen;
+    LSql := 'SELECT pid, create_time, start_ts, exit_ts, name, image_path, parent_pid, parent_name, source ' +
+      'FROM launches WHERE start_ts >= :f AND start_ts <= :t';
+    if AFilter <> '' then
+      LSql := LSql + ' AND (instr(lower(name), :q) > 0 OR instr(lower(COALESCE(image_path, '''')), :q) > 0 ' +
+        'OR instr(lower(COALESCE(parent_name, '''')), :q) > 0)';
+    LSql := LSql + ' ORDER BY start_ts DESC LIMIT :n';
+    LQuery := NewQuery(LSql);
+    LList := TList<TMHLaunchRecord>.Create;
+    try
+      LQuery.ParamByName('f').AsLargeInt := MHUtcToUnixMs(AFromUtc);
+      LQuery.ParamByName('t').AsLargeInt := MHUtcToUnixMs(AToUtc);
+      if AFilter <> '' then
+        LQuery.ParamByName('q').AsWideString := AFilter.ToLower;
+      LQuery.ParamByName('n').AsInteger := AMaxCount;
+      LQuery.Open;
+      while not LQuery.Eof do
+      begin
+        LRecord := Default(TMHLaunchRecord);
+        LRecord.Pid := Cardinal(LQuery.Fields[0].AsLargeInt);
+        LRecord.CreateTime := UInt64(LQuery.Fields[1].AsLargeInt);
+        LRecord.StartUtc := MHUnixMsToUtc(LQuery.Fields[2].AsLargeInt);
+        if not LQuery.Fields[3].IsNull then
+          LRecord.ExitUtc := MHUnixMsToUtc(LQuery.Fields[3].AsLargeInt);
+        LRecord.Name := LQuery.Fields[4].AsString;
+        LRecord.ImagePath := LQuery.Fields[5].AsString;
+        LRecord.ParentPid := Cardinal(LQuery.Fields[6].AsLargeInt);
+        LRecord.ParentName := LQuery.Fields[7].AsString;
+        LRecord.Source := LQuery.Fields[8].AsString;
+        LList.Add(LRecord);
+        LQuery.Next;
+      end;
+      Result := LList.ToArray;
+    finally
+      LList.Free;
+      LQuery.Free;
+    end;
+  finally
+    FLock.Leave;
+  end;
+end;
+
 function TMHSQLiteRepository.InventoryStartUtc: TDateTime;
 var
   LValue: Variant;
@@ -1235,6 +1364,7 @@ begin
     FConnection.ExecSQL('DELETE FROM snapshots');
     FConnection.ExecSQL('DELETE FROM findings');
     FConnection.ExecSQL('DELETE FROM inventory');
+    FConnection.ExecSQL('DELETE FROM launches');
     FLastInventoryUtc := 0;
     RunPragma('PRAGMA incremental_vacuum');
     RunPragma('PRAGMA wal_checkpoint(TRUNCATE)');

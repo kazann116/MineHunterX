@@ -192,7 +192,8 @@ begin
   LCollector := TMHProcessEventCollector.Create(LSource, TFakeClock.Create(FAKE_NOW));
   LIntf := LCollector;
   LResult := LCollector.Collect(Snap(FAKE_NOW));
-  Assert.AreEqual(Ord(ssUnavailable), Ord(LResult.Status.State));
+  // ETW недоступен, но журнал запусков ведётся по опросу списка процессов — частично.
+  Assert.AreEqual(Ord(ssPartial), Ord(LResult.Status.State));
   Assert.IsTrue(LResult.Status.RequiresElevation);
   Assert.IsTrue(LResult.Status.Message.Contains('администратора'));
   LCollector.Collect(Snap(IncHour(FAKE_NOW, 2)));

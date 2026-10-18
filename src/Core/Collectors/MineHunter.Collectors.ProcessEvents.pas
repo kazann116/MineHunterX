@@ -83,6 +83,12 @@ type
     /// Ключ экземпляра → индекс в FLaunches (для сопоставления завершения).
     FIndex: TDictionary<string, Integer>;
     FNames: TDictionary<Cardinal, string>;
+    /// Записи журнала запусков с прошлого сбора.
+    FRecords: TList<TMHLaunchRecord>;
+    /// Без ETW: экземпляры процессов из прошлого снимка (журнал по опросу).
+    FPolled: TDictionary<string, TMHLaunchRecord>;
+    FPollInitialized: Boolean;
+    procedure PollLaunches(const ASnapshot: TMHSnapshot; ANowUtc: TDateTime);
     procedure EnsureStarted(ANowUtc: TDateTime);
     procedure Apply(const AEvent: TMHProcessEvent);
     procedure Prune(ANowUtc: TDateTime);
@@ -121,6 +127,8 @@ begin
   FLaunches := TList<TLaunch>.Create;
   FIndex := TDictionary<string, Integer>.Create;
   FNames := TDictionary<Cardinal, string>.Create;
+  FRecords := TList<TMHLaunchRecord>.Create;
+  FPolled := TDictionary<string, TMHLaunchRecord>.Create;
 end;
 
 destructor TMHProcessEventCollector.Destroy;
@@ -131,6 +139,8 @@ begin
     except
       // Остановка сеанса при завершении программы не должна мешать освобождению.
     end;
+  FPolled.Free;
+  FRecords.Free;
   FNames.Free;
   FIndex.Free;
   FLaunches.Free;
@@ -191,7 +201,39 @@ var
   LLaunch: TMHProcessEventCollector.TLaunch;
   LIndex: Integer;
   LParentName: string;
+  LRecord: TMHLaunchRecord;
 begin
+  // Журнал запусков: каждое событие — запись (запуск или завершение).
+  LRecord := Default(TMHLaunchRecord);
+  LRecord.Pid := AEvent.Pid;
+  LRecord.CreateTime := AEvent.CreateTime;
+  LRecord.StartUtc := MHFileTimeToUtc(AEvent.CreateTime);
+  if LRecord.StartUtc = 0 then
+    LRecord.StartUtc := AEvent.TimestampUtc;
+  LRecord.Source := 'etw';
+  case AEvent.Kind of
+    pekStart:
+      begin
+        LRecord.ImagePath := AEvent.ImagePath;
+        LRecord.Name := ExtractFileName(AEvent.ImagePath);
+        LRecord.ParentPid := AEvent.ParentPid;
+        if FNames.TryGetValue(AEvent.ParentPid, LParentName) then
+          LRecord.ParentName := LParentName;
+        if (AEvent.CreateTime <> 0) and (LRecord.Name <> '') then
+          FRecords.Add(LRecord);
+      end;
+    pekStop:
+      if AEvent.CreateTime <> 0 then
+      begin
+        LRecord.ExitUtc := AEvent.TimestampUtc;
+        if FNames.TryGetValue(AEvent.Pid, LParentName) then
+          LRecord.Name := LParentName;
+        FRecords.Add(LRecord);
+      end;
+  end;
+  if FRecords.Count > MaxTracked then
+    FRecords.DeleteRange(0, FRecords.Count - MaxTracked);
+
   case AEvent.Kind of
     pekStart:
       begin
@@ -337,6 +379,53 @@ begin
   end;
 end;
 
+procedure TMHProcessEventCollector.PollLaunches(const ASnapshot: TMHSnapshot; ANowUtc: TDateTime);
+var
+  LCurrent: TDictionary<string, TMHLaunchRecord>;
+  LInfo: TMHProcessInfo;
+  LRecord: TMHLaunchRecord;
+  LPair: TPair<string, TMHLaunchRecord>;
+  LKey: string;
+begin
+  // Без прав администратора ETW недоступен: запуски видны по появлению процессов
+  // в списке между опросами (процессы короче интервала опроса не попадут в журнал).
+  LCurrent := TDictionary<string, TMHLaunchRecord>.Create;
+  try
+    for LInfo in ASnapshot.Processes do
+      if LInfo.Id.HasCreateTime and (LInfo.Id.Pid > 4) then
+      begin
+        LRecord := Default(TMHLaunchRecord);
+        LRecord.Pid := LInfo.Id.Pid;
+        LRecord.CreateTime := LInfo.Id.CreateTime;
+        LRecord.StartUtc := MHFileTimeToUtc(LInfo.Id.CreateTime);
+        LRecord.Name := LInfo.Name;
+        LRecord.ImagePath := LInfo.ImagePath;
+        LRecord.ParentPid := LInfo.ParentPid;
+        FNames.TryGetValue(LInfo.ParentPid, LRecord.ParentName);
+        LRecord.Source := 'poll';
+        LKey := InstanceKey(LRecord.Pid, LRecord.CreateTime);
+        LCurrent.AddOrSetValue(LKey, LRecord);
+        // Процессы, работавшие до начала наблюдения, запусками не считаются.
+        if FPollInitialized and not FPolled.ContainsKey(LKey) then
+          FRecords.Add(LRecord);
+      end;
+    if FPollInitialized then
+      for LPair in FPolled do
+        if not LCurrent.ContainsKey(LPair.Key) then
+        begin
+          LRecord := LPair.Value;
+          LRecord.ExitUtc := ANowUtc;
+          FRecords.Add(LRecord);
+        end;
+    FPolled.Clear;
+    for LPair in LCurrent do
+      FPolled.Add(LPair.Key, LPair.Value);
+    FPollInitialized := True;
+  finally
+    LCurrent.Free;
+  end;
+end;
+
 function TMHProcessEventCollector.Collect(const ASnapshot: TMHSnapshot): TMHCollectionResult;
 var
   LNow: TDateTime;
@@ -351,6 +440,9 @@ begin
   if LNow = 0 then
     LNow := FClock.NowUtc;
   EnsureStarted(LNow);
+  // Имена работающих процессов — для родителей новых запусков.
+  for LInfo in ASnapshot.Processes do
+    FNames.AddOrSetValue(LInfo.Id.Pid, LInfo.Name);
   if not FStarted then
   begin
     if FAccessDenied then
@@ -358,14 +450,24 @@ begin
         'Process launch monitoring (ETW) is available when running as administrator')
     else
       LMessage := MHL('Наблюдение за запусками процессов недоступно: ', 'Process launch monitoring is unavailable: ') + FError;
-    Result := TMHCollectionResult.Create(TMHSourceStatus.Create(SourceIdValue, ssUnavailable, LMessage, LNow));
+    // Журнал запусков всё равно ведётся — по опросу списка процессов.
+    PollLaunches(ASnapshot, LNow);
+    if Length(ASnapshot.Processes) > 0 then
+    begin
+      LState := ssPartial;
+      LMessage := LMessage + MHL('. Журнал запусков ведётся по опросу: процессы короче интервала опроса не видны.',
+        '. The launch journal uses polling: processes shorter than the polling interval are not seen.');
+    end
+    else
+      LState := ssUnavailable;
+    Result := TMHCollectionResult.Create(TMHSourceStatus.Create(SourceIdValue, LState, LMessage, LNow));
     Result.Status.RequiresElevation := FAccessDenied;
+    Result.LaunchEvents := FRecords.ToArray;
+    FRecords.Clear;
     Exit;
   end;
+  FPollInitialized := False;
 
-  // Имена уже работающих процессов — для родителей новых запусков.
-  for LInfo in ASnapshot.Processes do
-    FNames.AddOrSetValue(LInfo.Id.Pid, LInfo.Name);
   LEvents := FSource.Drain(LLost);
   Inc(FLostTotal, Max(0, LLost));
   for LEvent in LEvents do
@@ -392,6 +494,8 @@ begin
   Result := TMHCollectionResult.Create(TMHSourceStatus.Create(SourceIdValue, LState, LMessage, LNow));
   Result.Status.ItemCount := FLaunches.Count;
   Result.Launches := BuildStats;
+  Result.LaunchEvents := FRecords.ToArray;
+  FRecords.Clear;
 end;
 
 end.

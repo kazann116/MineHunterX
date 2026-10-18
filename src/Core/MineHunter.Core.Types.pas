@@ -314,6 +314,23 @@ type
     ShortLivedSeconds: Integer;
   end;
 
+  /// Запись журнала запусков программ.
+  TMHLaunchRecord = record
+  public
+    Pid: Cardinal;
+    /// Время создания процесса (FILETIME) — вместе с PID задаёт экземпляр.
+    CreateTime: UInt64;
+    StartUtc: TDateTime;
+    /// Время завершения (0 — работает или завершение не наблюдалось).
+    ExitUtc: TDateTime;
+    Name: string;
+    ImagePath: string;
+    ParentPid: Cardinal;
+    ParentName: string;
+    /// 'etw' — событие Windows (видны даже мгновенные процессы); 'poll' — по опросу списка процессов.
+    Source: string;
+  end;
+
   /// Тип физического диска.
   TMHDiskMedia = (dmUnknown, dmHdd, dmSsd);
   /// Состояние диска по оценке Windows (Storage Management, учитывает SMART).
@@ -565,6 +582,8 @@ type
     /// Физические диски и разделы.
     Disks: TArray<TMHDiskInfo>;
     Volumes: TArray<TMHVolumeInfo>;
+    /// Запуски и завершения программ с прошлого снимка (для журнала запусков).
+    LaunchEvents: TArray<TMHLaunchRecord>;
     class function Create(ASequence: UInt64;
       ATimestampUtc: TDateTime): TMHSnapshot; static;
     function FindProcess(const AId: TMHProcessId; out AInfo: TMHProcessInfo): Boolean;
@@ -591,6 +610,7 @@ type
     Launches: TArray<TMHLaunchStat>;
     Disks: TArray<TMHDiskInfo>;
     Volumes: TArray<TMHVolumeInfo>;
+    LaunchEvents: TArray<TMHLaunchRecord>;
     /// Контекст передаётся, только если HasContext = True.
     HasContext: Boolean;
     Context: TMHContextInfo;
@@ -612,6 +632,8 @@ function MHTamperKindTitle(AKind: TMHTamperKind): string;
 /// Ключ программы для профиля нормы и исключений: путь в нижнем регистре
 /// (или имя, если путь неизвестен).
 function MHProgramKey(const AImagePath, AName: string): string;
+/// FILETIME (UTC) в TDateTime; 0 — для нулевого значения.
+function MHFileTimeToUtc(AFileTime: UInt64): TDateTime;
 function MHClampScore(AScore: Integer): Integer;
 
 implementation
@@ -1185,6 +1207,14 @@ begin
     Result := AImagePath.ToLower
   else
     Result := AName.ToLower;
+end;
+
+function MHFileTimeToUtc(AFileTime: UInt64): TDateTime;
+begin
+  if AFileTime = 0 then
+    Exit(0);
+  // FILETIME — сотни наносекунд с 1601-01-01; TDateTime 0 = 1899-12-30.
+  Result := AFileTime / (10000000.0 * 86400) - 109205.0;
 end;
 
 function MHClampScore(AScore: Integer): Integer;
