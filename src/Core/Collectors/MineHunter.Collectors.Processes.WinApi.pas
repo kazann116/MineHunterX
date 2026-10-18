@@ -201,6 +201,7 @@ var
   LBuffer: array of WideChar;
   LSize: DWORD;
   LCounters: TProcessMemoryCountersEx;
+  LIo: TIoCounters;
 begin
   Result := Default(TMHRawProcessDetails);
   // PID 0 — псевдопроцесс «System Idle Process»: открыть его нельзя,
@@ -247,6 +248,13 @@ begin
     LSize := Length(LBuffer);
     if QueryFullProcessImageNameW(LHandle, 0, PWideChar(LBuffer), LSize) and (LSize > 0) then
       SetString(Result.ImagePath, PWideChar(LBuffer), LSize);
+
+    if GetProcessIoCounters(LHandle, LIo) then
+    begin
+      Result.HasIo := True;
+      Result.IoReadBytes := LIo.ReadTransferCount;
+      Result.IoWriteBytes := LIo.WriteTransferCount;
+    end;
 
     FillChar(LCounters, SizeOf(LCounters), 0);
     LCounters.cb := SizeOf(LCounters);

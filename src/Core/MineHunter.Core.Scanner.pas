@@ -438,6 +438,10 @@ begin
     ASnapshot.Tamper := ASnapshot.Tamper + AResult.Tamper;
   if Length(AResult.Launches) > 0 then
     ASnapshot.Launches := ASnapshot.Launches + AResult.Launches;
+  if Length(AResult.Disks) > 0 then
+    ASnapshot.Disks := ASnapshot.Disks + AResult.Disks;
+  if Length(AResult.Volumes) > 0 then
+    ASnapshot.Volumes := ASnapshot.Volumes + AResult.Volumes;
   // Контекст — от первого источника, который его передал.
   if AResult.HasContext and not ASnapshot.Context.Available then
   begin

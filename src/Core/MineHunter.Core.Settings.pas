@@ -74,6 +74,10 @@ type
     ElectricityPrice: Double;
     /// Проверять новые версии на GitHub (по умолчанию выключено: без запросов в интернет).
     CheckForUpdates: Boolean;
+    /// Проверять файлы на всех дисках раз в неделю, когда компьютер простаивает.
+    FileScanWeekly: Boolean;
+    /// Время завершения последней проверки файлов (UTC, 0 — не выполнялась).
+    LastFileScanUtc: TDateTime;
     Language: TMHUiLanguage;
     Theme: TMHUiTheme;
     class function Default: TMHAppSettings; static;
@@ -193,6 +197,8 @@ begin
   Result.EconomyWhenHidden := True;
   Result.ElectricityPrice := DefaultElectricityPrice;
   Result.CheckForUpdates := False;
+  Result.FileScanWeekly := False;
+  Result.LastFileScanUtc := 0;
   Result.Language := ulRussian;
   Result.Theme := utLight;
 end;
@@ -377,6 +383,8 @@ begin
     LRoot.AddPair('economyWhenHidden', TJSONBool.Create(ASettings.EconomyWhenHidden));
     LRoot.AddPair('electricityPrice', TJSONNumber.Create(ASettings.ElectricityPrice));
     LRoot.AddPair('checkForUpdates', TJSONBool.Create(ASettings.CheckForUpdates));
+    LRoot.AddPair('fileScanWeekly', TJSONBool.Create(ASettings.FileScanWeekly));
+    LRoot.AddPair('lastFileScan', DateToJsonValue(ASettings.LastFileScanUtc));
     LRoot.AddPair('language', LANGUAGE_CODES[ASettings.Language]);
     LRoot.AddPair('theme', THEME_CODES[ASettings.Theme]);
 
@@ -450,6 +458,8 @@ begin
     Result.EconomyWhenHidden := ReadBool(LRoot, 'economyWhenHidden', LDefaults.EconomyWhenHidden);
     Result.ElectricityPrice := ReadDouble(LRoot, 'electricityPrice', LDefaults.ElectricityPrice);
     Result.CheckForUpdates := ReadBool(LRoot, 'checkForUpdates', LDefaults.CheckForUpdates);
+    Result.FileScanWeekly := ReadBool(LRoot, 'fileScanWeekly', LDefaults.FileScanWeekly);
+    Result.LastFileScanUtc := ReadDate(LRoot, 'lastFileScan');
     if SameText(ReadString(LRoot, 'language'), LANGUAGE_CODES[ulEnglish]) then
       Result.Language := ulEnglish;
     if SameText(ReadString(LRoot, 'theme'), THEME_CODES[utDark]) then

@@ -169,7 +169,8 @@ implementation
 
 uses
   System.Math, System.StrUtils, System.Hash, System.DateUtils, System.Generics.Defaults,
-  MineHunter.Core.Paths, MineHunter.Core.Lang, MineHunter.Analysis.Tamper, MineHunter.Analysis.Launches;
+  MineHunter.Core.Paths, MineHunter.Core.Lang, MineHunter.Analysis.Tamper, MineHunter.Analysis.Launches,
+  MineHunter.Analysis.Disks;
 
 const
   MINUTE = 1 / MinsPerDay;
@@ -584,6 +585,8 @@ begin
       begin
         Result := IsExcluded(AKey, ASha256);
       end, GetRulesetVersion) do
+      LList.Add(LFinding);
+    for LFinding in MHAnalyzeDisks(ASnapshot, LSettings.Thresholds, GetRulesetVersion) do
       LList.Add(LFinding);
     AnalyzeSystem(ASnapshot, ABaseline, LSettings, LList);
     // Сначала самые серьёзные; при равенстве — по ключу (детерминированно).
@@ -1482,6 +1485,8 @@ var
   LMetric: TMHMetric;
   LReason: TMHLoadReason;
   LTop: string;
+  LDisk: TMHDiskInfo;
+  LVolume: TMHVolumeInfo;
 begin
   Result := nil;
   if ASnapshot.FindMetric(mkCpuPercent, LMetric) and LMetric.HasValue then
@@ -1510,8 +1515,25 @@ begin
     LReason.IsHigh := LMetric.Value >= 80;
     LReason.Text := Format(MHL('Диск занят %s времени', 'The disk is busy %s of the time'),
       [FormatPercent(LMetric.Value)]);
+    // Какой именно диск и кто его грузит (если известно).
+    if (Length(ASnapshot.Disks) > 1) and MHBusiestDisk(ASnapshot, LDisk) then
+      LReason.Text := LReason.Text + ' — ' + MHDiskLabel(LDisk);
+    LTop := MHTopIoProcesses(ASnapshot, ATop);
+    if LTop <> '' then
+      LReason.Text := LReason.Text + MHL('. Больше всего читают и пишут: ', '. Most reading and writing: ') + LTop;
     Result := Result + [LReason];
   end;
+  // Почти заполненные разделы — частая причина замедления.
+  for LVolume in ASnapshot.Volumes do
+    if MHVolumeSpaceLevel(LVolume) <> slOk then
+    begin
+      LReason.Resource := 'space';
+      LReason.IsHigh := (MHVolumeSpaceLevel(LVolume) = slCritical) or LVolume.IsSystem;
+      LReason.Text := Format(MHL('Мало места на разделе %s: свободно %s из %s',
+        'Low space on volume %s: %s free of %s'),
+        [LVolume.Name, MHFormatSize(LVolume.FreeBytes), MHFormatSize(LVolume.TotalBytes)]);
+      Result := Result + [LReason];
+    end;
   if ASnapshot.FindMetric(mkGpuPercent, LMetric) and LMetric.HasValue then
   begin
     LReason.Resource := 'gpu';

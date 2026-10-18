@@ -11,11 +11,11 @@ uses
   MineHunter.App.FindingsView, MineHunter.Core.Reports, MineHunter.Core.Actions,
   MineHunter.Core.Settings, MineHunter.Analysis.Engine, MineHunter.Analysis.Baseline,
   MineHunter.App.DashboardView, MineHunter.App.Tiles, MineHunter.Core.Quarantine,
-  MineHunter.App.Notifier, MineHunter.Core.Inventory, MineHunter.Core.Energy,
+  MineHunter.App.Notifier, MineHunter.Core.Inventory, MineHunter.Core.Energy, MineHunter.App.DisksPage,
   MineHunter.Core.CheckReport, MineHunter.Core.Updates;
 
 type
-  TMHPage = (pgDashboard, pgProcesses, pgFindings, pgHistory, pgSettings);
+  TMHPage = (pgDashboard, pgProcesses, pgFindings, pgDisks, pgHistory, pgSettings);
 
   /// Подтверждение опасного действия пользователем.
   TMHConfirmFunc = reference to function(const AQuestion: string): Boolean;
@@ -270,6 +270,8 @@ type
     FHistoryResultInventoryStart: TDateTime;
     FHistoryResultHours: Integer;
     FAppearanceBox: TGroupBox;
+    FDisksSheet: TTabSheet;
+    FDisksPage: TMHDisksPage;
     FCbLanguage: TComboBox;
     FCbTheme: TComboBox;
     FChkUpdates: TCheckBox;
@@ -284,6 +286,7 @@ type
     FUpdateRunning: Boolean;
     FUpdateCount: Integer;
     procedure CreateAppearanceControls;
+    procedure CreateDisksPage;
     procedure AppearanceChange(Sender: TObject);
     procedure UpdatesClick(Sender: TObject);
     procedure CheckUpdatesClick(Sender: TObject);
@@ -432,6 +435,8 @@ type
     property UpdateCount: Integer read FUpdateCount;
     /// HTTP для проверки обновлений (по умолчанию — System.Net). Тесты подменяют.
     property UpdateHttp: IMHHttpGet read FUpdateHttp write FUpdateHttp;
+    /// Страница «Диски» (диски, разделы, проверка файлов).
+    property DisksPage: TMHDisksPage read FDisksPage;
     property LanguageCombo: TComboBox read FCbLanguage;
     property ThemeCombo: TComboBox read FCbTheme;
     property UpdatesCheckBox: TCheckBox read FChkUpdates;
@@ -499,7 +504,7 @@ end;
 
 const
   PAGE_TITLES: array[TMHPage] of string =
-    ('Обзор', 'Процессы', 'Находки', 'История', 'Настройки');
+    ('Обзор', 'Процессы', 'Находки', 'Диски', 'История', 'Настройки');
   PROCESS_COLUMN_TITLES: array[TMHProcessColumn] of string =
     ('Имя', 'PID', 'CPU', 'Память', 'GPU', 'Рабочий набор', 'Частная память', 'Потоки', 'Доступ',
      'Путь', 'Риск', 'Подпись');
@@ -530,6 +535,7 @@ begin
   if FOwnsServices then
     MHApplyTheme(FServices.Settings.Theme);
 
+  CreateDisksPage;
   lbNav.Items.Clear;
   for LPage := Low(TMHPage) to High(TMHPage) do
     lbNav.Items.Add(MHTr(PAGE_TITLES[LPage]));
@@ -639,6 +645,8 @@ begin
   FreeAndNil(FDefenderThread);
   // Проверка обновлений ограничена тайм-аутом HTTP (TMHNetHttpGet.TimeoutMs).
   FreeAndNil(FUpdateThread);
+  // Проверка файлов отменяется и дожидается завершения до освобождения сервисов.
+  FreeAndNil(FDisksPage);
   if FServices <> nil then
   begin
     // Остановка потока отменяет недоставленные события до освобождения формы.
@@ -686,7 +694,47 @@ begin
         LoadHistory;
     pgSettings:
       UpdateStorageInfo;
+    pgDisks:
+      if FHasLastSnapshot then
+        FDisksPage.UpdateSnapshot(FLastSnapshot);
   end;
+end;
+
+procedure TMainForm.CreateDisksPage;
+var
+  LAction: TAction;
+begin
+  // Вкладка создаётся в коде и ставится на место, соответствующее pgDisks.
+  FDisksSheet := TTabSheet.Create(Self);
+  FDisksSheet.PageControl := pcMain;
+  FDisksSheet.PageIndex := Ord(pgDisks);
+  FDisksSheet.Caption := PAGE_TITLES[pgDisks];
+  FDisksPage := TMHDisksPage.Create(Self, FDisksSheet, FServices,
+    function(const AQuestion: string): Boolean
+    begin
+      Result := FConfirm(AQuestion);
+    end,
+    procedure(const ATitle, AText: string)
+    begin
+      if (FTray <> nil) and FTray.Visible then
+      begin
+        FTray.BalloonTitle := ATitle;
+        FTray.BalloonHint := AText;
+        FTray.BalloonFlags := bfWarning;
+        FTray.ShowBalloonHint;
+      end;
+    end);
+  // Навигация: Ctrl+4 — «Диски», Ctrl+5 — «История», Ctrl+6 — «Настройки».
+  actNavHistory.Tag := Ord(pgHistory);
+  actNavHistory.ShortCut := ShortCut(Ord('5'), [ssCtrl]);
+  actNavSettings.Tag := Ord(pgSettings);
+  actNavSettings.ShortCut := ShortCut(Ord('6'), [ssCtrl]);
+  LAction := TAction.Create(Self);
+  LAction.ActionList := alMain;
+  LAction.Caption := PAGE_TITLES[pgDisks];
+  LAction.Tag := Ord(pgDisks);
+  LAction.ShortCut := ShortCut(Ord('4'), [ssCtrl]);
+  LAction.OnExecute := actNavExecute;
 end;
 
 procedure TMainForm.lbNavClick(Sender: TObject);
@@ -1569,6 +1617,12 @@ begin
   UpdateProtection(ASnapshot);
   NotifyAlerts(AFindings, ASnapshot.TimestampUtc);
   UpdateTray;
+  if FDisksPage <> nil then
+  begin
+    if GetActivePage = pgDisks then
+      FDisksPage.UpdateSnapshot(ASnapshot);
+    FDisksPage.CheckSchedule(ASnapshot);
+  end;
   // Отчёт «Проверить сейчас» — по первому снимку, собранному после сброса кэшей.
   if FCheckPending and (FServices.Scanner.LastRefreshSequence > FCheckBaseline) and
      (ASnapshot.Sequence >= FServices.Scanner.LastRefreshSequence) then

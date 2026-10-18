@@ -84,6 +84,7 @@ end;
 | `gpu` | `TMHGpuCollector` | `IMHGpuApi` (мощность — NVML, `mkGpuPowerWatts`) |
 | `sensors` | `TMHSensorCollector` | `IMHSensorApi` |
 | `tamper` | `TMHTamperCollector` | `IMHTamperApi` |
+| `disks` | `TMHDiskCollector` | `IMHDiskApi` (WMI Storage, PDH PhysicalDisk, разделы) |
 | `self` | `TMHSelfMonitorCollector` | — |
 
 Порядок регистрации важен: `files` после `processes`, `autostart` и `tamper`, `context` и
@@ -122,5 +123,9 @@ end;
 - `IMHInventoryHistory`, `MHInventoryFromSnapshot` (`MineHunter.Core.Inventory`) — учёт «что изменилось»
   (хранилище схемы 3).
 - `MHBuildCheckReport` (`MineHunter.Core.CheckReport`) — отчёт «Проверить сейчас».
+- `MHAnalyzeDisks`, `MHVolumeSpaceLevel`, `MHTopIoProcesses` (`MineHunter.Analysis.Disks`) — правила по
+  дискам и «кто грузит диск»; `TMHSnapshot.Disks` / `Volumes`, `TMHProcessInfo.IoRead` / `IoWrite`.
+- `TMHFileScanner`, `MHClassifyFile` (`MineHunter.Core.FileScan`, ФС — `IMHFileScanFs`) — проверка файлов
+  на дисках с прогрессом и отменой.
 - `MHCheckForUpdate`, `MHCompareVersions` (`MineHunter.Core.Updates`, HTTP — `IMHHttpGet`) — проверка
   новых версий на GitHub (по согласию пользователя).

@@ -184,6 +184,10 @@ type
     GpuCompute: TMHMetric;
     /// Выделенная видеопамять процесса.
     GpuMemory: TMHMetric;
+    /// Чтение и запись процесса, байт/с (GetProcessIoCounters: все операции
+    /// ввода-вывода процесса — в основном диск, но также сеть и устройства).
+    IoRead: TMHMetric;
+    IoWrite: TMHMetric;
     class function Create(const AId: TMHProcessId; const AName: string;
       ATimestampUtc: TDateTime): TMHProcessInfo; static;
   end;
@@ -308,6 +312,64 @@ type
     LastStartUtc: TDateTime;
     WindowMinutes: Integer;
     ShortLivedSeconds: Integer;
+  end;
+
+  /// Тип физического диска.
+  TMHDiskMedia = (dmUnknown, dmHdd, dmSsd);
+  /// Состояние диска по оценке Windows (Storage Management, учитывает SMART).
+  TMHDiskHealth = (dhUnknown, dhHealthy, dhWarning, dhUnhealthy);
+
+  /// Физический диск.
+  TMHDiskInfo = record
+  public
+    /// Номер диска (\\.\PhysicalDriveN, «Управление дисками»).
+    Number: Integer;
+    Model: string;
+    Media: TMHDiskMedia;
+    /// Шина: NVMe, SATA, USB, SAS, RAID…
+    Bus: string;
+    SizeBytes: Int64;
+    /// Разделы на диске: «C: D:».
+    Volumes: string;
+    /// Нагрузка (счётчики PhysicalDisk): доля времени работы и скорость.
+    HasActivity: Boolean;
+    ActivePercent: Double;
+    ReadBytesPerSec: Double;
+    WriteBytesPerSec: Double;
+    HasTemperature: Boolean;
+    TemperatureCelsius: Double;
+    /// Порог производителя (0 — неизвестен).
+    TemperatureLimitCelsius: Double;
+    Health: TMHDiskHealth;
+    /// Пояснение Windows к состоянию (например, «прогнозируется отказ»).
+    HealthDetails: string;
+    /// Износ SSD, % ресурса (0 — новый, 100 — исчерпан).
+    HasWear: Boolean;
+    WearPercent: Double;
+    /// Счётчики ошибок чтения и записи с момента выпуска диска.
+    HasErrors: Boolean;
+    ReadErrors: Int64;
+    WriteErrors: Int64;
+    /// Наработка, часов (-1 — неизвестна).
+    PowerOnHours: Int64;
+    class function Create(ANumber: Integer; const AModel: string): TMHDiskInfo; static;
+  end;
+
+  /// Раздел (том) с буквой диска.
+  TMHVolumeInfo = record
+  public
+    /// «C:».
+    Name: string;
+    VolumeLabel: string;
+    FileSystem: string;
+    TotalBytes: Int64;
+    FreeBytes: Int64;
+    /// Номера физических дисков, на которых лежит раздел.
+    DiskNumbers: TArray<Integer>;
+    /// Раздел с Windows.
+    IsSystem: Boolean;
+    Removable: Boolean;
+    function FreePercent: Double;
   end;
 
   /// Контекст работы пользователя на момент снимка.
@@ -488,6 +550,9 @@ type
     Tamper: TArray<TMHTamperEntry>;
     /// Сводка запусков программ (ETW; пусто без прав администратора).
     Launches: TArray<TMHLaunchStat>;
+    /// Физические диски и разделы.
+    Disks: TArray<TMHDiskInfo>;
+    Volumes: TArray<TMHVolumeInfo>;
     class function Create(ASequence: UInt64;
       ATimestampUtc: TDateTime): TMHSnapshot; static;
     function FindProcess(const AId: TMHProcessId; out AInfo: TMHProcessInfo): Boolean;
@@ -512,6 +577,8 @@ type
     Sensors: TArray<TMHSensorReading>;
     Tamper: TArray<TMHTamperEntry>;
     Launches: TArray<TMHLaunchStat>;
+    Disks: TArray<TMHDiskInfo>;
+    Volumes: TArray<TMHVolumeInfo>;
     /// Контекст передаётся, только если HasContext = True.
     HasContext: Boolean;
     Context: TMHContextInfo;
@@ -626,7 +693,28 @@ begin
   Result.Gpu := TMHMetric.NoData(mkGpuPercent, ATimestampUtc);
   Result.GpuCompute := TMHMetric.NoData(mkGpuComputePercent, ATimestampUtc);
   Result.GpuMemory := TMHMetric.NoData(mkGpuMemoryBytes, ATimestampUtc);
+  Result.IoRead := TMHMetric.NoData(mkDiskReadBytesPerSec, ATimestampUtc);
+  Result.IoWrite := TMHMetric.NoData(mkDiskWriteBytesPerSec, ATimestampUtc);
   Result.ThreadCount := MH_UNKNOWN_COUNT;
+end;
+
+{ TMHDiskInfo }
+
+class function TMHDiskInfo.Create(ANumber: Integer; const AModel: string): TMHDiskInfo;
+begin
+  Result := Default(TMHDiskInfo);
+  Result.Number := ANumber;
+  Result.Model := AModel;
+  Result.PowerOnHours := -1;
+end;
+
+{ TMHVolumeInfo }
+
+function TMHVolumeInfo.FreePercent: Double;
+begin
+  if TotalBytes <= 0 then
+    Exit(0);
+  Result := FreeBytes / TotalBytes * 100;
 end;
 
 { TMHProcessDetail }

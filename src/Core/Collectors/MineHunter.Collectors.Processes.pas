@@ -54,6 +54,10 @@ type
     HasMemory: Boolean;
     WorkingSetBytes: UInt64;
     PrivateBytes: UInt64;
+    /// Суммарные байты чтения и записи с запуска процесса (GetProcessIoCounters).
+    HasIo: Boolean;
+    IoReadBytes: UInt64;
+    IoWriteBytes: UInt64;
   end;
 
   /// Частный рабочий набор процесса по PID.
@@ -84,6 +88,9 @@ type
     TCpuSample = record
       Cpu100ns: UInt64;
       Wall100ns: UInt64;
+      HasIo: Boolean;
+      IoRead: UInt64;
+      IoWrite: UInt64;
     end;
   private
     FApi: IMHProcessApi;
@@ -220,12 +227,25 @@ begin
   begin
     LSample.Cpu100ns := ADetails.CpuTime100ns;
     LSample.Wall100ns := AWallNow;
+    LSample.HasIo := ADetails.HasIo;
+    LSample.IoRead := ADetails.IoReadBytes;
+    LSample.IoWrite := ADetails.IoWriteBytes;
     ACurrent.AddOrSetValue(LId, LSample);
     if FPrevious.TryGetValue(LId, LPrev) and
        MHTryCounterDelta(LPrev.Cpu100ns, LSample.Cpu100ns, LCpuDelta) and
        MHTryCounterDelta(LPrev.Wall100ns, LSample.Wall100ns, LWallDelta) and
        MHTryCalcCpuPercent(LCpuDelta, LWallDelta, FCpuCount, LPercent) then
       Result.Cpu := TMHMetric.Available(mkCpuPercent, Min(100.0, LPercent * ACpuFactor), ANow);
+    // Скорость ввода-вывода — по разнице счётчиков между двумя замерами того же экземпляра.
+    if LSample.HasIo and FPrevious.TryGetValue(LId, LPrev) and LPrev.HasIo and
+       MHTryCounterDelta(LPrev.Wall100ns, LSample.Wall100ns, LWallDelta) and (LWallDelta > 0) and
+       (LSample.IoRead >= LPrev.IoRead) and (LSample.IoWrite >= LPrev.IoWrite) then
+    begin
+      Result.IoRead := TMHMetric.Available(mkDiskReadBytesPerSec,
+        (LSample.IoRead - LPrev.IoRead) / (LWallDelta / 10000000), ANow);
+      Result.IoWrite := TMHMetric.Available(mkDiskWriteBytesPerSec,
+        (LSample.IoWrite - LPrev.IoWrite) / (LWallDelta / 10000000), ANow);
+    end;
   end;
 
   if LComplete then

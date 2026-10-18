@@ -99,6 +99,10 @@
         <DCCReference Include="..\src\Core\MineHunter.Core.Inventory.pas"/>
         <DCCReference Include="..\src\Core\MineHunter.Core.CheckReport.pas"/>
         <DCCReference Include="..\src\Core\MineHunter.Analysis.Launches.pas"/>
+        <DCCReference Include="..\src\Core\MineHunter.Analysis.Disks.pas"/>
+        <DCCReference Include="..\src\Core\MineHunter.Core.FileScan.pas"/>
+        <DCCReference Include="..\src\Core\MineHunter.Core.FileScan.WinApi.pas"/>
+        <DCCReference Include="Unit\MineHunter.Tests.FileScan.pas"/>
         <DCCReference Include="..\src\Core\MineHunter.Core.Updates.pas"/>
         <DCCReference Include="..\src\Core\MineHunter.Core.Updates.WinApi.pas"/>
         <DCCReference Include="..\src\App\MineHunter.App.Lang.pas"/>
@@ -106,11 +110,15 @@
         <DCCReference Include="Unit\MineHunter.Tests.Appearance.pas"/>
         <DCCReference Include="Unit\MineHunter.Tests.CoreLanguage.pas"/>
         <DCCReference Include="..\src\Core\Collectors\MineHunter.Collectors.ProcessEvents.pas"/>
+        <DCCReference Include="..\src\Core\Collectors\MineHunter.Collectors.Disks.pas"/>
+        <DCCReference Include="..\src\Core\Collectors\MineHunter.Collectors.Disks.WinApi.pas"/>
+        <DCCReference Include="Unit\MineHunter.Tests.Disks.pas"/>
         <DCCReference Include="..\src\Core\Collectors\MineHunter.Collectors.ProcessEvents.WinApi.pas"/>
         <DCCReference Include="Unit\MineHunter.Tests.ProcessEvents.pas"/>
         <DCCReference Include="Unit\MineHunter.Tests.Insights.pas"/>
         <DCCReference Include="..\src\Core\MineHunter.Core.SelfAutostart.WinApi.pas"/>
         <DCCReference Include="..\src\App\MineHunter.App.Notifier.pas"/>
+        <DCCReference Include="..\src\App\MineHunter.App.DisksPage.pas"/>
         <DCCReference Include="Unit\MineHunter.Tests.Background.pas"/>
         <DCCReference Include="..\src\Core\Collectors\MineHunter.Collectors.Gpu.pas"/>
         <DCCReference Include="..\src\Core\Collectors\MineHunter.Collectors.Gpu.WinApi.pas"/>

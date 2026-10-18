@@ -62,6 +62,7 @@ type
     [Test] procedure Background_TrayEconomyNotifyAndAutostart;
     [Test] procedure CheckNow_ReportChangesEnergyAndPrice;
     [Test] procedure Appearance_SettingsExportImportAndUpdates;
+    [Test] procedure Disks_PageTablesScanAndActions;
   end;
 
 implementation
@@ -77,7 +78,8 @@ uses
   MineHunter.App.DashboardView, MineHunter.Core.Actions, MineHunter.Core.Quarantine,
   MineHunter.Tests.Quarantine, MineHunter.Tests.SettingsReports, MineHunter.Tests.Background,
   MineHunter.Core.SelfAutostart, MineHunter.Core.CheckReport, MineHunter.Core.Updates,
-  MineHunter.Tests.Appearance,
+  MineHunter.Tests.Appearance, MineHunter.Tests.Disks, MineHunter.Tests.FileScan,
+  MineHunter.Collectors.Disks, MineHunter.Core.FileScan, MineHunter.App.DisksPage,
   MineHunter.Tests.Fakes;
 
 var
@@ -85,6 +87,7 @@ var
   GTestQuarantineOps: IMHQuarantineOps;
   GTestSystemOps: IMHSystemOps;
   GTestRunKeyOps: IMHRunKeyOps;
+  GTestDiskApi: IMHDiskApi;
 
 function NewTempDir: string;
 begin
@@ -144,6 +147,8 @@ begin
     LContainer.RegisterInstance<IMHSystemOps>(GTestSystemOps);
   if GTestRunKeyOps <> nil then
     LContainer.RegisterInstance<IMHRunKeyOps>(GTestRunKeyOps);
+  if GTestDiskApi <> nil then
+    LContainer.RegisterInstance<IMHCollector>(TMHDiskCollector.Create(GTestDiskApi, LClock) as IMHCollector);
   LContainer.RegisterSingleton<IMHRepository>(
     function: IMHRepository
     begin
@@ -210,7 +215,7 @@ begin
   Assert.AreEqual<TMHPage>(pgDashboard, FForm.ActivePage);
   Assert.IsTrue(FForm.actStart.Enabled);
   Assert.IsFalse(FForm.actStop.Enabled);
-  Assert.AreEqual(5, FForm.lbNav.Items.Count);
+  Assert.AreEqual(Ord(High(TMHPage)) + 1, FForm.lbNav.Items.Count);
   Assert.IsTrue(string(FForm.lblScanState.Caption).Contains('остановлено'),
     'Состояние должно быть описано текстом');
 end;
@@ -298,20 +303,21 @@ begin
     Assert.IsNotNull(LForm.Services);
     LForm.Services.Scanner.ScanOnce;
     Assert.AreEqual(1, LForm.SnapshotCount);
-    Assert.AreEqual(12, LForm.lvSources.Items.Count);
+    Assert.AreEqual(13, LForm.lvSources.Items.Count);
     Assert.AreEqual('system', LForm.lvSources.Items[0].Caption);
     Assert.AreEqual('processes', LForm.lvSources.Items[1].Caption);
     Assert.AreEqual('processevents', LForm.lvSources.Items[2].Caption);
     Assert.AreEqual('gpu', LForm.lvSources.Items[3].Caption);
     Assert.AreEqual('sensors', LForm.lvSources.Items[4].Caption);
-    Assert.AreEqual('autostart', LForm.lvSources.Items[5].Caption);
-    Assert.AreEqual('tamper', LForm.lvSources.Items[6].Caption);
-    Assert.AreEqual('network', LForm.lvSources.Items[7].Caption);
-    Assert.AreEqual('files', LForm.lvSources.Items[8].Caption);
-    Assert.AreEqual('context', LForm.lvSources.Items[9].Caption);
-    Assert.AreEqual('self', LForm.lvSources.Items[10].Caption);
-    Assert.AreEqual('storage', LForm.lvSources.Items[11].Caption);
-    Assert.AreEqual(MHFormatSourceState(ssSuccess), LForm.lvSources.Items[11].SubItems[0],
+    Assert.AreEqual('disks', LForm.lvSources.Items[5].Caption);
+    Assert.AreEqual('autostart', LForm.lvSources.Items[6].Caption);
+    Assert.AreEqual('tamper', LForm.lvSources.Items[7].Caption);
+    Assert.AreEqual('network', LForm.lvSources.Items[8].Caption);
+    Assert.AreEqual('files', LForm.lvSources.Items[9].Caption);
+    Assert.AreEqual('context', LForm.lvSources.Items[10].Caption);
+    Assert.AreEqual('self', LForm.lvSources.Items[11].Caption);
+    Assert.AreEqual('storage', LForm.lvSources.Items[12].Caption);
+    Assert.AreEqual(MHFormatSourceState(ssSuccess), LForm.lvSources.Items[12].SubItems[0],
       'История стандартной конфигурации записывается');
     Assert.IsNotNull(LForm.Services.Analyzer, 'Стандартный анализатор угроз подключён');
     Assert.IsNotNull(LForm.Services.Baselines, 'Профиль нормы подключён');
@@ -1078,6 +1084,112 @@ begin
   FForm.ThemeCombo.ItemIndex := 1;
   FForm.ThemeCombo.OnChange(FForm.ThemeCombo);
   Assert.AreEqual(Ord(utDark), Ord(FServices.Settings.Theme));
+end;
+
+procedure TMainFormSmokeTests.Disks_PageTablesScanAndActions;
+var
+  LServices: TMHAppServices;
+  LForm: TMainForm;
+  LProc: TFakeProcessApi;
+  LSys: TFakeSystemMetricsApi;
+  LFs: TFakeScanFs;
+  LQuarantineFs: TFakeQuarantineOps;
+  LPage: TMHDisksPage;
+  LWatch: TStopwatch;
+  LStates: string;
+  I, LHits: Integer;
+begin
+  GTestDiskApi := FakeDiskSet;
+  LQuarantineFs := TFakeQuarantineOps.Create;
+  GTestQuarantineOps := LQuarantineFs;
+  LQuarantineFs.AddFile('D:\Downloads\xmrig.exe', 'MZ');
+  try
+    LServices := NewTestServices(LProc, LSys, TPath.Combine(FTempDir, 'disks.db'));
+    try
+      LForm := TMainForm.CreateWithServices(nil, LServices);
+      try
+        LPage := LForm.DisksPage;
+        Assert.IsNotNull(LPage);
+        LForm.NavigateTo(pgDisks);
+        Assert.AreEqual(Ord(pgDisks), Ord(LForm.ActivePage));
+        LServices.Scanner.ScanOnce;
+        Assert.AreEqual(2, LPage.DisksView.Items.Count, 'Каждый физический диск — строкой');
+        Assert.AreEqual('ST2000DM008', LPage.DisksView.Items[0].SubItems[0]);
+        Assert.AreEqual('C: D:', LPage.DisksView.Items[0].SubItems[3]);
+        Assert.AreEqual(3, LPage.VolumesView.Items.Count);
+        LStates := '';
+        for I := 0 to LPage.VolumesView.Items.Count - 1 do
+          LStates := LStates + LPage.VolumesView.Items[I].Caption + '=' + LPage.VolumesView.Items[I].SubItems[6] + ' ';
+        Assert.IsTrue(LStates.Contains('E:=⚠ почти заполнен'), LStates);
+        Assert.IsTrue(LStates.Contains('C:=норма'), LStates);
+
+        // Проверка файлов на виртуальной файловой системе.
+        LFs := TFakeScanFs.Create;
+        LFs.AddFile('D:\Downloads\xmrig.exe', 'MZ');
+        LFs.AddFile('D:\Downloads\config.json', '{"donate-level": 1, "url": "stratum+tcp://p:1"}');
+        LFs.AddFile('D:\Docs\letter.txt', 'hello');
+        LPage.ScanFs := LFs;
+        LPage.ScanRoots := ['D:\'];
+        LPage.StartScan;
+        Assert.IsTrue(LPage.ScanRunning);
+        LWatch := TStopwatch.StartNew;
+        while LPage.ScanRunning and (LWatch.ElapsedMilliseconds < 15000) do
+          CheckSynchronize(20);
+        Assert.IsFalse(LPage.ScanRunning);
+        Assert.AreEqual(1, LPage.ScanCount);
+        LHits := Length(LPage.ScanHits);
+        Assert.AreEqual(2, LHits);
+        Assert.AreEqual(2, LPage.HitsView.Items.Count);
+        Assert.IsTrue(LServices.Settings.LastFileScanUtc > 0, 'Время проверки запомнено');
+        Assert.IsTrue(string(LPage.ScanLabel.Caption).Contains('найдено 2'), string(LPage.ScanLabel.Caption));
+        Assert.AreEqual('file-scan', LServices.ActionLog.LoadActions(1)[0].Action);
+
+        // Карантин из результатов (с подтверждением) и «это мой файл».
+        LForm.ConfirmAction :=
+          function(const AQuestion: string): Boolean
+          begin
+            Result := True;
+          end;
+        for I := 0 to LPage.HitsView.Items.Count - 1 do
+          if string(LPage.HitsView.Items[I].SubItems[2]).ToLower.EndsWith('xmrig.exe') then
+            LPage.HitsView.Items[I].Selected := True;
+        LPage.QuarantineSelected;
+        Assert.IsFalse(LQuarantineFs.FileExists('D:\Downloads\xmrig.exe'), 'Файл перемещён в карантин');
+        Assert.AreEqual(1, Integer(Length(LPage.ScanHits)));
+        LPage.HitsView.Items[0].Selected := True;
+        LPage.AllowSelected;
+        Assert.AreEqual(0, Integer(Length(LPage.ScanHits)));
+        Assert.AreEqual(1, Integer(Length(LServices.Settings.Exclusions)));
+
+        // Повторная проверка: исключённый файл больше не находится.
+        LPage.StartScan;
+        LWatch := TStopwatch.StartNew;
+        while LPage.ScanRunning and (LWatch.ElapsedMilliseconds < 15000) do
+          CheckSynchronize(20);
+        Assert.AreEqual(1, Integer(Length(LPage.ScanHits)), 'Остался только xmrig.exe в виртуальной ФС');
+
+        // Отмена.
+        LPage.StartScan;
+        LPage.CancelScan;
+        LWatch := TStopwatch.StartNew;
+        while LPage.ScanRunning and (LWatch.ElapsedMilliseconds < 15000) do
+          CheckSynchronize(20);
+        Assert.IsFalse(LPage.ScanRunning);
+
+        // Плановая проверка: включается флажком, срабатывает только в простое.
+        LPage.WeeklyCheckBox.Checked := True;
+        Assert.IsTrue(LServices.Settings.FileScanWeekly);
+      finally
+        LForm.Free;
+      end;
+    finally
+      LServices.Free;
+    end;
+  finally
+    GTestDiskApi := nil;
+    GTestQuarantineOps := nil;
+    CheckSynchronize(0);
+  end;
 end;
 
 initialization

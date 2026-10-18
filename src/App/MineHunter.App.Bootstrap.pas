@@ -140,7 +140,8 @@ uses
   MineHunter.Collectors.Tamper, MineHunter.Collectors.Tamper.WinApi,
   MineHunter.Core.Actions.WinApi, MineHunter.Core.Quarantine.WinApi, System.IOUtils,
   MineHunter.Core.SelfAutostart.WinApi, MineHunter.Collectors.ProcessEvents,
-  MineHunter.Collectors.ProcessEvents.WinApi;
+  MineHunter.Collectors.ProcessEvents.WinApi, MineHunter.Collectors.Disks,
+  MineHunter.Collectors.Disks.WinApi;
 
 const
   BASELINE_FIRST_DELAY_MS = 60 * 1000;
@@ -263,6 +264,13 @@ begin
     begin
       LApi := TMHWinSensorApi.Create;
       Result := TMHSensorCollector.Create(LApi, AContainer.Resolve<IMHClock>);
+    end);
+
+  // Диски и разделы — после датчиков (берёт у них температуру накопителей).
+  AContainer.RegisterSingleton<IMHCollector>(
+    function: IMHCollector
+    begin
+      Result := TMHDiskCollector.Create(TMHWinDiskApi.Create as IMHDiskApi, AContainer.Resolve<IMHClock>);
     end);
 
   AContainer.RegisterSingleton<IMHCollector>(

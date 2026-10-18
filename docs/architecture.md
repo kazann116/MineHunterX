@@ -144,6 +144,12 @@ Composition root — `TMHAppServices.RegisterDefaults`. Тесты собира�
   `inventory` (схема 3) — время первого и последнего наблюдения объектов.
 - **Отчёт «Проверить сейчас»** (`MineHunter.Core.CheckReport`) — чистая функция от снимка, находок,
   изменений и оценки энергии.
+- **Диски** (`MineHunter.Collectors.Disks`, `MineHunter.Analysis.Disks`, `MineHunter.App.DisksPage`):
+  коллектор после `sensors` (берёт у него температуру по модели); список дисков и счётчики
+  надёжности перечитываются раз в 10 минут, разделы — раз в 30 с, нагрузка — каждый цикл.
+  Проверка файлов (`MineHunter.Core.FileScan`) идёт в отдельном потоке с
+  `THREAD_MODE_BACKGROUND_BEGIN`; прогресс — через `TThread.Queue` не чаще 3 раз в секунду;
+  при закрытии окна проверка отменяется и дожидается завершения.
 - **Язык и тема** (`MineHunter.App.Lang`, `MineHunter.App.Theme`): словарь подписей и обход
   компонентов формы; стиль VCL «Windows10 Dark» — ресурс VCLSTYLE (нужен `Vcl.Styles`),
   собственные элементы берут цвета через `MHThemeColor`.
