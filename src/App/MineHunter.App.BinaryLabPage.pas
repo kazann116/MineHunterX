@@ -84,7 +84,7 @@ type
     FGotoEdit, FFindEdit: TEdit;
     FFindMode: TComboBox;
     FIgnoreCase: TCheckBox;
-    FFindButton: TButton;
+    FFindButton, FGotoButton: TButton;
     FHexStatus: TLabel;
     // Строки.
     FStringsFilter: TEdit;
@@ -220,6 +220,10 @@ type
     property CompareButton: TButton read FCompareButton;
     property CancelButton: TButton read FCancelButton;
     property ExportButton: TButton read FExportButton;
+    property GotoButton: TButton read FGotoButton;
+    property FindButton: TButton read FFindButton;
+    property DiffExportButton: TButton read FDiffExportButton;
+    property HexStatus: TLabel read FHexStatus;
   end;
 
 implementation
@@ -487,7 +491,7 @@ begin
   FGotoEdit.Parent := LTop;
   FGotoEdit.SetBounds(80, 8, 120, 23);
   FGotoEdit.TextHint := '0x1F400';
-  NewButton(LTop, MHL('Перейти', 'Go to'), 206, 7, 80, GotoClick);
+  FGotoButton := NewButton(LTop, MHL('Перейти', 'Go to'), 206, 7, 80, GotoClick);
   NewLabel(LTop, 304, 11, 50, MHL('Найти:', 'Find:'));
   FFindEdit := TEdit.Create(Self);
   FFindEdit.Parent := LTop;

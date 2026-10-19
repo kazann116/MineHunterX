@@ -1,0 +1,150 @@
+﻿# BinaryLab: матрица «функция → тесты»
+
+Создаётся `python tools/binarylab_test_matrix.py` из исходников: для каждой публичной функции и
+метода BinaryLab — тесты DUnitX, которые её вызывают (граничные и ошибочные случаи — в тех же тестах).
+Внутренние методы отрисовки и потоков проверяются через публичное поведение страницы и элементов.
+
+## Требования ТЗ → тесты
+
+| Требование | Тесты (граничные и ошибочные случаи) |
+|---|---|
+| 1. Типы файлов по содержимому (EXE, DLL, SYS, BIN, DAT…) | `Detect_PeKinds`, `Detect_ArchivesImagesDocuments`, `Detect_TextAndScripts`, `Detect_EmptyAndUnknown`, `Detect_ExtensionMismatch`, `Detect_DamagedPe_IsMsDos`, `IdentifyAt_StrictRejectsWeakSignatures`, `Extensions_ExpectedAndInList` |
+| 2. PE Analyzer (заголовки, секции, импорт, экспорт, ресурсы, точка входа, подпись, PE32/PE32+) | `Pe64_HeadersSectionsImportsExports`, `Pe32_OrdinalImportsAndImageBase`, `Resources_TreeTypesLanguagesAndContent`, `TlsDotNetCertificateOverlay`, `EntryPoint_OffsetSectionAndRvaMapping`, `Checksum_MatchesBuilderIncludingOddLength`, `NotPe_IsInvalidWithReason`, `Truncated_AtEveryLength_NeverRaises`, `HugeCounts_AreClampedWithWarnings`, `ImportOutsideFile_AndUnterminatedThunks`, `ResourceCycle_DoesNotHang`, `Limits_ImportsAndExports`, `Fuzz_RandomHeaderCorruption_NeverRaises`, `Signature_FromFileApi_AndApiFailure`, `RealSystemFiles_SignedAndParsed` |
+| 3. Энтропия, упакованные и шифрованные области, карта | `Entropy_AllZero_NoHighRegions`, `Entropy_AutoBlockSize`, `Entropy_Cancel_Raises`, `Entropy_EmptyAndNilSource`, `RangeEntropy_BoundsAndClipping`, `Entropy_ShannonBounds`, `Cells_ConsistentWithBlockAtPoint`, `ManyBlocks_Aggregated`, `Click_RaisesBlockOffset`, `EntropyColor_ScaleMonotonicAndDistinctEnds` |
+| 4. Hex Viewer (просмотр, поиск байтов и строк, смещения, подсветка) | `Goto_ScrollsIntoViewAndSelects`, `Keys_MoveCaret`, `Highlights_LookupAndHint`, `FindNext_FindsWrapsAndKeepsPositionWhenMissing`, `FindNext_IgnoreCase`, `NilSource_Safe`, `BigVirtualSource_ScrollsToEndAndReadsOnlyPage`, `FindBytes_FoundCaseLimitAndBoundary`, `FindBytes_EdgeAndErrorCases`, `ParseHexPattern_ValidAndInvalid`, `BinaryLab_ButtonsDialogsAndDoubleClicks` |
+| 5. Строки ASCII/Unicode, URL, IP, пути, команды, индикаторы | `Classify_Mining`, `Classify_Ip`, `Classify_Domain`, `Classify_Base64AndPlain`, `Strings_MiningWalletCommands` |
+| 6. Вложенные EXE, DLL, архивы, сценарии | `Embedded_RandomData_NoFalsePositives`, `Embedded_Cancel_Raises`, `Embedded_LocateAndMaxScanBytes`, `Embedded_ExecutableArchiveScript` |
+| 7. BinaryDiff (секции, импорт, строки, ресурсы, блоки) | `Identical_Files`, `Modified_Pe_SectionsImportsExportsResourcesBlocks`, `DifferentSizes_TailIsChanged`, `NonPe_StringsCompared`, `Limits_Truncated`, `NilAndCancel` |
+| 8. Аномалии PE, необычные секции, скрытые данные, несоответствия формата | `CleanProgram_NoThreatVerdict`, `EntryOutsideSections`, `UpxLikePacking`, `PackedCodeAndEncryptedData`, `Imports_NoneDynamicFewInjectionAntiDebug`, `DotNet_NoImportsIsNormal`, `Driver_UnsignedAndChecksum`, `Signature_InvalidAndTrustedHalvesScore`, `Overlay_EncryptedVsInstaller`, `Score_ClampedAndLevelFromThresholds` |
+| 9. Открыть файл процесса в BinaryLab; результаты — в движок угроз | `Menu_OpenInBinaryLab`, `BinaryLab_PageAndMenus`, `FromReport_WeightsSignalsAndCap`, `Store_MatchByPathAndHash`, `Store_EvictsOldest`, `Store_ConcurrentAccess`, `Engine_AddsBinaryLabEvidenceToProcessFinding`, `Engine_IgnoresVerdictForChangedFile` |
+| 10. Отчёты JSON и HTML | `Json_RoundTripStructure`, `Html_EscapesFileData`, `Save_ByExtension`, `Diff_JsonAndHtml`, `DiffTitles_AndSaveDiff` |
+| Без запуска и изменения файла | `File_AnalysedWithoutModification`, `FileSource_ReadsAndKeepsFileUnchanged`, `FileSource_OpenWhileFileIsLockedForWrite` |
+| Асинхронно, без зависания интерфейса | `BinaryLab_AnalyzeNavigateFindExportCompare`, `BinaryLab_ErrorsCancelAndCloseWhileBusy`, `Progress_AndCancel` |
+| Лимиты памяти, повреждённые файлы | `Partial_WhenLargerThanScanLimit`, `Chunks_LimitAndCancel`, `Reader_BoundsAreChecked`, `Truncated_AtEveryLength_NeverRaises`, `Fuzz_RandomHeaderCorruption_NeverRaises` |
+
+## Публичные функции → тесты
+
+| Модуль | Функция | Тесты |
+|---|---|---|
+| `BinaryLab.Analyzer` | `MHAnalyzeBinaryFile` | TBinaryLabAnalyzerTests.File_AnalysedWithoutModification, TBinaryLabAnalyzerTests.File_Missing_Raises, TBinaryLabAnalyzerTests.RealSystemFiles_SignedAndParsed, TBinaryLabAnalyzerTests.Signature_FromFileApi_AndApiFailure |
+| `BinaryLab.Analyzer` | `MHAnalyzeBinarySource` | TBinaryLabAnalyzerTests.CleanPe_LowScore, TBinaryLabAnalyzerTests.File_Missing_Raises, TBinaryLabAnalyzerTests.Partial_WhenLargerThanScanLimit, TBinaryLabAnalyzerTests.Progress_AndCancel, TBinaryLabAnalyzerTests.SuspiciousPe_FullPipeline, TBinaryLabAnalyzerTests.TextEmptyAndUnknown и ещё 7 |
+| `BinaryLab.Anomalies` | `MHDetectAnomalies` | TBinaryLabAnomalyTests.CleanProgram_NoThreatVerdict, TBinaryLabAnomalyTests.DamagedHeader_NonPeData, TBinaryLabAnomalyTests.DotNet_NoImportsIsNormal, TBinaryLabAnomalyTests.Driver_UnsignedAndChecksum, TBinaryLabAnomalyTests.Embedded_ExecutableArchiveScript, TBinaryLabAnomalyTests.EntryOutsideSections и ещё 8 |
+| `BinaryLab.Anomalies` | `MHDetectInstaller` | TBinaryLabAnomalyTests.Overlay_EncryptedVsInstaller |
+| `BinaryLab.Anomalies` | `MHPackerBySectionName` | TBinaryLabAnomalyTests.UpxLikePacking |
+| `BinaryLab.Anomalies` | `MHScoreBinaryReport` | TBinaryLabAnomalyTests.CleanProgram_NoThreatVerdict, TBinaryLabAnomalyTests.DamagedHeader_NonPeData, TBinaryLabAnomalyTests.Score_ClampedAndLevelFromThresholds, TBinaryLabAnomalyTests.Signature_InvalidAndTrustedHalvesScore, TBinaryLabAnomalyTests.Strings_MiningWalletCommands, TBinaryLabAnomalyTests.UpxLikePacking |
+| `BinaryLab.Diff` | `MHCompareBinaries` | TBinaryLabDiffTests.DifferentSizes_TailIsChanged, TBinaryLabDiffTests.Identical_Files, TBinaryLabDiffTests.Limits_Truncated, TBinaryLabDiffTests.Modified_Pe_SectionsImportsExportsResourcesBlocks, TBinaryLabDiffTests.NilAndCancel, TBinaryLabDiffTests.NonPe_StringsCompared |
+| `BinaryLab.Diff` | `MHDiffAreaTitle` | TBinaryLabApiTests.DiffTitles_AndSaveDiff |
+| `BinaryLab.Embedded` | `MHFindEmbedded` | TBinaryLabEmbeddedTests.Embedded_ArchivesAndDocuments, TBinaryLabEmbeddedTests.Embedded_BogusSize_DoesNotHideRest, TBinaryLabEmbeddedTests.Embedded_Cancel_Raises, TBinaryLabEmbeddedTests.Embedded_ChunkBoundaries, TBinaryLabEmbeddedTests.Embedded_LocateAndMaxScanBytes, TBinaryLabEmbeddedTests.Embedded_MaxEmbeddedLimit и ещё 6 |
+| `BinaryLab.Entropy` | `MHAnalyzeEntropy` | TBinaryLabEntropyTests.Entropy_AllZero_NoHighRegions, TBinaryLabEntropyTests.Entropy_AutoBlockSize, TBinaryLabEntropyTests.Entropy_BlocksAcrossReadChunks, TBinaryLabEntropyTests.Entropy_Cancel_Raises, TBinaryLabEntropyTests.Entropy_EmptyAndNilSource, TBinaryLabEntropyTests.Entropy_ExplicitBlockSize_LastPartialBlock и ещё 4 |
+| `BinaryLab.Entropy` | `MHRangeEntropy` | TBinaryLabEntropyTests.Entropy_BlocksAcrossReadChunks, TBinaryLabEntropyTests.RangeEntropy_BoundsAndClipping |
+| `BinaryLab.FileType` | `MHDetectBinaryType` | TBinaryLabBasicsTests.Detect_ArchivesImagesDocuments, TBinaryLabBasicsTests.Detect_DamagedPe_IsMsDos, TBinaryLabBasicsTests.Detect_EmptyAndUnknown, TBinaryLabBasicsTests.Detect_ExtensionMismatch, TBinaryLabBasicsTests.Detect_PeKinds, TBinaryLabBasicsTests.Detect_TextAndScripts |
+| `BinaryLab.FileType` | `MHExpectedExtensions` | TBinaryLabApiTests.Extensions_ExpectedAndInList |
+| `BinaryLab.FileType` | `MHExtensionInList` | TBinaryLabApiTests.Extensions_ExpectedAndInList |
+| `BinaryLab.FileType` | `MHIdentifyAt` | TBinaryLabBasicsTests.IdentifyAt_StrictRejectsWeakSignatures |
+| `BinaryLab.FileType` | `MHMachineName` | TBinaryLabApiTests.MachineSubsystemAndPeKindNames |
+| `BinaryLab.FileType` | `MHProbePe` | TBinaryLabBasicsTests.ProbePe_ImageEndAndHugeLfanew |
+| `BinaryLab.Pe` | `MHComputePeChecksum` | TBinaryLabPeTests.Checksum_MatchesBuilderIncludingOddLength |
+| `BinaryLab.Pe` | `MHParsePe` | TBinaryLabAnomalyTests.CleanProgram_NoThreatVerdict, TBinaryLabAnomalyTests.DotNet_NoImportsIsNormal, TBinaryLabAnomalyTests.Driver_UnsignedAndChecksum, TBinaryLabAnomalyTests.EntryOutsideSections, TBinaryLabAnomalyTests.Imports_NoneDynamicFewInjectionAntiDebug, TBinaryLabAnomalyTests.Overlay_EncryptedVsInstaller и ещё 19 |
+| `BinaryLab.Pe` | `MHPeLocate` | TBinaryLabPeTests.Locate_DescribesOffsets |
+| `BinaryLab.Pe` | `MHPeRvaToOffset` | TBinaryLabPeTests.EntryPoint_OffsetSectionAndRvaMapping |
+| `BinaryLab.Pe` | `MHRangeSha256` | TBinaryLabPeTests.RangeSha256_Bounds |
+| `BinaryLab.Pe` | `MHResourceTypeName` | TBinaryLabPeTests.Resources_TreeTypesLanguagesAndContent |
+| `BinaryLab.Pe` | `MHSubsystemName` | TBinaryLabApiTests.MachineSubsystemAndPeKindNames |
+| `BinaryLab.Report` | `MHBinaryDiffToHtml` | TBinaryLabReportTests.Diff_JsonAndHtml |
+| `BinaryLab.Report` | `MHBinaryDiffToJson` | TBinaryLabReportTests.Diff_JsonAndHtml |
+| `BinaryLab.Report` | `MHBinaryReportToHtml` | TBinaryLabReportTests.Html_EscapesFileData |
+| `BinaryLab.Report` | `MHBinaryReportToJson` | TBinaryLabReportTests.Json_RoundTripStructure |
+| `BinaryLab.Report` | `MHSaveBinaryDiff` | TBinaryLabApiTests.DiffTitles_AndSaveDiff |
+| `BinaryLab.Report` | `MHSaveBinaryReport` | TBinaryLabReportTests.Save_ByExtension |
+| `BinaryLab.Source` | `GetName` | TBinaryLabApiTests.Sections_FlagsFindAndRva, TBinaryLabBasicsTests.FileSource_ReadsAndKeepsFileUnchanged, TBinaryLabDiffTests.Modified_Pe_SectionsImportsExportsResourcesBlocks, TBinaryLabDiffTests.NonPe_StringsCompared, TBinaryLabPeTests.Pe64_HeadersSectionsImportsExports, TBinaryLabPeTests.Resources_TreeTypesLanguagesAndContent и ещё 6 |
+| `BinaryLab.Source` | `GetSize` | TBinaryLabAnalyzerTests.SuspiciousPe_FullPipeline, TBinaryLabAnomalyTests.CleanProgram_NoThreatVerdict, TBinaryLabAnomalyTests.DamagedHeader_NonPeData, TBinaryLabAnomalyTests.DotNet_NoImportsIsNormal, TBinaryLabAnomalyTests.Driver_UnsignedAndChecksum, TBinaryLabAnomalyTests.EntryOutsideSections и ещё 34 |
+| `BinaryLab.Source` | `InRange` | TBinaryLabBasicsTests.Reader_BoundsAreChecked |
+| `BinaryLab.Source` | `MHCheckCancel` | TBinaryLabApiTests.CheckCancel_NilFalseTrue |
+| `BinaryLab.Source` | `MHFindBytes` | TBinaryLabApiTests.FindBytes_EdgeAndErrorCases, TBinaryLabApiTests.FindBytes_FoundCaseLimitAndBoundary |
+| `BinaryLab.Source` | `MHParseHexPattern` | TBinaryLabApiTests.ParseHexPattern_ValidAndInvalid |
+| `BinaryLab.Source` | `MHReadChunks` | TBinaryLabBasicsTests.Chunks_LimitAndCancel, TBinaryLabBasicsTests.Chunks_OverlapCoversBoundaries |
+| `BinaryLab.Source` | `MHTextPattern` | TBinaryLabApiTests.TextPattern_AsciiAndUtf16, TMainFormSmokeTests.BinaryLab_AnalyzeNavigateFindExportCompare |
+| `BinaryLab.Source` | `MatchesAt` | TBinaryLabBasicsTests.Reader_EmptySource, TBinaryLabBasicsTests.Reader_StringsAndSignatures |
+| `BinaryLab.Source` | `ReadAnsiZ` | TBinaryLabBasicsTests.Reader_EmptySource, TBinaryLabBasicsTests.Reader_StringsAndSignatures |
+| `BinaryLab.Source` | `ReadAt` | TBinaryLabBasicsTests.FileSource_ReadsAndKeepsFileUnchanged |
+| `BinaryLab.Source` | `ReadBytes` | TBinaryLabBasicsTests.Reader_BoundsAreChecked |
+| `BinaryLab.Source` | `ReadUtf16` | TBinaryLabBasicsTests.Reader_StringsAndSignatures |
+| `BinaryLab.Source` | `TryRead` | TBinaryLabApiTests.Reader_TryReadCacheAndLargeReads |
+| `BinaryLab.Source` | `TryReadByte` | TBinaryLabBasicsTests.Reader_EmptySource |
+| `BinaryLab.Source` | `TryReadDWord` | TBinaryLabBasicsTests.Reader_BoundsAreChecked |
+| `BinaryLab.Source` | `TryReadQWord` | TBinaryLabBasicsTests.Reader_BoundsAreChecked |
+| `BinaryLab.Source` | `TryReadWord` | TBinaryLabBasicsTests.Reader_BoundsAreChecked |
+| `BinaryLab.Strings` | `MHClassifyString` | TBinaryLabStringsTests.Classify_Base64AndPlain, TBinaryLabStringsTests.Classify_Domain, TBinaryLabStringsTests.Classify_Ip, TBinaryLabStringsTests.Classify_Mining, TBinaryLabStringsTests.Classify_Path, TBinaryLabStringsTests.Classify_RegistryAndCommand и ещё 3 |
+| `BinaryLab.Strings` | `MHScanStrings` | TBinaryLabStringsTests.Strings_AsciiUtf16AndCyrillic, TBinaryLabStringsTests.Strings_Cancel_Raises, TBinaryLabStringsTests.Strings_ChunkBoundary_FoundOnce, TBinaryLabStringsTests.Strings_EmptyAndNilSource, TBinaryLabStringsTests.Strings_MaxScanBytesRespected, TBinaryLabStringsTests.Strings_MaxStringsZero и ещё 3 |
+| `BinaryLab.Types` | `AccessText` | TBinaryLabApiTests.Sections_FlagsFindAndRva, TBinaryLabPeTests.Pe64_HeadersSectionsImportsExports |
+| `BinaryLab.Types` | `ContainsCode` | TBinaryLabApiTests.Sections_FlagsFindAndRva, TBinaryLabPeTests.Pe64_HeadersSectionsImportsExports |
+| `BinaryLab.Types` | `CountOf` | TBinaryLabApiTests.Report_HasAnomalyAndDiffCountOf, TBinaryLabDiffTests.DifferentSizes_TailIsChanged, TBinaryLabDiffTests.Limits_Truncated, TBinaryLabDiffTests.Modified_Pe_SectionsImportsExportsResourcesBlocks, TBinaryLabDiffTests.NonPe_StringsCompared |
+| `BinaryLab.Types` | `Default` | TBinaryLabAnalyzerTests.CleanPe_LowScore, TBinaryLabAnalyzerTests.File_AnalysedWithoutModification, TBinaryLabAnalyzerTests.File_Missing_Raises, TBinaryLabAnalyzerTests.Partial_WhenLargerThanScanLimit, TBinaryLabAnalyzerTests.Progress_AndCancel, TBinaryLabAnalyzerTests.RealSystemFiles_SignedAndParsed и ещё 88 |
+| `BinaryLab.Types` | `FindSection` | TBinaryLabAnalyzerTests.SuspiciousPe_FullPipeline, TBinaryLabApiTests.Sections_FlagsFindAndRva, TBinaryLabPeTests.Pe64_HeadersSectionsImportsExports |
+| `BinaryLab.Types` | `HasAnomaly` | TBinaryLabAnalyzerTests.CleanPe_LowScore, TBinaryLabAnalyzerTests.Partial_WhenLargerThanScanLimit, TBinaryLabAnalyzerTests.SuspiciousPe_FullPipeline, TBinaryLabApiTests.Report_HasAnomalyAndDiffCountOf, TMainFormSmokeTests.BinaryLab_AnalyzeNavigateFindExportCompare |
+| `BinaryLab.Types` | `ImportsFunction` | TBinaryLabPeTests.Pe64_HeadersSectionsImportsExports |
+| `BinaryLab.Types` | `IsExecutable` | TBinaryLabApiTests.Sections_FlagsFindAndRva |
+| `BinaryLab.Types` | `IsReadable` | TBinaryLabApiTests.Sections_FlagsFindAndRva |
+| `BinaryLab.Types` | `IsWritable` | TBinaryLabApiTests.Sections_FlagsFindAndRva |
+| `BinaryLab.Types` | `MHAnomalySeverityTitle` | TBinaryLabApiTests.EnumTitlesAndNames_AllValuesDistinct |
+| `BinaryLab.Types` | `MHAnomalySeverityToName` | TBinaryLabApiTests.EnumTitlesAndNames_AllValuesDistinct |
+| `BinaryLab.Types` | `MHBinaryKindTitle` | TBinaryLabApiTests.EnumTitlesAndNames_AllValuesDistinct |
+| `BinaryLab.Types` | `MHBinaryKindToName` | TBinaryLabApiTests.EnumTitlesAndNames_AllValuesDistinct, TBinaryLabBasicsTests.Detect_ArchivesImagesDocuments |
+| `BinaryLab.Types` | `MHDiffChangeTitle` | TBinaryLabApiTests.EnumTitlesAndNames_AllValuesDistinct |
+| `BinaryLab.Types` | `MHDiffChangeToName` | TBinaryLabApiTests.EnumTitlesAndNames_AllValuesDistinct |
+| `BinaryLab.Types` | `MHEntropyClassOf` | TBinaryLabBasicsTests.Entropy_ShannonBounds, TEntropyMapTests.Hint_RangeEntropyAndBand |
+| `BinaryLab.Types` | `MHEntropyClassTitle` | TBinaryLabApiTests.EnumTitlesAndNames_AllValuesDistinct, TEntropyMapTests.Hint_RangeEntropyAndBand |
+| `BinaryLab.Types` | `MHHexOffset` | TBinaryLabBasicsTests.Entropy_ShannonBounds, TEntropyMapTests.Hint_RangeEntropyAndBand, THexViewTests.BigVirtualSource_ScrollsToEndAndReadsOnlyPage, TRangeStripTests.Click_OnRangeGivesStart_ElsewhereComputed |
+| `BinaryLab.Types` | `MHPeKindTitle` | TBinaryLabApiTests.MachineSubsystemAndPeKindNames |
+| `BinaryLab.Types` | `MHShannonEntropy` | TBinaryLabBasicsTests.Entropy_ShannonBounds |
+| `BinaryLab.Types` | `MHStringCategoryTitle` | TBinaryLabApiTests.EnumTitlesAndNames_AllValuesDistinct |
+| `BinaryLab.Types` | `MHStringCategoryToName` | TBinaryLabApiTests.EnumTitlesAndNames_AllValuesDistinct, TBinaryLabStringsTests.Classify_Base64AndPlain, TBinaryLabStringsTests.Classify_Domain, TBinaryLabStringsTests.Classify_Ip, TBinaryLabStringsTests.Classify_Mining, TBinaryLabStringsTests.Classify_Path и ещё 4 |
+| `BinaryLab.Types` | `Normalized` | TBinaryLabBasicsTests.Options_Normalized |
+| `BinaryLab.Types` | `SectionOfRva` | TBinaryLabApiTests.Sections_FlagsFindAndRva |
+| `BinaryLab.Verdicts` | `Clear` | TBinaryLabApiTests.EnumTitlesAndNames_AllValuesDistinct, TBinaryLabVerdictTests.Store_MatchByPathAndHash, TMainFormSmokeTests.Pages_TablesShownWholeAndWheelScrollsPage |
+| `BinaryLab.Verdicts` | `Count` | TBinaryLabReportTests.Diff_JsonAndHtml, TBinaryLabReportTests.Json_RoundTripStructure, TBinaryLabVerdictTests.Store_ConcurrentAccess, TBinaryLabVerdictTests.Store_EvictsOldest, TBinaryLabVerdictTests.Store_MatchByPathAndHash, TFileActionsTests.Menu_ItemsFollowSelectedRow и ещё 28 |
+| `BinaryLab.Verdicts` | `MHVerdictFromReport` | TBinaryLabVerdictTests.FromReport_WeightsSignalsAndCap |
+| `BinaryLab.Verdicts` | `Put` | TBinaryLabEmbeddedTests.Embedded_ChunkBoundaries, TBinaryLabEmbeddedTests.Embedded_LocateAndMaxScanBytes, TBinaryLabStringsTests.Strings_ChunkBoundary_FoundOnce, TBinaryLabStringsTests.Strings_MaxScanBytesRespected, TBinaryLabVerdictTests.Engine_AddsBinaryLabEvidenceToProcessFinding, TBinaryLabVerdictTests.Engine_IgnoresVerdictForChangedFile и ещё 3 |
+| `BinaryLab.Verdicts` | `TryGet` | TBinaryLabVerdictTests.Store_ConcurrentAccess, TBinaryLabVerdictTests.Store_EvictsOldest, TBinaryLabVerdictTests.Store_MatchByPathAndHash, TMainFormSmokeTests.BinaryLab_AnalyzeNavigateFindExportCompare |
+| `App.BinaryLab.Controls` | `AddHighlight` | TBinaryLabDarkThemeTests.AllControls_PaintInDarkTheme, THexViewTests.BeforeHandle_Safe, THexViewTests.Highlights_LookupAndHint, THexViewTests.Paint_NormalAndTiny |
+| `App.BinaryLab.Controls` | `BarFraction` | THistogramTests.Scale_LogarithmicAndLinear |
+| `App.BinaryLab.Controls` | `BarRect` | THistogramTests.ByteAtPoint_MatchesBars, THistogramTests.ByteAtPoint_UnevenWidth_EveryByteReachable, THistogramTests.Hint_ByteCountPercent, THistogramTests.Paint_NormalEmptyTiny |
+| `App.BinaryLab.Controls` | `BlockAtPoint` | TEntropyMapTests.Cells_ConsistentWithBlockAtPoint, TEntropyMapTests.ManyBlocks_Aggregated, TEntropyMapTests.Paint_CellColourAndEmptyAndTiny |
+| `App.BinaryLab.Controls` | `BlockCount` | TMainFormSmokeTests.BinaryLab_AnalyzeNavigateFindExportCompare |
+| `App.BinaryLab.Controls` | `BlocksPerCell` | TEntropyMapTests.Cells_ConsistentWithBlockAtPoint, TEntropyMapTests.ManyBlocks_Aggregated |
+| `App.BinaryLab.Controls` | `ByteAtPoint` | THistogramTests.ByteAtPoint_MatchesBars, THistogramTests.ByteAtPoint_UnevenWidth_EveryByteReachable, THistogramTests.Paint_NormalEmptyTiny |
+| `App.BinaryLab.Controls` | `CellCount` | TEntropyMapTests.Cells_ConsistentWithBlockAtPoint, TEntropyMapTests.ManyBlocks_Aggregated, TEntropyMapTests.Paint_CellColourAndEmptyAndTiny |
+| `App.BinaryLab.Controls` | `CellRect` | TEntropyMapTests.Cells_ConsistentWithBlockAtPoint, TEntropyMapTests.Click_RaisesBlockOffset, TEntropyMapTests.Hint_RangeEntropyAndBand, TEntropyMapTests.ManyBlocks_Aggregated, TEntropyMapTests.Paint_CellColourAndEmptyAndTiny, TMainFormSmokeTests.BinaryLab_ButtonsDialogsAndDoubleClicks |
+| `App.BinaryLab.Controls` | `ClearHighlights` | THexViewTests.Highlights_LookupAndHint |
+| `App.BinaryLab.Controls` | `ContentWidth` | THexViewTests.OffsetAtPoint_OutsideColumns_False, THexViewTests.Rows_CountAndVisible |
+| `App.BinaryLab.Controls` | `EntropyColor` | TEntropyMapTests.EntropyColor_ScaleMonotonicAndDistinctEnds, TEntropyMapTests.Paint_CellColourAndEmptyAndTiny |
+| `App.BinaryLab.Controls` | `FindNext` | THexViewTests.BeforeHandle_Safe, THexViewTests.FindNext_FindsWrapsAndKeepsPositionWhenMissing, THexViewTests.FindNext_IgnoreCase, THexViewTests.NilSource_Safe |
+| `App.BinaryLab.Controls` | `GotoOffset` | TBinaryLabDarkThemeTests.AllControls_PaintInDarkTheme, THexViewTests.BeforeHandle_Safe, THexViewTests.BigVirtualSource_ScrollsToEndAndReadsOnlyPage, THexViewTests.FindNext_FindsWrapsAndKeepsPositionWhenMissing, THexViewTests.Goto_ScrollsIntoViewAndSelects, THexViewTests.Goto_VisibleOffset_DoesNotScroll и ещё 4 |
+| `App.BinaryLab.Controls` | `HighlightAt` | THexViewTests.Highlights_LookupAndHint |
+| `App.BinaryLab.Controls` | `HighlightCount` | THexViewTests.Highlights_LookupAndHint |
+| `App.BinaryLab.Controls` | `HintTextAt` | TEntropyMapTests.Hint_RangeEntropyAndBand, TEntropyMapTests.ManyBlocks_Aggregated, TEntropyMapTests.Paint_CellColourAndEmptyAndTiny, THexViewTests.BigVirtualSource_ScrollsToEndAndReadsOnlyPage, THexViewTests.Highlights_LookupAndHint, THexViewTests.NilSource_Safe и ещё 5 |
+| `App.BinaryLab.Controls` | `InvalidateData` | TMainFormSmokeTests.BinaryLab_ButtonsDialogsAndDoubleClicks |
+| `App.BinaryLab.Controls` | `MHBlendColor` | TMainFormSmokeTests.BinaryLab_ButtonsDialogsAndDoubleClicks |
+| `App.BinaryLab.Controls` | `OffsetAtPoint` | THexViewTests.BeforeHandle_Safe, THexViewTests.BigVirtualSource_ScrollsToEndAndReadsOnlyPage, THexViewTests.NilSource_Safe, THexViewTests.OffsetAtPoint_InverseOfPointOfOffset, THexViewTests.OffsetAtPoint_OutsideColumns_False |
+| `App.BinaryLab.Controls` | `OffsetAtX` | TRangeStripTests.Click_OnRangeGivesStart_ElsewhereComputed, TRangeStripTests.OffsetAtX_Endpoints, TRangeStripTests.ZeroFileSize_Safe |
+| `App.BinaryLab.Controls` | `OffsetDigits` | THexViewTests.BigVirtualSource_ScrollsToEndAndReadsOnlyPage, THexViewTests.Rows_CountAndVisible |
+| `App.BinaryLab.Controls` | `PointOfOffset` | THexViewTests.BeforeHandle_Safe, THexViewTests.BigVirtualSource_ScrollsToEndAndReadsOnlyPage, THexViewTests.Goto_ScrollsIntoViewAndSelects, THexViewTests.Highlights_LookupAndHint, THexViewTests.Mouse_ClickSelectsAndDragExtends, THexViewTests.NilSource_Safe и ещё 2 |
+| `App.BinaryLab.Controls` | `RangeAtX` | TRangeStripTests.Click_OnRangeGivesStart_ElsewhereComputed, TRangeStripTests.NarrowRange_AtLeastOnePixel, TRangeStripTests.ZeroFileSize_Safe |
+| `App.BinaryLab.Controls` | `RowCount` | THexViewTests.BigVirtualSource_ScrollsToEndAndReadsOnlyPage, THexViewTests.NilSource_Safe, THexViewTests.Rows_CountAndVisible, THexViewTests.ScrollBarMessages_Scroll, THexViewTests.TopOffset_RowAlignedAndClamped |
+| `App.BinaryLab.Controls` | `ScrollRows` | TMainFormSmokeTests.BinaryLab_ButtonsDialogsAndDoubleClicks |
+| `App.BinaryLab.Controls` | `SetBands` | TEntropyMapTests.Hint_RangeEntropyAndBand |
+| `App.BinaryLab.Controls` | `SetData` | TBinaryLabDarkThemeTests.AllControls_PaintInDarkTheme, TEntropyMapTests.Cells_ConsistentWithBlockAtPoint, TEntropyMapTests.Click_RaisesBlockOffset, TEntropyMapTests.Hint_RangeEntropyAndBand, TEntropyMapTests.ManyBlocks_Aggregated, TEntropyMapTests.Paint_CellColourAndEmptyAndTiny и ещё 16 |
+| `App.BinaryLab.Controls` | `SetHistogram` | TBinaryLabDarkThemeTests.AllControls_PaintInDarkTheme, THistogramTests.ByteAtPoint_MatchesBars, THistogramTests.ByteAtPoint_UnevenWidth_EveryByteReachable, THistogramTests.Hint_ByteCountPercent, THistogramTests.Paint_NormalEmptyTiny, THistogramTests.Scale_LogarithmicAndLinear |
+| `App.BinaryLab.Controls` | `SetRanges` | TBinaryLabDarkThemeTests.AllControls_PaintInDarkTheme, TRangeStripTests.ZeroFileSize_Safe |
+| `App.BinaryLab.Controls` | `VisibleRows` | THexViewTests.BigVirtualSource_ScrollsToEndAndReadsOnlyPage, THexViewTests.FindNext_FindsWrapsAndKeepsPositionWhenMissing, THexViewTests.Goto_ScrollsIntoViewAndSelects, THexViewTests.HugeSource_ScrollBarScaled, THexViewTests.Keys_PageDownAndCtrlEnd, THexViewTests.OffsetAtPoint_InverseOfPointOfOffset и ещё 5 |
+| `App.BinaryLabPage` | `Busy` | TMainFormSmokeTests.BinaryLab_AnalyzeNavigateFindExportCompare, TMainFormSmokeTests.BinaryLab_ButtonsDialogsAndDoubleClicks, TMainFormSmokeTests.BinaryLab_ErrorsCancelAndCloseWhileBusy, TMainFormSmokeTests.BinaryLab_PageAndMenus |
+| `App.BinaryLabPage` | `Cancel` | TMainFormSmokeTests.BinaryLab_ErrorsCancelAndCloseWhileBusy |
+| `App.BinaryLabPage` | `CompareWith` | TMainFormSmokeTests.BinaryLab_AnalyzeNavigateFindExportCompare |
+| `App.BinaryLabPage` | `ExportDiff` | TMainFormSmokeTests.BinaryLab_AnalyzeNavigateFindExportCompare |
+| `App.BinaryLabPage` | `ExportReport` | TMainFormSmokeTests.BinaryLab_AnalyzeNavigateFindExportCompare, TMainFormSmokeTests.Findings_ListCardAndExport |
+| `App.BinaryLabPage` | `FindPattern` | TMainFormSmokeTests.BinaryLab_AnalyzeNavigateFindExportCompare |
+| `App.BinaryLabPage` | `OpenFile` | TMainFormSmokeTests.BinaryLab_ErrorsCancelAndCloseWhileBusy |
+| `App.BinaryLabPage` | `ParseOffset` | TMainFormSmokeTests.BinaryLab_AnalyzeNavigateFindExportCompare |
+| `App.BinaryLabPage` | `ShowOffset` | TMainFormSmokeTests.BinaryLab_AnalyzeNavigateFindExportCompare |
+
+Функций: 120, без тестов: 0.

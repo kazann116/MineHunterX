@@ -42,6 +42,7 @@
   файлов (BinaryDiff), отчёты HTML и JSON.
 - Признаки из разбора файла передаются анализатору угроз: находка процесса этого файла получает
   их при следующей проверке (с пометкой «разбор файла в BinaryLab»).
+- Тесты: [матрица «требование и функция → тесты»](docs/binarylab-tests.md) (`python tools/binarylab_test_matrix.py`).
 
 ## Что нового в 0.3.5
 
@@ -90,7 +91,7 @@
 git clone <адрес этого репозитория>
 cd MineHunter
 powershell -ExecutionPolicy Bypass -File tools\build.ps1 -Config Release   # нужна Delphi 12 (RAD Studio 23.0)
-powershell -ExecutionPolicy Bypass -File tools\test.ps1  -Config Release   # 972 теста DUnitX
+powershell -ExecutionPolicy Bypass -File tools\test.ps1  -Config Release   # 985 тестов DUnitX
 build\Win64\Release\MineHunter.App.exe
 ```
 
@@ -231,7 +232,7 @@ build\Win64\Release\MineHunter.App.exe
 
 | Критерий ТЗ | Требование | Результат |
 |---|---|---|
-| Автотесты (DUnitX, Debug и Release) | 100% | 972 из 972, утечек 0 |
+| Автотесты (DUnitX, Debug и Release) | 100% | 985 из 985, утечек 0 |
 | Синтетические сценарии угроз | 100% обнаружение | 12 из 12, включая майнер на видеокарте и вмешательство в защиту ([отчёт](docs/false-positive-report.md)) |
 | Ложные срабатывания на легальной нагрузке | отдельный отчёт | 0 из 22 (игры, компиляция, рендеринг на CPU и GPU, Folding@home, трансляция, обновления, антивирус, исключения разработчика…) |
 | Нагрузка в простое | ≤ 2% CPU | 0,16% CPU машины ([GUI-soak](docs/gui-soak-report.md)); с видеокартой и датчиками — 0,21% ([отчёт](docs/gui-soak-gpu-report.md)) |

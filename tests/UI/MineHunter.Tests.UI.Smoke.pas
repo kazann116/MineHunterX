@@ -78,6 +78,7 @@ type
     [Test] procedure BinaryLab_PageAndMenus;
     [Test] procedure BinaryLab_AnalyzeNavigateFindExportCompare;
     [Test] procedure BinaryLab_ErrorsCancelAndCloseWhileBusy;
+    [Test] procedure BinaryLab_ButtonsDialogsAndDoubleClicks;
   end;
 
 implementation
@@ -98,7 +99,8 @@ uses
   Winapi.CommCtrl, Winapi.Messages, Vcl.Forms, Vcl.Controls, System.Types, MineHunter.App.ListViews,
   MineHunter.Tests.Fakes, MineHunter.Core.DataDir, MineHunter.App.FileActions, Vcl.StdCtrls,
   Vcl.ComCtrls, MineHunter.App.BinaryLabPage, MineHunter.BinaryLab.Types, MineHunter.BinaryLab.Source,
-  MineHunter.BinaryLab.Anomalies, MineHunter.Tests.PeBuilder;
+  MineHunter.BinaryLab.Anomalies, MineHunter.Tests.PeBuilder, MineHunter.App.BinaryLab.Controls,
+  MineHunter.Core.Lang;
 
 var
   // Подмена операций ОС для тестов действий (nil — настоящие операции).
@@ -376,6 +378,181 @@ begin
   Assert.IsTrue(TFile.Exists(TPath.Combine(FTempDir, 'd.html')));
   // Отчёт после сравнения остаётся отчётом первого файла.
   Assert.AreEqual(LPath, LPage.Report.Path);
+end;
+
+procedure TMainFormSmokeTests.BinaryLab_ButtonsDialogsAndDoubleClicks;
+var
+  LPage: TMHBinaryLabPage;
+  LPath, LOther, LChosen, LExport: string;
+  LCalls: Integer;
+  LAnomaly: TMHBinaryAnomaly;
+  I: Integer;
+  LNode: TTreeNode;
+  LCaret: Int64;
+  LCell: TRect;
+begin
+  LPath := WriteSample('buttons.exe', False);
+  LOther := WriteSample('buttons2.exe', True);
+  LPage := FForm.BinaryLabPage;
+  LCalls := 0;
+  LChosen := '';
+  LPage.ChooseFile :=
+    function(const ATitle, AFilter, ADefaultName: string; ASave: Boolean; out AFileName: string): Boolean
+    begin
+      Inc(LCalls);
+      Assert.IsTrue(ATitle <> '');
+      Assert.IsTrue(AFilter.Contains('|'), 'Фильтр диалога');
+      AFileName := LChosen;
+      Result := LChosen <> '';
+    end;
+  // Отказ в диалоге — ничего не происходит.
+  LPage.OpenButton.Click;
+  Assert.AreEqual(1, LCalls);
+  Assert.IsFalse(LPage.Busy);
+  Assert.IsFalse(LPage.HasReport);
+  // «Открыть файл…».
+  LChosen := LPath;
+  LPage.OpenButton.Click;
+  Assert.IsTrue(WaitForBinaryLab(30000));
+  Assert.AreEqual(LPath, LPage.Report.Path);
+
+  // Двойной щелчок по аномалии со смещением — в Hex на это место.
+  for I := 0 to High(LPage.Report.Anomalies) do
+  begin
+    LAnomaly := LPage.Report.Anomalies[I];
+    if LAnomaly.Offset >= 0 then
+    begin
+      LPage.Tabs.ActivePageIndex := TMHBinaryLabPage.TabOverview;
+      LPage.AnomalyList.Selected := LPage.AnomalyList.Items[I];
+      LPage.AnomalyList.OnDblClick(LPage.AnomalyList);
+      Assert.AreEqual(TMHBinaryLabPage.TabHex, LPage.Tabs.ActivePageIndex);
+      Assert.AreEqual<Int64>(LAnomaly.Offset, LPage.HexView.SelStart);
+      Break;
+    end;
+  end;
+  // Вложения.
+  Assert.IsTrue(LPage.EmbeddedList.Items.Count > 0);
+  LPage.EmbeddedList.Selected := LPage.EmbeddedList.Items[0];
+  LPage.EmbeddedList.OnDblClick(LPage.EmbeddedList);
+  Assert.AreEqual<Int64>(LPage.Report.Embedded[0].Offset, LPage.HexView.SelStart);
+  // Строки (виртуальный список).
+  Assert.IsTrue(LPage.StringsList.Items.Count > 0);
+  LPage.StringsList.Selected := LPage.StringsList.Items[0];
+  LPage.StringsList.OnDblClick(LPage.StringsList);
+  Assert.AreEqual(TMHBinaryLabPage.TabHex, LPage.Tabs.ActivePageIndex);
+  Assert.IsTrue(LPage.HexView.SelLength > 1, 'Выделена вся строка');
+  // Области высокой энтропии (оверлей с программой — не обязательно; если есть — переход).
+  if LPage.RegionList.Items.Count > 0 then
+  begin
+    LPage.RegionList.Selected := LPage.RegionList.Items[0];
+    LPage.RegionList.OnDblClick(LPage.RegionList);
+    Assert.AreEqual<Int64>(LPage.Report.Entropy.HighRegions[0].Offset, LPage.HexView.SelStart);
+  end;
+  // Структура: строка таблицы секций → начало секции.
+  LNode := nil;
+  for I := 0 to LPage.StructureTree.Items.Count - 1 do
+    if LPage.StructureTree.Items[I].Text.StartsWith(MHL('Секции', 'Sections')) then
+      LNode := LPage.StructureTree.Items[I];
+  Assert.IsNotNull(LNode);
+  LPage.StructureTree.Selected := LNode;
+  Assert.AreEqual(Integer(Length(LPage.Report.Pe.Sections)), LPage.DetailsList.Items.Count);
+  LPage.DetailsList.Selected := LPage.DetailsList.Items[0];
+  LPage.DetailsList.OnDblClick(LPage.DetailsList);
+  Assert.AreEqual<Int64>(LPage.Report.Pe.Sections[0].RawOffset, LPage.HexView.SelStart);
+  // Импорт, экспорт, ресурсы, каталоги, заголовок — у каждого узла своя таблица.
+  for I := 0 to LPage.StructureTree.Items.Count - 1 do
+  begin
+    LPage.StructureTree.Selected := LPage.StructureTree.Items[I];
+    Assert.IsTrue(LPage.DetailsList.Columns.Count >= 1, LPage.StructureTree.Items[I].Text);
+  end;
+  // Карта: щелчок по блоку → Hex.
+  LPage.Tabs.ActivePageIndex := TMHBinaryLabPage.TabMap;
+  LPage.EntropyMap.OnBlockClick(LPage.EntropyMap, LPage.Report.Entropy.Blocks[1].Offset);
+  Assert.AreEqual(TMHBinaryLabPage.TabHex, LPage.Tabs.ActivePageIndex);
+  Assert.AreEqual<Int64>(LPage.Report.Entropy.Blocks[1].Offset, LPage.HexView.SelStart);
+  LCell := LPage.EntropyMap.CellRect(0);
+  Assert.IsTrue(LCell.Width >= 0);
+  // «Перейти»: верная и неверная запись смещения.
+  LPage.GotoEdit.Text := '0x10';
+  LPage.GotoButton.Click;
+  Assert.AreEqual<Int64>($10, LPage.HexView.CaretOffset);
+  Assert.IsTrue(string(LPage.HexStatus.Caption).Contains('0x00000010'), LPage.HexStatus.Caption);
+  LCaret := LPage.HexView.CaretOffset;
+  LPage.GotoEdit.Text := 'zz!';
+  LPage.GotoButton.Click;
+  Assert.AreEqual<Int64>(LCaret, LPage.HexView.CaretOffset, 'Неверная запись — позиция прежняя');
+  Assert.IsTrue(string(LPage.StageLabel.Caption) <> '');
+  LPage.GotoEdit.Text := '0xFFFFFFFF';
+  LPage.GotoButton.Click;
+  Assert.AreEqual<Int64>(LCaret, LPage.HexView.CaretOffset, 'За концом файла — позиция прежняя');
+  // «Найти далее»: байты, неверные байты, UTF-16, пустой запрос.
+  LPage.FindMode.ItemIndex := 2;
+  LPage.FindEdit.Text := '4D 5A';
+  LPage.HexView.GotoOffset(0, 1);
+  LPage.FindButton.Click;
+  Assert.IsTrue(WaitForBinaryLab(10000));
+  Assert.IsTrue(LPage.LastFindOffset > 0, 'Следующий «MZ» — вложенная программа');
+  LPage.FindEdit.Text := '4D 5';
+  LPage.FindButton.Click;
+  Assert.IsFalse(LPage.Busy, 'Неверные байты — поиск не запускается');
+  LPage.FindMode.ItemIndex := 1;
+  LPage.FindEdit.Text := 'stratum';
+  LPage.FindButton.Click;
+  Assert.IsTrue(WaitForBinaryLab(10000));
+  Assert.AreEqual<Int64>(-1, LPage.LastFindOffset, 'Строка записана в ASCII, не в UTF-16');
+  LPage.FindEdit.Text := '';
+  LPage.FindButton.Click;
+  Assert.IsFalse(LPage.Busy);
+  // «Экспорт отчёта…»: отказ и сохранение.
+  LExport := TPath.Combine(FTempDir, 'button-report.html');
+  LChosen := '';
+  LPage.ExportButton.Click;
+  Assert.IsFalse(TFile.Exists(LExport));
+  LChosen := LExport;
+  LPage.ExportButton.Click;
+  Assert.IsTrue(TFile.Exists(LExport));
+  // «Сравнить с…», переход по изменению, полоса изменений, экспорт сравнения.
+  Assert.IsFalse(LPage.DiffExportButton.Enabled, 'Сравнения ещё нет');
+  LChosen := LOther;
+  LPage.CompareButton.Click;
+  Assert.IsTrue(WaitForBinaryLab(30000));
+  Assert.IsTrue(LPage.HasDiff);
+  Assert.IsTrue(LPage.DiffExportButton.Enabled);
+  for I := 0 to LPage.DiffList.Items.Count - 1 do
+    if LPage.Diff.Items[I].Area = 'block' then
+    begin
+      LPage.DiffList.Selected := LPage.DiffList.Items[I];
+      LPage.DiffList.OnDblClick(LPage.DiffList);
+      Assert.AreEqual(TMHBinaryLabPage.TabHex, LPage.Tabs.ActivePageIndex);
+      Assert.AreEqual<Int64>(LPage.Diff.ChangedRanges[0].Offset, LPage.HexView.SelStart);
+      Break;
+    end;
+  LPage.DiffStrip.OnOffsetClick(LPage.DiffStrip, 64);
+  Assert.AreEqual<Int64>(64, LPage.HexView.SelStart);
+  LExport := TPath.Combine(FTempDir, 'button-diff.json');
+  LChosen := LExport;
+  LPage.DiffExportButton.Click;
+  Assert.IsTrue(TFile.Exists(LExport));
+  // «Отмена» во время анализа.
+  LChosen := WriteSample('buttons3.exe', False);
+  LPage.OpenButton.Click;
+  Assert.IsTrue(LPage.CancelButton.Enabled);
+  LPage.CancelButton.Click;
+  Assert.IsTrue(WaitForBinaryLab(30000));
+  Assert.IsTrue(LPage.OpenButton.Enabled);
+  // Элементы просмотра: прокрутка, сброс кэша, смешение цветов.
+  LPage.HexView.GotoOffset(0, 1);
+  LPage.HexView.ScrollRows(3);
+  Assert.AreEqual<Int64>(3 * LPage.HexView.BytesPerRow, LPage.HexView.TopOffset);
+  LPage.HexView.ScrollRows(-100);
+  Assert.AreEqual<Int64>(0, LPage.HexView.TopOffset, 'Не выше начала');
+  LPage.HexView.InvalidateData;
+  Assert.AreEqual(Integer($00FF00), Integer(MHBlendColor($00FF00, $000000, 1.0)));
+  Assert.AreEqual(Integer($000000), Integer(MHBlendColor($00FF00, $000000, 0.0)));
+  // Половина: зелёный канал около середины, красный и синий — нули.
+  LCaret := (Integer(MHBlendColor($00FF00, $000000, 0.5)) shr 8) and $FF;
+  Assert.IsTrue((LCaret >= $7E) and (LCaret <= $81), IntToStr(LCaret));
+  Assert.AreEqual(0, Integer(MHBlendColor($00FF00, $000000, 0.5)) and $FF00FF);
 end;
 
 procedure TMainFormSmokeTests.BinaryLab_ErrorsCancelAndCloseWhileBusy;

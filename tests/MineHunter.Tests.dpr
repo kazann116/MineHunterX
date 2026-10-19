@@ -163,6 +163,7 @@ uses
   MineHunter.Tests.BinaryLab.Pe in 'Unit\MineHunter.Tests.BinaryLab.Pe.pas',
   MineHunter.Tests.BinaryLab.Content in 'Unit\MineHunter.Tests.BinaryLab.Content.pas',
   MineHunter.Tests.BinaryLab.Integration in 'Unit\MineHunter.Tests.BinaryLab.Integration.pas',
+  MineHunter.Tests.BinaryLab.Api in 'Unit\MineHunter.Tests.BinaryLab.Api.pas',
   MineHunter.Tests.UI.BinaryLabControls in 'UI\MineHunter.Tests.UI.BinaryLabControls.pas';
 
 var
