@@ -37,6 +37,7 @@ type
     [Test] procedure ShowInFolder_SelectsFileOrOpensFolder;
     [Test] procedure VirusTotal_HashOnlyConsentOncePerSession;
     [Test] procedure Menu_ItemsFollowSelectedRow;
+    [Test] procedure Menu_OpenInBinaryLab;
   end;
 
 implementation
@@ -174,7 +175,7 @@ end;
 
 procedure TFileActionsTests.Menu_ItemsFollowSelectedRow;
 begin
-  Assert.AreEqual(4, FActions.Menu.Items.Count);
+  Assert.AreEqual(5, FActions.Menu.Items.Count);
   Assert.IsTrue(FList.PopupMenu = FActions.Menu, 'Меню по правой кнопке');
   Assert.IsTrue(Assigned(FList.OnDblClick), 'Двойной щелчок — подробности');
   FTarget.Title := 'tool.exe';
@@ -191,6 +192,38 @@ begin
   FHasTarget := False;
   FActions.Menu.OnPopup(FActions.Menu);
   Assert.IsFalse(FActions.Menu.Items[0].Enabled, 'Ничего не выбрано');
+  // Без обработчика пункт BinaryLab скрыт.
+  Assert.IsFalse(FActions.BinaryLabItem.Visible);
+end;
+
+procedure TFileActionsTests.Menu_OpenInBinaryLab;
+var
+  LOpened: string;
+begin
+  LOpened := '';
+  FActions.OnBinaryLab :=
+    procedure(const ATarget: TMHFileTarget)
+    begin
+      LOpened := ATarget.Path;
+    end;
+  // Существующий файл — пункт виден и доступен, щелчок передаёт путь.
+  FTarget.Title := 'tests';
+  FTarget.Path := ParamStr(0);
+  FActions.Menu.OnPopup(FActions.Menu);
+  Assert.IsTrue(FActions.BinaryLabItem.Visible);
+  Assert.IsTrue(FActions.BinaryLabItem.Enabled);
+  FActions.BinaryLabItem.Click;
+  Assert.AreEqual(ParamStr(0), LOpened);
+  // Файла нет на диске или путь неизвестен — разбирать нечего.
+  FTarget.Path := 'C:\Нет такой папки	ool.exe';
+  FActions.Menu.OnPopup(FActions.Menu);
+  Assert.IsFalse(FActions.BinaryLabItem.Enabled);
+  FTarget.Path := '';
+  FActions.Menu.OnPopup(FActions.Menu);
+  Assert.IsFalse(FActions.BinaryLabItem.Enabled);
+  FHasTarget := False;
+  FActions.Menu.OnPopup(FActions.Menu);
+  Assert.IsFalse(FActions.BinaryLabItem.Enabled);
 end;
 
 initialization

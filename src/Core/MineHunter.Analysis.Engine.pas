@@ -28,7 +28,7 @@ uses
   MineHunter.Core.Types, MineHunter.Core.Interfaces, MineHunter.Analysis.Indicators;
 
 const
-  MH_RULESET_VERSION = 'MH-2026.10.5';
+  MH_RULESET_VERSION = 'MH-2026.10.6';
 
   // Коды признаков (стабильны: используются в отчётах и регрессионных тестах).
   EV_LOAD_SUSTAINED = 'LOAD_SUSTAINED';
@@ -62,6 +62,8 @@ const
   EV_GPU_COMPUTE_BACKGROUND = 'GPU_COMPUTE_BACKGROUND';
   EV_OVERHEAT = 'OVERHEAT';
   EV_THROTTLING = 'CPU_THROTTLING';
+  /// Префикс признаков BinaryLab (BINARYLAB:BL_PACKED_CODE и т.п.).
+  EV_BINARYLAB_PREFIX = 'BINARYLAB:';
 
   /// Порог длительной загрузки GPU процессом, % самого загруженного движка.
   MH_GPU_HIGH_PERCENT = 40;
@@ -105,6 +107,7 @@ type
     FSettings: TMHAnalyzerSettings;
     FExclusions: TArray<TMHExclusion>;
     FAcknowledged: TArray<TMHAcknowledgement>;
+    FBinaryVerdicts: IMHBinaryVerdicts;
     FCpuCount: Integer;
     FSelfPid: Cardinal;
     FStates: TObjectDictionary<string, TProcessState>;
@@ -131,6 +134,8 @@ type
     procedure SetExclusions(const AValue: TArray<TMHExclusion>);
     function GetAcknowledged: TArray<TMHAcknowledgement>;
     procedure SetAcknowledged(const AValue: TArray<TMHAcknowledgement>);
+    function GetBinaryVerdicts: IMHBinaryVerdicts;
+    procedure SetBinaryVerdicts(const AValue: IMHBinaryVerdicts);
   public
     /// ALogicalCpuCount — для пересчёта «% машины» в «% ядра»;
     /// ASelfPid — собственный процесс, который не анализируется.
@@ -147,6 +152,9 @@ type
     property Exclusions: TArray<TMHExclusion> read GetExclusions write SetExclusions;
     /// Находки, отмеченные проверенными: не возвращаются, пока не изменятся.
     property Acknowledged: TArray<TMHAcknowledgement> read GetAcknowledged write SetAcknowledged;
+    /// Результаты BinaryLab: признаки из разбора файла добавляются в находку
+    /// процесса этого файла (nil — не используются).
+    property BinaryVerdicts: IMHBinaryVerdicts read GetBinaryVerdicts write SetBinaryVerdicts;
   end;
 
   /// Причина замедления в понятном виде (для панели «Почему компьютер тормозит»).
@@ -310,6 +318,26 @@ begin
   FLock.Enter;
   try
     FAcknowledged := Copy(AValue);
+  finally
+    FLock.Leave;
+  end;
+end;
+
+function TMHThreatAnalyzer.GetBinaryVerdicts: IMHBinaryVerdicts;
+begin
+  FLock.Enter;
+  try
+    Result := FBinaryVerdicts;
+  finally
+    FLock.Leave;
+  end;
+end;
+
+procedure TMHThreatAnalyzer.SetBinaryVerdicts(const AValue: IMHBinaryVerdicts);
+begin
+  FLock.Enter;
+  try
+    FBinaryVerdicts := AValue;
   finally
     FLock.Leave;
   end;
@@ -687,6 +715,11 @@ var
   LTamperEvidence: TArray<TMHEvidence>;
   LTamperItem: TMHEvidence;
   LAvExcluded: Boolean;
+  LVerdicts: IMHBinaryVerdicts;
+  LVerdict: TMHBinaryVerdict;
+  LBinaryItem: TMHEvidence;
+  LSha256: string;
+  LHasBinaryVerdict: Boolean;
 begin
   Result := False;
   AFinding := Default(TMHFinding);
@@ -859,6 +892,26 @@ begin
         AddUnique(LMissing, MHL('Подпись не удалось проверить: ', 'Could not verify the signature: ') + LFile.Error);
     end;
 
+  // --- BinaryLab: результаты статического разбора файла (если пользователь его проверял) ---
+  LHasBinaryVerdict := False;
+  LVerdicts := GetBinaryVerdicts;
+  if (LPath <> '') and (LVerdicts <> nil) then
+  begin
+    LSha256 := AInfo.Sha256;
+    if (LSha256 = '') and LHasFile then
+      LSha256 := LFile.Sha256;
+    if LVerdicts.TryGet(LPath, LSha256, LVerdict) then
+    begin
+      LHasBinaryVerdict := Length(LVerdict.Evidence) > 0;
+      for LBinaryItem in LVerdict.Evidence do
+        LEvidence := LEvidence + [LBinaryItem];
+      if LVerdict.MiningSignal then
+        LMinerSignal := True;
+      if LVerdict.ThreatSignal then
+        LThreatSignal := True;
+    end;
+  end;
+
   if (LPath <> '') and MHIsSuspiciousLocation(LPath, LReason) then
   begin
     AddEvidence(LEvidence, EV_LOCATION, MHL('Программа запущена из необычного места',
@@ -1015,6 +1068,9 @@ begin
   if HasCode(LEvidence, EV_MASQUERADE) or HasCode(LEvidence, EV_NAME_LOOKALIKE) then
     AddUnique(LRecommend, MHL('Системные файлы Windows находятся только в папке Windows — подделка имени является частым приёмом маскировки.',
       'Windows system files are located only in the Windows folder — faking the name is a common disguise technique.'));
+  if LHasBinaryVerdict then
+    AddUnique(LRecommend, MHL('Подробный разбор файла (структура, строки, вложения, аномалии) — в BinaryLab.',
+      'A detailed file breakdown (structure, strings, embedded objects, anomalies) is available in BinaryLab.'));
   if HasCode(LEvidence, EV_HIDES_FROM_MONITOR) then
     AddUnique(LRecommend, MHL('Снижение нагрузки при открытии диспетчера задач характерно для скрытых майнеров — понаблюдайте за процессом с закрытым диспетчером.',
       'Reducing load when Task Manager opens is typical of hidden miners — observe the process with Task Manager closed.'));

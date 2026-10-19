@@ -151,3 +151,54 @@ end;
   на дисках с прогрессом и отменой.
 - `MHCheckForUpdate`, `MHCompareVersions` (`MineHunter.Core.Updates`, HTTP — `IMHHttpGet`) — проверка
   новых версий на GitHub (по согласию пользователя).
+
+## BinaryLab (`src/Core/BinaryLab`)
+
+Разбор файла без запуска и без изменения: файл открывается только на чтение с совместным доступом,
+каждое значение из файла проверяется на границы, циклы и глубина обхода ограничены, память — лимитами
+`TMHBinaryLabOptions` (по умолчанию 256 МБ сканирования, 20 000 строк, 4 096 блоков энтропии).
+
+```pascal
+uses MineHunter.BinaryLab.Types, MineHunter.BinaryLab.Analyzer, MineHunter.BinaryLab.Report,
+  MineHunter.Collectors.Files.WinApi;
+
+var
+  LReport: TMHBinaryReport;
+begin
+  LReport := MHAnalyzeBinaryFile('C:\Tools\sample.exe', TMHBinaryLabOptions.Default,
+    TMHWinFileApi.Create {проверка подписи; nil — не проверять}, TTimeZone.Local.ToUniversalTime(Now),
+    TMHRiskThresholds.Default,
+    function: Boolean begin Result := False end {отмена},
+    procedure(const AStage: string; APercent: Integer) begin {ход анализа} end);
+  Writeln(LReport.Score, ' ', LReport.Verdict);
+  MHSaveBinaryReport(LReport, 'C:\Reports\sample.html'); // .json — JSON
+end;
+```
+
+- `MineHunter.BinaryLab.Types` — модель отчёта (`TMHBinaryReport`, `TMHPeInfo`, `TMHEntropyInfo`,
+  `TMHStringsInfo`, `TMHEmbeddedObject`, `TMHBinaryAnomaly`, `TMHBinaryDiff`), параметры и лимиты.
+- `MineHunter.BinaryLab.Source` — `IMHBinarySource` (`TMHFileSource`, `TMHBytesSource`), `TMHBinaryReader`
+  (чтение с проверкой границ), `MHReadChunks` (потоковый обход с перекрытием и отменой), `MHFindBytes`,
+  `MHParseHexPattern`, `MHTextPattern`.
+- `MineHunter.BinaryLab.FileType` — `MHDetectBinaryType` (вид по содержимому, несоответствие расширения),
+  `MHIdentifyAt` (объект по смещению, строгий режим для середины файла), `MHProbePe`.
+- `MineHunter.BinaryLab.Pe` — `MHParsePe` (заголовки, секции, импорт и отложенный импорт, экспорт с
+  переадресацией, ресурсы, TLS, CLR, подпись, оверлей), `MHPeRvaToOffset`, `MHComputePeChecksum`
+  (алгоритм CheckSumMappedFile), `MHRangeSha256`, `MHPeLocate`.
+- `MineHunter.BinaryLab.Entropy` — `MHAnalyzeEntropy` (блоки, области высокой энтропии, гистограмма байтов),
+  `MHRangeEntropy`.
+- `MineHunter.BinaryLab.Strings` — `MHScanStrings` (ASCII и UTF-16), `MHClassifyString` (URL, IP, домены,
+  почта, пути, реестр, команды, майнинг, кошельки, подозрительные функции, Base64).
+- `MineHunter.BinaryLab.Embedded` — `MHFindEmbedded` (программы, архивы, документы, фрагменты сценариев).
+- `MineHunter.BinaryLab.Anomalies` — `MHDetectAnomalies` (коды `BL_*`, серьёзность, вес, объяснение),
+  `MHScoreBinaryReport` (доверенная подпись снижает оценку вдвое), `MHDetectInstaller`, `MHPackerBySectionName`.
+- `MineHunter.BinaryLab.Diff` — `MHCompareBinaries` (заголовок, секции, импорт, экспорт, ресурсы, строки,
+  изменённые блоки байтов, процент сходства).
+- `MineHunter.BinaryLab.Report` — `MHBinaryReportToJson/Html`, `MHBinaryDiffToJson/Html`, `MHSaveBinaryReport`,
+  `MHSaveBinaryDiff` (HTML самодостаточный, данные файла экранируются).
+- `MineHunter.BinaryLab.Verdicts` — `MHVerdictFromReport`, `TMHBinaryVerdictStore` (`IMHBinaryVerdicts` из
+  `MineHunter.Core.Interfaces`): признаки `BINARYLAB:*` для `TMHThreatAnalyzer.BinaryVerdicts` — анализатор
+  добавляет их в находку процесса файла (вердикт привязан к SHA-256, сумма весов не больше 40).
+- Интерфейс: `TMHBinaryLabPage` (`MineHunter.App.BinaryLabPage`, анализ, сравнение и поиск в фоновом потоке
+  с отменой), элементы `TMHHexView`, `TMHEntropyMap`, `TMHByteHistogram`, `TMHRangeStrip`
+  (`MineHunter.App.BinaryLab.Controls`); `TMHFileActions.OnBinaryLab` — пункт «Открыть в BinaryLab».

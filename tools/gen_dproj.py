@@ -165,9 +165,9 @@ def generate(rel_dir, name, guid, apptype, search, defines=''):
 
 if __name__ == '__main__':
     generate('src/App', 'MineHunter.App', '{3A0D4C2B-7E61-4B8E-A7C5-1F2E9D6B0A11}', 'Application',
-             ['..\\Core', '..\\Core\\Collectors', '..\\Storage'])
+             ['..\\Core', '..\\Core\\Collectors', '..\\Core\\BinaryLab', '..\\Storage'])
     generate('tests', 'MineHunter.Tests', '{3A0D4C2B-7E61-4B8E-A7C5-1F2E9D6B0A12}', 'Console',
-             ['..\\src\\Core', '..\\src\\Core\\Collectors', '..\\src\\Storage', '..\\src\\App',
+             ['..\\src\\Core', '..\\src\\Core\\Collectors', '..\\src\\Core\\BinaryLab', '..\\src\\Storage', '..\\src\\App',
               'Unit', 'Integration', 'UI', 'Fixtures'])
     generate('tests/Soak', 'MineHunter.Soak', '{3A0D4C2B-7E61-4B8E-A7C5-1F2E9D6B0A13}', 'Console',
-             ['..\\..\\src\\Core', '..\\..\\src\\Core\\Collectors', '..\\..\\src\\Storage', '..\\..\\src\\App'])
+             ['..\\..\\src\\Core', '..\\..\\src\\Core\\Collectors', '..\\..\\src\\Core\\BinaryLab', '..\\..\\src\\Storage', '..\\..\\src\\App'])

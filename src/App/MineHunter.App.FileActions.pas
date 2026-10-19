@@ -8,7 +8,8 @@
     - «Проверить на VirusTotal…» — в браузере открывается отчёт VirusTotal по
       SHA-256 файла. Хеш считается здесь же; сам файл никуда не отправляется.
       Перед первым переходом за сеанс — подтверждение: это обращение к сайту;
-    - «Копировать путь и параметры».
+    - «Копировать путь и параметры»;
+    - «Открыть в BinaryLab» — глубокий разбор файла (если задан OnBinaryLab).
   Подключается к таблице контекстным меню и двойным щелчком; данные строки
   отдаёт функция таблицы (TMHFileTargetFunc).
 }
@@ -32,6 +33,8 @@ type
   TMHFileConfirm = reference to function(const AQuestion: string): Boolean;
   /// Открытие файла, папки или адреса оболочкой Windows (тесты подменяют).
   TMHShellOpen = reference to procedure(const AFile, AParameters: string);
+  /// Передача файла в BinaryLab (задаёт главное окно).
+  TMHFileTargetProc = reference to procedure(const ATarget: TMHFileTarget);
 
   TMHFileActions = class(TComponent)
   private
@@ -40,14 +43,16 @@ type
     FConfirm: TMHFileConfirm;
     FShellOpen: TMHShellOpen;
     FMenu: TPopupMenu;
-    FItemDetails, FItemOpen, FItemVirusTotal, FItemCopy: TMenuItem;
+    FItemDetails, FItemOpen, FItemVirusTotal, FItemCopy, FItemBinaryLab: TMenuItem;
     FLastError: string;
+    FOnBinaryLab: TMHFileTargetProc;
     function NewItem(const ACaption: string; AClick: TNotifyEvent): TMenuItem;
     procedure MenuPopup(Sender: TObject);
     procedure DetailsClick(Sender: TObject);
     procedure OpenClick(Sender: TObject);
     procedure VirusTotalClick(Sender: TObject);
     procedure CopyClick(Sender: TObject);
+    procedure BinaryLabClick(Sender: TObject);
     procedure ListDblClick(Sender: TObject);
     procedure ReportError;
   public
@@ -61,6 +66,9 @@ type
     procedure ShowDetails(const ATarget: TMHFileTarget);
     property Menu: TPopupMenu read FMenu;
     property ShellOpen: TMHShellOpen read FShellOpen write FShellOpen;
+    /// «Открыть в BinaryLab»: пункт меню виден, только если обработчик задан.
+    property OnBinaryLab: TMHFileTargetProc read FOnBinaryLab write FOnBinaryLab;
+    property BinaryLabItem: TMenuItem read FItemBinaryLab;
     property LastError: string read FLastError;
   end;
 
@@ -196,6 +204,9 @@ begin
   FItemOpen := NewItem(MHL('Открыть папку и выделить файл', 'Open folder and select the file'), OpenClick);
   FItemVirusTotal := NewItem(MHL('Проверить на VirusTotal…', 'Check on VirusTotal…'), VirusTotalClick);
   FItemCopy := NewItem(MHL('Копировать путь и параметры', 'Copy path and arguments'), CopyClick);
+  FItemBinaryLab := NewItem(MHL('Открыть в BinaryLab (разбор файла)', 'Open in BinaryLab (file analysis)'),
+    BinaryLabClick);
+  FItemBinaryLab.Visible := False;
   FList.PopupMenu := FMenu;
   FList.OnDblClick := ListDblClick;
 end;
@@ -218,6 +229,16 @@ begin
   FItemOpen.Enabled := LHas and (LTarget.Path <> '');
   FItemVirusTotal.Enabled := LHas and ((LTarget.Path <> '') or (LTarget.Sha256 <> ''));
   FItemCopy.Enabled := LHas and ((LTarget.Path <> '') or (LTarget.CommandLine <> ''));
+  FItemBinaryLab.Visible := Assigned(FOnBinaryLab);
+  FItemBinaryLab.Enabled := LHas and (LTarget.Path <> '') and FileExists(LTarget.Path);
+end;
+
+procedure TMHFileActions.BinaryLabClick(Sender: TObject);
+var
+  LTarget: TMHFileTarget;
+begin
+  if Assigned(FOnBinaryLab) and FGetTarget(LTarget) and (LTarget.Path <> '') then
+    FOnBinaryLab(LTarget);
 end;
 
 procedure TMHFileActions.ReportError;

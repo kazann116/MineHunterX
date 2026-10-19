@@ -44,7 +44,7 @@
         <SanitizedProjectName>MineHunter_Soak</SanitizedProjectName>
         <DCC_ExeOutput>..\..\build\$(Platform)\$(Config)</DCC_ExeOutput>
         <DCC_DcuOutput>..\..\build\dcu\MineHunter.Soak\$(Platform)\$(Config)</DCC_DcuOutput>
-        <DCC_UnitSearchPath>..\..\src\Core;..\..\src\Core\Collectors;..\..\src\Storage;..\..\src\App;$(DCC_UnitSearchPath)</DCC_UnitSearchPath>
+        <DCC_UnitSearchPath>..\..\src\Core;..\..\src\Core\Collectors;..\..\src\Core\BinaryLab;..\..\src\Storage;..\..\src\App;$(DCC_UnitSearchPath)</DCC_UnitSearchPath>
         <DCC_Namespace>System;Xml;Data;Datasnap;Web;Soap;Vcl;Vcl.Imaging;Vcl.Touch;Vcl.Samples;Vcl.Shell;$(DCC_Namespace)</DCC_Namespace>
         <DCC_Define>$(DCC_Define)</DCC_Define>
         <DCC_Hints>true</DCC_Hints>

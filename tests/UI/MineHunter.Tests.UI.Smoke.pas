@@ -26,6 +26,8 @@ type
     FTempDir: string;
     function WaitForSnapshots(ACount: Integer; ATimeoutMs: Cardinal): Boolean;
     function WaitForHistory(ATimeoutMs: Cardinal): Boolean;
+    function WaitForBinaryLab(ATimeoutMs: Cardinal): Boolean;
+    function WriteSample(const AName: string; APatch: Boolean): string;
   public
     [Setup] procedure Setup;
     [TearDown] procedure TearDown;
@@ -73,6 +75,9 @@ type
     [Test] procedure Settings_CheckedFindingsAfterAllowedPrograms_DataFolder;
     [Test] procedure FileActions_LaunchesAndProcesses;
     [Test] procedure Settings_RefreshRates;
+    [Test] procedure BinaryLab_PageAndMenus;
+    [Test] procedure BinaryLab_AnalyzeNavigateFindExportCompare;
+    [Test] procedure BinaryLab_ErrorsCancelAndCloseWhileBusy;
   end;
 
 implementation
@@ -91,7 +96,9 @@ uses
   MineHunter.Tests.Appearance, MineHunter.Tests.Disks, MineHunter.Tests.FileScan,
   MineHunter.Collectors.Disks, MineHunter.Core.FileScan, MineHunter.App.DisksPage,
   Winapi.CommCtrl, Winapi.Messages, Vcl.Forms, Vcl.Controls, System.Types, MineHunter.App.ListViews,
-  MineHunter.Tests.Fakes, MineHunter.Core.DataDir, MineHunter.App.FileActions, Vcl.StdCtrls;
+  MineHunter.Tests.Fakes, MineHunter.Core.DataDir, MineHunter.App.FileActions, Vcl.StdCtrls,
+  Vcl.ComCtrls, MineHunter.App.BinaryLabPage, MineHunter.BinaryLab.Types, MineHunter.BinaryLab.Source,
+  MineHunter.BinaryLab.Anomalies, MineHunter.Tests.PeBuilder;
 
 var
   // Подмена операций ОС для тестов действий (nil — настоящие операции).
@@ -219,6 +226,182 @@ begin
   while (FForm.SnapshotCount < ACount) and (LWatch.ElapsedMilliseconds < ATimeoutMs) do
     CheckSynchronize(50);
   Result := FForm.SnapshotCount >= ACount;
+end;
+
+function TMainFormSmokeTests.WaitForBinaryLab(ATimeoutMs: Cardinal): Boolean;
+var
+  LWatch: TStopwatch;
+begin
+  // Результаты потока BinaryLab приходят через TThread.Queue — как в цикле сообщений.
+  LWatch := TStopwatch.StartNew;
+  while FForm.BinaryLabPage.Busy and (LWatch.ElapsedMilliseconds < ATimeoutMs) do
+    CheckSynchronize(20);
+  Result := not FForm.BinaryLabPage.Busy;
+end;
+
+function TMainFormSmokeTests.WriteSample(const AName: string; APatch: Boolean): string;
+var
+  LBuilder: TTestPeBuilder;
+  LCode: TBytes;
+begin
+  LCode := TestCodeBytes(6000);
+  if APatch then
+    LCode[200] := $CC;
+  LBuilder := TTestPeBuilder.Create;
+  try
+    LBuilder.AddSection('.text', LCode, SCN_TEXT);
+    LBuilder.AddSection('.data', TestConcat([TestAscii('stratum+tcp://pool.supportxmr.com:3333'), TestBytes([0]),
+      TestAscii('powershell -enc SQBFAFgA'), TestBytes([0, 0])]), SCN_DATA);
+    LBuilder.AddImport('KERNEL32.dll', ['LoadLibraryA', 'GetProcAddress']);
+    if APatch then
+      LBuilder.AddImport('ADVAPI32.dll', ['RegSetValueExW']);
+    LBuilder.Overlay := TestMinimalPe;
+    Result := TPath.Combine(FTempDir, AName);
+    TFile.WriteAllBytes(Result, LBuilder.Build);
+  finally
+    LBuilder.Free;
+  end;
+end;
+
+procedure TMainFormSmokeTests.BinaryLab_PageAndMenus;
+var
+  LPage: TMHBinaryLabPage;
+begin
+  Assert.AreEqual('BinaryLab', FForm.lbNav.Items[Ord(pgBinaryLab)]);
+  FForm.NavigateTo(pgBinaryLab);
+  Assert.AreEqual(Ord(pgBinaryLab), Ord(FForm.ActivePage));
+  Assert.AreEqual(Ord(pgSettings), Ord(High(TMHPage)), 'Настройки — последняя страница');
+  LPage := FForm.BinaryLabPage;
+  Assert.IsNotNull(LPage);
+  Assert.AreEqual(7, LPage.Tabs.PageCount);
+  Assert.IsTrue(LPage.OpenButton.Enabled);
+  Assert.IsFalse(LPage.CompareButton.Enabled, 'Сравнивать не с чем');
+  Assert.IsFalse(LPage.ExportButton.Enabled);
+  Assert.IsFalse(LPage.CancelButton.Enabled);
+  Assert.IsFalse(LPage.Busy);
+  // «Открыть в BinaryLab» во всех таблицах с файлами.
+  Assert.IsTrue(Assigned(FForm.ProcessActions.OnBinaryLab));
+  Assert.IsTrue(Assigned(FForm.ChangesActions.OnBinaryLab));
+  Assert.IsTrue(Assigned(FForm.LaunchesPage.Actions.OnBinaryLab));
+  Assert.IsNotNull(FServices.BinaryVerdicts);
+  Assert.IsNotNull(FServices.FileApi);
+end;
+
+procedure TMainFormSmokeTests.BinaryLab_AnalyzeNavigateFindExportCompare;
+var
+  LPage: TMHBinaryLabPage;
+  LPath, LOther: string;
+  LVerdict: TMHBinaryVerdict;
+  LOffset: Int64;
+  LNode: TTreeNode;
+  I: Integer;
+begin
+  LPath := WriteSample('sample.exe', False);
+  LOther := WriteSample('patched.exe', True);
+  LPage := FForm.BinaryLabPage;
+  // Открытие из меню процесса/запуска — то же, что OpenInBinaryLab.
+  FForm.OpenInBinaryLab(LPath);
+  Assert.AreEqual(Ord(pgBinaryLab), Ord(FForm.ActivePage));
+  Assert.IsTrue(LPage.Busy, 'Анализ идёт в фоне');
+  Assert.IsTrue(LPage.CancelButton.Enabled);
+  Assert.IsTrue(WaitForBinaryLab(30000), 'Анализ завершился');
+  Assert.AreEqual('', LPage.LastError);
+  Assert.IsTrue(LPage.HasReport);
+  Assert.AreEqual(LPath, LPage.Report.Path);
+  Assert.IsTrue(LPage.Report.HasAnomaly(BL_MINING_STRINGS));
+  // Вкладки заполнены.
+  Assert.AreEqual(Integer(Length(LPage.Report.Anomalies)), LPage.AnomalyList.Items.Count);
+  Assert.IsTrue(LPage.InfoList.Items.Count > 5);
+  Assert.IsTrue(LPage.StructureTree.Items.Count > 5);
+  Assert.IsTrue(LPage.EntropyMap.BlockCount > 0);
+  Assert.IsTrue(LPage.EmbeddedList.Items.Count >= 1, 'Программа в оверлее');
+  Assert.IsTrue(LPage.StringsList.Items.Count >= 2, 'Индикаторы: пул и команда');
+  Assert.AreEqual<Int64>(TFile.GetSize(LPath), LPage.HexView.DataSize);
+  Assert.IsTrue(string(LPage.VerdictLabel.Caption) <> '');
+  Assert.IsTrue(LPage.CompareButton.Enabled and LPage.ExportButton.Enabled);
+  // Результат передан анализатору угроз.
+  Assert.IsTrue(FServices.BinaryVerdicts.TryGet(LPath, '', LVerdict));
+  Assert.IsTrue(Length(LVerdict.Evidence) > 0);
+  Assert.IsTrue(LVerdict.MiningSignal);
+  Assert.IsTrue(string(LPage.VerdictNote.Caption) <> '');
+  // Фильтр строк.
+  LPage.StringsCategory.ItemIndex := 0;
+  LPage.StringsCategory.OnChange(LPage.StringsCategory);
+  I := LPage.StringsList.Items.Count;
+  LPage.StringsFilter.Text := 'stratum';
+  Assert.IsTrue((LPage.StringsList.Items.Count >= 1) and (LPage.StringsList.Items.Count < I));
+  // Структура: выбор секции показывает её и ставит Hex на её начало.
+  LNode := nil;
+  for I := 0 to LPage.StructureTree.Items.Count - 1 do
+    if LPage.StructureTree.Items[I].Text = '.data' then
+      LNode := LPage.StructureTree.Items[I];
+  Assert.IsNotNull(LNode);
+  LPage.StructureTree.Selected := LNode;
+  Assert.AreEqual(1, LPage.DetailsList.Items.Count);
+  Assert.AreEqual<Int64>(LPage.Report.Pe.Sections[1].RawOffset, LPage.HexView.SelStart);
+  // Переход к смещению и разбор записи смещения.
+  Assert.IsTrue(TMHBinaryLabPage.ParseOffset('0x40', LOffset));
+  Assert.AreEqual<Int64>($40, LOffset);
+  Assert.IsTrue(TMHBinaryLabPage.ParseOffset('1F4h', LOffset));
+  Assert.AreEqual<Int64>($1F4, LOffset);
+  Assert.IsTrue(TMHBinaryLabPage.ParseOffset('128', LOffset));
+  Assert.AreEqual<Int64>(128, LOffset);
+  Assert.IsTrue(TMHBinaryLabPage.ParseOffset('ff', LOffset), 'Буквы — шестнадцатеричное');
+  Assert.IsFalse(TMHBinaryLabPage.ParseOffset('', LOffset));
+  Assert.IsFalse(TMHBinaryLabPage.ParseOffset('12x', LOffset));
+  LPage.ShowOffset($80, 4);
+  Assert.AreEqual(TMHBinaryLabPage.TabHex, LPage.Tabs.ActivePageIndex);
+  Assert.AreEqual<Int64>($80, LPage.HexView.SelStart);
+  // Поиск в фоне.
+  LPage.FindPattern(MHTextPattern('STRATUM', False), True);
+  Assert.IsTrue(WaitForBinaryLab(10000));
+  Assert.IsTrue(LPage.LastFindOffset > 0, 'Найдено без учёта регистра');
+  Assert.AreEqual<Int64>(LPage.LastFindOffset, LPage.HexView.SelStart);
+  LPage.FindPattern(MHTextPattern('no such text in file', False), False);
+  Assert.IsTrue(WaitForBinaryLab(10000));
+  Assert.AreEqual<Int64>(-1, LPage.LastFindOffset);
+  // Экспорт.
+  LPage.ExportReport(TPath.Combine(FTempDir, 'r.html'));
+  LPage.ExportReport(TPath.Combine(FTempDir, 'r.json'));
+  Assert.IsTrue(TFile.Exists(TPath.Combine(FTempDir, 'r.html')) and TFile.Exists(TPath.Combine(FTempDir, 'r.json')));
+  // Сравнение с изменённой копией.
+  LPage.CompareWith(LOther);
+  Assert.IsTrue(WaitForBinaryLab(30000));
+  Assert.AreEqual('', LPage.LastError);
+  Assert.IsTrue(LPage.HasDiff);
+  Assert.IsFalse(LPage.Diff.Identical);
+  Assert.IsTrue(LPage.DiffList.Items.Count > 0);
+  Assert.AreEqual(TMHBinaryLabPage.TabDiff, LPage.Tabs.ActivePageIndex);
+  LPage.ExportDiff(TPath.Combine(FTempDir, 'd.html'));
+  Assert.IsTrue(TFile.Exists(TPath.Combine(FTempDir, 'd.html')));
+  // Отчёт после сравнения остаётся отчётом первого файла.
+  Assert.AreEqual(LPath, LPage.Report.Path);
+end;
+
+procedure TMainFormSmokeTests.BinaryLab_ErrorsCancelAndCloseWhileBusy;
+var
+  LPage: TMHBinaryLabPage;
+  LBig: string;
+begin
+  LPage := FForm.BinaryLabPage;
+  LPage.OpenFile(TPath.Combine(FTempDir, 'нет такого файла.exe'));
+  Assert.IsTrue(WaitForBinaryLab(10000));
+  Assert.IsTrue(LPage.LastError <> '', 'Ошибка открытия показана');
+  Assert.IsFalse(LPage.HasReport);
+  Assert.IsTrue(LPage.OpenButton.Enabled);
+  // Отмена: большой файл, отмена сразу после начала.
+  LBig := TPath.Combine(FTempDir, 'big.bin');
+  TFile.WriteAllBytes(LBig, TestRandomBytes(40 * 1024 * 1024));
+  LPage.OpenFile(LBig);
+  LPage.Cancel;
+  Assert.IsTrue(WaitForBinaryLab(30000));
+  Assert.IsFalse(LPage.Busy);
+  // Закрытие окна во время анализа: поток останавливается, события не приходят в уничтоженную страницу.
+  LPage.OpenFile(LBig);
+  Assert.IsTrue(LPage.Busy);
+  FreeAndNil(FForm);
+  CheckSynchronize(50);
+  Assert.Pass('Окно закрыто во время анализа без ошибок');
 end;
 
 procedure TMainFormSmokeTests.Create_StartsOnDashboardAndStopped;

@@ -44,7 +44,7 @@
         <SanitizedProjectName>MineHunter_App</SanitizedProjectName>
         <DCC_ExeOutput>..\..\build\$(Platform)\$(Config)</DCC_ExeOutput>
         <DCC_DcuOutput>..\..\build\dcu\MineHunter.App\$(Platform)\$(Config)</DCC_DcuOutput>
-        <DCC_UnitSearchPath>..\Core;..\Core\Collectors;..\Storage;$(DCC_UnitSearchPath)</DCC_UnitSearchPath>
+        <DCC_UnitSearchPath>..\Core;..\Core\Collectors;..\Core\BinaryLab;..\Storage;$(DCC_UnitSearchPath)</DCC_UnitSearchPath>
         <DCC_Namespace>System;Xml;Data;Datasnap;Web;Soap;Vcl;Vcl.Imaging;Vcl.Touch;Vcl.Samples;Vcl.Shell;$(DCC_Namespace)</DCC_Namespace>
         <DCC_Define>$(DCC_Define)</DCC_Define>
         <DCC_Hints>true</DCC_Hints>
@@ -122,6 +122,8 @@
         <DCCReference Include="MineHunter.App.ListViews.pas"/>
         <DCCReference Include="MineHunter.App.FileActions.pas"/>
         <DCCReference Include="MineHunter.App.LaunchesPage.pas"/>
+        <DCCReference Include="MineHunter.App.BinaryLab.Controls.pas"/>
+        <DCCReference Include="MineHunter.App.BinaryLabPage.pas"/>
         <DCCReference Include="..\Core\Collectors\MineHunter.Collectors.Gpu.pas"/>
         <DCCReference Include="..\Core\Collectors\MineHunter.Collectors.Gpu.WinApi.pas"/>
         <DCCReference Include="..\Core\Collectors\MineHunter.Collectors.Sensors.pas"/>
@@ -137,6 +139,18 @@
         <DCCReference Include="..\Core\Collectors\MineHunter.Collectors.Context.WinApi.pas"/>
         <DCCReference Include="..\Core\MineHunter.Analysis.Indicators.pas"/>
         <DCCReference Include="..\Core\MineHunter.Analysis.Engine.pas"/>
+        <DCCReference Include="..\Core\BinaryLab\MineHunter.BinaryLab.Types.pas"/>
+        <DCCReference Include="..\Core\BinaryLab\MineHunter.BinaryLab.Source.pas"/>
+        <DCCReference Include="..\Core\BinaryLab\MineHunter.BinaryLab.FileType.pas"/>
+        <DCCReference Include="..\Core\BinaryLab\MineHunter.BinaryLab.Pe.pas"/>
+        <DCCReference Include="..\Core\BinaryLab\MineHunter.BinaryLab.Entropy.pas"/>
+        <DCCReference Include="..\Core\BinaryLab\MineHunter.BinaryLab.Strings.pas"/>
+        <DCCReference Include="..\Core\BinaryLab\MineHunter.BinaryLab.Embedded.pas"/>
+        <DCCReference Include="..\Core\BinaryLab\MineHunter.BinaryLab.Anomalies.pas"/>
+        <DCCReference Include="..\Core\BinaryLab\MineHunter.BinaryLab.Diff.pas"/>
+        <DCCReference Include="..\Core\BinaryLab\MineHunter.BinaryLab.Report.pas"/>
+        <DCCReference Include="..\Core\BinaryLab\MineHunter.BinaryLab.Verdicts.pas"/>
+        <DCCReference Include="..\Core\BinaryLab\MineHunter.BinaryLab.Analyzer.pas"/>
         <DCCReference Include="..\Core\MineHunter.Analysis.Baseline.pas"/>
         <DCCReference Include="..\Core\MineHunter.Core.Settings.pas"/>
         <DCCReference Include="..\Core\MineHunter.Core.Reports.pas"/>

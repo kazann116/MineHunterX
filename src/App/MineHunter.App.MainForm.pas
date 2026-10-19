@@ -12,11 +12,11 @@ uses
   MineHunter.Core.Settings, MineHunter.Analysis.Engine, MineHunter.Analysis.Baseline,
   MineHunter.App.DashboardView, MineHunter.App.Tiles, MineHunter.Core.Quarantine,
   MineHunter.App.Notifier, MineHunter.Core.Inventory, MineHunter.Core.Energy, MineHunter.App.DisksPage,
-  MineHunter.App.ListViews, MineHunter.App.LaunchesPage, MineHunter.Analysis.Acknowledge,
+  MineHunter.App.ListViews, MineHunter.App.LaunchesPage, MineHunter.App.BinaryLabPage, MineHunter.Analysis.Acknowledge,
   MineHunter.Core.CheckReport, MineHunter.Core.Updates, MineHunter.App.FileActions;
 
 type
-  TMHPage = (pgDashboard, pgProcesses, pgFindings, pgDisks, pgLaunches, pgHistory, pgSettings);
+  TMHPage = (pgDashboard, pgProcesses, pgFindings, pgDisks, pgLaunches, pgBinaryLab, pgHistory, pgSettings);
 
   /// Подтверждение опасного действия пользователем.
   TMHConfirmFunc = reference to function(const AQuestion: string): Boolean;
@@ -298,6 +298,7 @@ type
     FDisksSheet: TTabSheet;
     FDisksPage: TMHDisksPage;
     FLaunchesPage: TMHLaunchesPage;
+    FBinaryLabPage: TMHBinaryLabPage;
     FCbLanguage: TComboBox;
     FCbTheme: TComboBox;
     FChkUpdates: TCheckBox;
@@ -515,6 +516,10 @@ type
     property DisksPage: TMHDisksPage read FDisksPage;
     /// Страница «Запуски» (журнал запусков программ).
     property LaunchesPage: TMHLaunchesPage read FLaunchesPage;
+    /// Страница «BinaryLab» (глубокий разбор файлов).
+    property BinaryLabPage: TMHBinaryLabPage read FBinaryLabPage;
+    /// Открывает страницу BinaryLab и начинает разбор файла APath.
+    procedure OpenInBinaryLab(const APath: string);
     property LanguageCombo: TComboBox read FCbLanguage;
     property ThemeCombo: TComboBox read FCbTheme;
     property UpdatesCheckBox: TCheckBox read FChkUpdates;
@@ -583,7 +588,7 @@ end;
 
 const
   PAGE_TITLES: array[TMHPage] of string =
-    ('Обзор', 'Процессы', 'Находки', 'Устройства', 'Запуски', 'История', 'Настройки');
+    ('Обзор', 'Процессы', 'Находки', 'Устройства', 'Запуски', 'BinaryLab', 'История', 'Настройки');
   PROCESS_COLUMN_TITLES: array[TMHProcessColumn] of string =
     ('Имя', 'PID', 'CPU', 'Память', 'GPU', 'Рабочий набор', 'Частная память', 'Потоки', 'Доступ',
      'Путь', 'Риск', 'Подпись');
@@ -853,6 +858,7 @@ end;
 procedure TMainForm.CreateFileActions;
 var
   LConfirm: TMHFileConfirm;
+  LOpenInLab: TMHFileTargetProc;
 begin
   // Подтверждение — через ConfirmAction в момент вызова (тесты подменяют его позже).
   LConfirm :=
@@ -864,6 +870,24 @@ begin
   FChangesActions := TMHFileActions.Create(Self, FChangesList, ChangeTarget, LConfirm);
   if FLaunchesPage <> nil then
     FLaunchesPage.Confirm := LConfirm;
+  // «Открыть в BinaryLab» — для файла любого процесса, запуска или изменения.
+  LOpenInLab :=
+    procedure(const ATarget: TMHFileTarget)
+    begin
+      OpenInBinaryLab(ATarget.Path);
+    end;
+  FProcessActions.OnBinaryLab := LOpenInLab;
+  FChangesActions.OnBinaryLab := LOpenInLab;
+  if (FLaunchesPage <> nil) and (FLaunchesPage.Actions <> nil) then
+    FLaunchesPage.Actions.OnBinaryLab := LOpenInLab;
+end;
+
+procedure TMainForm.OpenInBinaryLab(const APath: string);
+begin
+  if (FBinaryLabPage = nil) or (Trim(APath) = '') then
+    Exit;
+  NavigateTo(pgBinaryLab);
+  FBinaryLabPage.OpenFile(APath);
 end;
 
 function TMainForm.ProcessTarget(out ATarget: TMHFileTarget): Boolean;
@@ -1385,7 +1409,20 @@ begin
   LSheet.PageIndex := Ord(pgLaunches);
   LSheet.Caption := PAGE_TITLES[pgLaunches];
   FLaunchesPage := TMHLaunchesPage.Create(Self, LSheet, FServices);
-  // Навигация: Ctrl+4 — «Диски», Ctrl+5 — «Запуски», Ctrl+6 — «История», Ctrl+7 — «Настройки».
+  // BinaryLab — после «Запусков».
+  LSheet := TTabSheet.Create(Self);
+  LSheet.PageControl := pcMain;
+  LSheet.PageIndex := Ord(pgBinaryLab);
+  LSheet.Caption := PAGE_TITLES[pgBinaryLab];
+  FBinaryLabPage := TMHBinaryLabPage.Create(Self, LSheet, FServices);
+  LAction := TAction.Create(Self);
+  LAction.ActionList := alMain;
+  LAction.Caption := PAGE_TITLES[pgBinaryLab];
+  LAction.Tag := Ord(pgBinaryLab);
+  LAction.ShortCut := ShortCut(Ord('8'), [ssCtrl]);
+  LAction.OnExecute := actNavExecute;
+  // Навигация: Ctrl+4 — «Диски», Ctrl+5 — «Запуски», Ctrl+6 — «История», Ctrl+7 — «Настройки»,
+  // Ctrl+8 — «BinaryLab» (прежние сочетания не меняются).
   actNavHistory.Tag := Ord(pgHistory);
   actNavHistory.ShortCut := ShortCut(Ord('6'), [ssCtrl]);
   actNavSettings.Tag := Ord(pgSettings);

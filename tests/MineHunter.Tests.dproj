@@ -44,7 +44,7 @@
         <SanitizedProjectName>MineHunter_Tests</SanitizedProjectName>
         <DCC_ExeOutput>..\build\$(Platform)\$(Config)</DCC_ExeOutput>
         <DCC_DcuOutput>..\build\dcu\MineHunter.Tests\$(Platform)\$(Config)</DCC_DcuOutput>
-        <DCC_UnitSearchPath>..\src\Core;..\src\Core\Collectors;..\src\Storage;..\src\App;Unit;Integration;UI;Fixtures;$(DCC_UnitSearchPath)</DCC_UnitSearchPath>
+        <DCC_UnitSearchPath>..\src\Core;..\src\Core\Collectors;..\src\Core\BinaryLab;..\src\Storage;..\src\App;Unit;Integration;UI;Fixtures;$(DCC_UnitSearchPath)</DCC_UnitSearchPath>
         <DCC_Namespace>System;Xml;Data;Datasnap;Web;Soap;Vcl;Vcl.Imaging;Vcl.Touch;Vcl.Samples;Vcl.Shell;$(DCC_Namespace)</DCC_Namespace>
         <DCC_Define>$(DCC_Define)</DCC_Define>
         <DCC_Hints>true</DCC_Hints>
@@ -133,6 +133,8 @@
         <DCCReference Include="..\src\App\MineHunter.App.ListViews.pas"/>
         <DCCReference Include="..\src\App\MineHunter.App.FileActions.pas"/>
         <DCCReference Include="..\src\App\MineHunter.App.LaunchesPage.pas"/>
+        <DCCReference Include="..\src\App\MineHunter.App.BinaryLab.Controls.pas"/>
+        <DCCReference Include="..\src\App\MineHunter.App.BinaryLabPage.pas"/>
         <DCCReference Include="Unit\MineHunter.Tests.Background.pas"/>
         <DCCReference Include="..\src\Core\Collectors\MineHunter.Collectors.Gpu.pas"/>
         <DCCReference Include="..\src\Core\Collectors\MineHunter.Collectors.Gpu.WinApi.pas"/>
@@ -156,6 +158,18 @@
         <DCCReference Include="..\src\Core\Collectors\MineHunter.Collectors.Context.WinApi.pas"/>
         <DCCReference Include="..\src\Core\MineHunter.Analysis.Indicators.pas"/>
         <DCCReference Include="..\src\Core\MineHunter.Analysis.Engine.pas"/>
+        <DCCReference Include="..\src\Core\BinaryLab\MineHunter.BinaryLab.Types.pas"/>
+        <DCCReference Include="..\src\Core\BinaryLab\MineHunter.BinaryLab.Source.pas"/>
+        <DCCReference Include="..\src\Core\BinaryLab\MineHunter.BinaryLab.FileType.pas"/>
+        <DCCReference Include="..\src\Core\BinaryLab\MineHunter.BinaryLab.Pe.pas"/>
+        <DCCReference Include="..\src\Core\BinaryLab\MineHunter.BinaryLab.Entropy.pas"/>
+        <DCCReference Include="..\src\Core\BinaryLab\MineHunter.BinaryLab.Strings.pas"/>
+        <DCCReference Include="..\src\Core\BinaryLab\MineHunter.BinaryLab.Embedded.pas"/>
+        <DCCReference Include="..\src\Core\BinaryLab\MineHunter.BinaryLab.Anomalies.pas"/>
+        <DCCReference Include="..\src\Core\BinaryLab\MineHunter.BinaryLab.Diff.pas"/>
+        <DCCReference Include="..\src\Core\BinaryLab\MineHunter.BinaryLab.Report.pas"/>
+        <DCCReference Include="..\src\Core\BinaryLab\MineHunter.BinaryLab.Verdicts.pas"/>
+        <DCCReference Include="..\src\Core\BinaryLab\MineHunter.BinaryLab.Analyzer.pas"/>
         <DCCReference Include="..\src\Core\MineHunter.Analysis.Baseline.pas"/>
         <DCCReference Include="..\src\Core\MineHunter.Core.Settings.pas"/>
         <DCCReference Include="..\src\Core\MineHunter.Core.Reports.pas"/>
@@ -174,6 +188,7 @@
             <FormType>dfm</FormType>
         </DCCReference>
         <DCCReference Include="Fixtures\MineHunter.Tests.Fakes.pas"/>
+        <DCCReference Include="Fixtures\MineHunter.Tests.PeBuilder.pas"/>
         <DCCReference Include="Fixtures\MineHunter.Tests.FakeProcessApi.pas"/>
         <DCCReference Include="Fixtures\MineHunter.Tests.FakeSystemApi.pas"/>
         <DCCReference Include="Fixtures\MineHunter.Tests.Scenarios.pas"/>
@@ -206,6 +221,11 @@
         <DCCReference Include="UI\MineHunter.Tests.UI.Smoke.pas"/>
         <DCCReference Include="UI\MineHunter.Tests.UI.ListViews.pas"/>
         <DCCReference Include="UI\MineHunter.Tests.UI.FileActions.pas"/>
+        <DCCReference Include="Unit\MineHunter.Tests.BinaryLab.Basics.pas"/>
+        <DCCReference Include="Unit\MineHunter.Tests.BinaryLab.Pe.pas"/>
+        <DCCReference Include="Unit\MineHunter.Tests.BinaryLab.Content.pas"/>
+        <DCCReference Include="Unit\MineHunter.Tests.BinaryLab.Integration.pas"/>
+        <DCCReference Include="UI\MineHunter.Tests.UI.BinaryLabControls.pas"/>
         <RcCompile Include="..\src\App\MineHunter.App.Styles.rc">
             <Form>..\src\App\MineHunter.App.Styles.res</Form>
         </RcCompile>

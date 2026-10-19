@@ -17,7 +17,7 @@ uses
   MineHunter.Core.Types, MineHunter.Core.Interfaces, MineHunter.Core.Container,
   MineHunter.Core.Scanner, MineHunter.Storage.SQLite, MineHunter.Analysis.Engine,
   MineHunter.Analysis.Baseline, MineHunter.Core.Settings, MineHunter.Core.Actions,
-  MineHunter.Core.Quarantine, MineHunter.Core.SelfAutostart;
+  MineHunter.Core.Quarantine, MineHunter.Core.SelfAutostart, MineHunter.Collectors.Files;
 
 type
   /// Периодически перестраивает профили нормы в фоновом потоке.
@@ -68,6 +68,8 @@ type
     FQuarantine: TMHQuarantine;
     FSelfAutostart: TMHSelfAutostart;
     FEconomyMode: Boolean;
+    FBinaryVerdicts: IMHBinaryVerdicts;
+    FFileApi: IMHFileApi;
     procedure SetEconomyMode(AValue: Boolean);
     procedure ApplyScanInterval;
   public
@@ -104,6 +106,10 @@ type
     property Analyzer: TMHThreatAnalyzer read FAnalyzer;
     /// Профили нормы (nil без хранилища).
     property Baselines: TMHBaselineManager read FBaselines;
+    /// Результаты BinaryLab для анализатора угроз (признаки из разбора файлов).
+    property BinaryVerdicts: IMHBinaryVerdicts read FBinaryVerdicts;
+    /// Проверка подписи и хеши файлов (для BinaryLab).
+    property FileApi: IMHFileApi read FFileApi;
     property BaselineScheduler: TMHBaselineScheduler read FScheduler;
     /// Применяет настройки ко всем службам (сканер, хранилище, анализатор, норма).
     procedure ApplySettings(const ASettings: TMHAppSettings);
@@ -135,7 +141,7 @@ uses
   MineHunter.Collectors.System, MineHunter.Collectors.System.WinApi,
   MineHunter.Collectors.Autostart, MineHunter.Collectors.Autostart.WinApi,
   MineHunter.Collectors.Network, MineHunter.Collectors.Network.WinApi,
-  MineHunter.Collectors.Files, MineHunter.Collectors.Files.WinApi,
+  MineHunter.Collectors.Files.WinApi, MineHunter.BinaryLab.Verdicts,
   MineHunter.Collectors.Context, MineHunter.Collectors.Context.WinApi,
   MineHunter.Collectors.Gpu, MineHunter.Collectors.Gpu.WinApi,
   MineHunter.Collectors.Sensors, MineHunter.Collectors.Sensors.WinApi,
@@ -397,6 +403,11 @@ begin
   FContainer.TryResolve<IMHAnalyzer>(FAnalyzerIntf);
   if (FAnalyzerIntf <> nil) and ((FAnalyzerIntf as TObject) is TMHThreatAnalyzer) then
     FAnalyzer := TMHThreatAnalyzer(FAnalyzerIntf as TObject);
+  // Результаты BinaryLab попадают в находки процессов: анализатор читает их в цикле сканера.
+  FBinaryVerdicts := TMHBinaryVerdictStore.Create;
+  FFileApi := TMHWinFileApi.Create;
+  if FAnalyzer <> nil then
+    FAnalyzer.BinaryVerdicts := FBinaryVerdicts;
   FCollectors := FContainer.ResolveAll<IMHCollector>;
   FScanner := TMHScanner.Create(FCollectors, FAnalyzerIntf, FClock, FLogger);
   FLogger.Log(llInfo, 'app', 'MineHunter X ' + MH_CORE_VERSION + ' запущен');
@@ -563,6 +574,8 @@ begin
   FBaselinesIntf := nil;
   FAnalyzer := nil;
   FAnalyzerIntf := nil;
+  FBinaryVerdicts := nil;
+  FFileApi := nil;
   FStorage := nil;
   FHistory := nil;
   FFindingHistory := nil;

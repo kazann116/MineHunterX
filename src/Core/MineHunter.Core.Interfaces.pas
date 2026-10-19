@@ -168,6 +168,37 @@ type
     function LoadActions(AMaxCount: Integer): TArray<TMHActionRecord>;
   end;
 
+  /// Вердикт BinaryLab (статический анализ файла) для анализатора угроз.
+  TMHBinaryVerdict = record
+  public
+    /// Нормализованный путь файла (MHNormalizePath).
+    Path: string;
+    /// SHA-256 проанализированного файла ('' — не вычислялся).
+    Sha256: string;
+    Score: Integer;
+    Level: TMHRiskLevel;
+    AnalyzedAtUtc: TDateTime;
+    /// Признаки для находки процесса (коды BINARYLAB:*), веса уже с поправками.
+    Evidence: TArray<TMHEvidence>;
+    /// Найдены признаки майнинга (адреса пулов, кошельки, параметры майнеров).
+    MiningSignal: Boolean;
+    /// Признаки угрозы (упаковка, внедрение кода, недействительная подпись…).
+    ThreatSignal: Boolean;
+    Summary: string;
+  end;
+
+  /// Результаты BinaryLab, доступные анализатору угроз. Потокобезопасно:
+  /// пишет интерфейс, читает поток сканера.
+  IMHBinaryVerdicts = interface
+    ['{6F0B7C1E-2E1A-4F57-9A0C-3D5B8E7A1C41}']
+    procedure Put(const AVerdict: TMHBinaryVerdict);
+    /// Вердикт для файла APath. Если у вердикта и у запроса есть SHA-256 и они
+    /// различаются — файл изменился после анализа, вердикт не применяется.
+    function TryGet(const APath, ASha256: string; out AVerdict: TMHBinaryVerdict): Boolean;
+    function Count: Integer;
+    procedure Clear;
+  end;
+
 function MHLogLevelToString(ALevel: TMHLogLevel): string;
 
 implementation
