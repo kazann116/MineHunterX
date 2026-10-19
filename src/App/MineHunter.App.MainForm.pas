@@ -251,8 +251,13 @@ type
     FQuitting: Boolean;
     FHiddenToTray: Boolean;
     FTrayHintShown: Boolean;
+    /// Последнее всплывающее уведомление — напоминание о работе в фоне (а не тревога).
+    FBalloonIsReminder: Boolean;
+    FReminderCount: Integer;
+    FTrayRemindItem: TMenuItem;
     FBackgroundBox: TGroupBox;
     FChkTray: TCheckBox;
+    FChkRemind: TCheckBox;
     FChkNotify: TCheckBox;
     FChkEconomy: TCheckBox;
     FChkAutostart: TCheckBox;
@@ -357,6 +362,9 @@ type
     procedure TrayClick(Sender: TObject);
     procedure TrayBalloonClick(Sender: TObject);
     procedure TrayOpenClick(Sender: TObject);
+    procedure TrayRemindClick(Sender: TObject);
+    /// Напоминание «работает в фоне»: раз за сеанс и только если оно не отключено.
+    procedure RemindInBackground;
     procedure TrayExitClick(Sender: TObject);
     procedure BackgroundSettingClick(Sender: TObject);
     procedure AutostartClick(Sender: TObject);
@@ -484,6 +492,12 @@ type
     property HiddenToTray: Boolean read FHiddenToTray;
     property TrayIcon: TTrayIcon read FTray;
     property TrayCheckBox: TCheckBox read FChkTray;
+    property RemindCheckBox: TCheckBox read FChkRemind;
+    property TrayRemindItem: TMenuItem read FTrayRemindItem;
+    /// Сколько раз за сеанс напоминали о работе в фоне.
+    property ReminderCount: Integer read FReminderCount;
+    property BalloonIsReminder: Boolean read FBalloonIsReminder;
+    procedure TrayBalloonClicked;
     property NotifyCheckBox: TCheckBox read FChkNotify;
     property EconomyCheckBox: TCheckBox read FChkEconomy;
     property AutostartCheckBox: TCheckBox read FChkAutostart;
@@ -3456,6 +3470,11 @@ begin
   LItem.Default := True;
   LItem.OnClick := TrayOpenClick;
   FTrayMenu.Items.Add(LItem);
+  FTrayRemindItem := TMenuItem.Create(FTrayMenu);
+  FTrayRemindItem.Caption := MHL('Напоминать о работе в фоне', 'Remind me about running in the background');
+  FTrayRemindItem.Checked := FServices.Settings.RemindInBackground;
+  FTrayRemindItem.OnClick := TrayRemindClick;
+  FTrayMenu.Items.Add(FTrayRemindItem);
   LItem := TMenuItem.Create(FTrayMenu);
   LItem.Caption := '-';
   FTrayMenu.Items.Add(LItem);
@@ -3507,7 +3526,7 @@ begin
   FBackgroundBox := TGroupBox.Create(Self);
   FBackgroundBox.Parent := sbSettings;
   FBackgroundBox.SetBounds(gbActionLog.Left, FQuarantineBox.Top + FQuarantineBox.Height + 16,
-    gbActionLog.Width, 160);
+    gbActionLog.Width, 186);
   FBackgroundBox.Caption := MHTr('Работа в фоне и уведомления');
   LTop := 26;
   FInitializingSettings := True;
@@ -3516,6 +3535,11 @@ begin
       MHL('Наблюдение продолжается, пока окно скрыто. Полный выход — «Выход» в меню значка.',
       'Monitoring continues while the window is hidden. To quit completely, use “Exit” in the icon menu.'),
       FServices.Settings.MinimizeToTray);
+    FChkRemind := AddCheck(MHL('Напоминать, что MineHunter X продолжает работать в фоне',
+      'Remind me that MineHunter X keeps running in the background'),
+      MHL('Уведомление при первом скрытии окна за сеанс. Снимите флажок, чтобы больше не напоминать.',
+      'A notification the first time the window is hidden in a session. Clear the box to stop the reminders.'),
+      FServices.Settings.RemindInBackground);
     FChkNotify := AddCheck(MHTr('Уведомлять о новых тревогах (уровень «подозрительно» и выше)'),
       MHL('Не чаще одного уведомления в минуту; об одной находке — один раз, повторно — если риск вырос.',
       'At most one notification per minute; once per finding, again only if the risk has increased.'),
@@ -3532,6 +3556,7 @@ begin
     FInitializingSettings := False;
   end;
   FChkTray.OnClick := BackgroundSettingClick;
+  FChkRemind.OnClick := BackgroundSettingClick;
   FChkNotify.OnClick := BackgroundSettingClick;
   FChkEconomy.OnClick := BackgroundSettingClick;
   FChkAutostart.OnClick := AutostartClick;
@@ -3580,9 +3605,12 @@ begin
     Exit;
   LSettings := FServices.Settings;
   LSettings.MinimizeToTray := FChkTray.Checked;
+  LSettings.RemindInBackground := FChkRemind.Checked;
   LSettings.NotifyAlerts := FChkNotify.Checked;
   LSettings.EconomyWhenHidden := FChkEconomy.Checked;
   ChangeSettings(LSettings);
+  if FTrayRemindItem <> nil then
+    FTrayRemindItem.Checked := LSettings.RemindInBackground;
   if FOwnsServices and (FTray <> nil) then
     FTray.Visible := FHiddenToTray or LSettings.MinimizeToTray or LSettings.NotifyAlerts;
 end;
@@ -3632,6 +3660,7 @@ begin
   if not FNotifier.Process(AFindings, ANowUtc, LNotice) then
     Exit;
   FLastNotice := LNotice;
+  FBalloonIsReminder := False;
   Inc(FNoticeCount);
   Result := True;
   // Пока окно открыто и активно, тревога и так видна на «Обзоре».
@@ -3670,14 +3699,27 @@ begin
   begin
     FTray.Visible := True;
     Hide;
-    if not FTrayHintShown then
-    begin
-      FTrayHintShown := True;
-      FTray.BalloonTitle := MHTr('MineHunter X работает в фоне');
-      FTray.BalloonHint := MHTr('Наблюдение продолжается. Откройте окно щелчком по значку; выход — в меню значка.');
-      FTray.BalloonFlags := bfInfo;
-      FTray.ShowBalloonHint;
-    end;
+  end;
+  RemindInBackground;
+end;
+
+procedure TMainForm.RemindInBackground;
+begin
+  if FTrayHintShown or not FServices.Settings.RemindInBackground then
+    Exit;
+  FTrayHintShown := True;
+  FBalloonIsReminder := True;
+  Inc(FReminderCount);
+  // Тесты и встраивание не показывают уведомлений пользователю.
+  if FOwnsServices then
+  begin
+    FTray.BalloonTitle := MHTr('MineHunter X работает в фоне');
+    FTray.BalloonHint := MHL('Наблюдение продолжается. Окно — щелчок по значку, выход — в меню значка. ' +
+      'Чтобы больше не напоминать, щёлкните это уведомление и снимите флажок.',
+      'Monitoring continues. Click the icon to open the window; Exit is in the icon menu. ' +
+      'To stop these reminders, click this notification and clear the box.');
+    FTray.BalloonFlags := bfInfo;
+    FTray.ShowBalloonHint;
   end;
 end;
 
@@ -3710,12 +3752,32 @@ end;
 
 procedure TMainForm.TrayBalloonClick(Sender: TObject);
 begin
+  TrayBalloonClicked;
+end;
+
+procedure TMainForm.TrayBalloonClicked;
+begin
   ShowFromTray;
-  if FLastNotice.FindingKey <> '' then
+  if FBalloonIsReminder then
+  begin
+    // Напоминание о работе в фоне → флажок, которым оно отключается.
+    NavigateTo(pgSettings);
+    sbSettings.ScrollInView(FBackgroundBox);
+    // CanFocus не проверяет видимость самой формы.
+    if FChkRemind.Showing and FChkRemind.CanFocus then
+      FChkRemind.SetFocus;
+  end
+  else if FLastNotice.FindingKey <> '' then
   begin
     NavigateTo(pgFindings);
     SelectFinding(FLastNotice.FindingKey);
   end;
+end;
+
+procedure TMainForm.TrayRemindClick(Sender: TObject);
+begin
+  // Флажок в настройках сохраняет настройку и синхронизирует пункт меню (OnClick).
+  FChkRemind.Checked := not FServices.Settings.RemindInBackground;
 end;
 
 procedure TMainForm.TrayOpenClick(Sender: TObject);
@@ -4387,6 +4449,9 @@ begin
       if IntervalChoicesMs[I] = FServices.Settings.IntervalMs then
         cbInterval.ItemIndex := I;
     FChkTray.Checked := FServices.Settings.MinimizeToTray;
+    FChkRemind.Checked := FServices.Settings.RemindInBackground;
+    if FTrayRemindItem <> nil then
+      FTrayRemindItem.Checked := FServices.Settings.RemindInBackground;
     FChkNotify.Checked := FServices.Settings.NotifyAlerts;
     FChkEconomy.Checked := FServices.Settings.EconomyWhenHidden;
     FChkEconomy.Caption := EconomyCaption;

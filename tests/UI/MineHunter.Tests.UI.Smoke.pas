@@ -1487,6 +1487,25 @@ begin
         Assert.AreEqual(LNormal, LServices.Scanner.Options.IntervalMs, 'Экономный режим выключен');
         LForm.ShowFromTray;
 
+        // Напоминание «работает в фоне»: одно за сеанс; щелчок по нему ведёт к флажку отключения.
+        Assert.AreEqual(1, LForm.ReminderCount, 'Скрытий было три — напоминание одно');
+        Assert.IsTrue(LForm.BalloonIsReminder);
+        Assert.IsTrue(LForm.RemindCheckBox.Checked);
+        Assert.IsTrue(LForm.TrayRemindItem.Checked);
+        LForm.TrayBalloonClicked;
+        Assert.AreEqual(Ord(pgSettings), Ord(LForm.ActivePage));
+        // Отключение из меню значка — сохраняется и отражается флажком в настройках.
+        LForm.TrayRemindItem.Click;
+        Assert.IsFalse(LServices.Settings.RemindInBackground);
+        Assert.IsFalse(LForm.RemindCheckBox.Checked);
+        Assert.IsFalse(LForm.TrayRemindItem.Checked);
+        LForm.TrayRemindItem.Click;
+        Assert.IsTrue(LServices.Settings.RemindInBackground);
+        Assert.IsTrue(LForm.TrayRemindItem.Checked);
+        LForm.RemindCheckBox.Checked := False;
+        Assert.IsFalse(LServices.Settings.RemindInBackground);
+        Assert.IsFalse(LForm.TrayRemindItem.Checked, 'Флажок и пункт меню согласованы');
+
         // Уведомления о новых тревогах.
         LFinding := Default(TMHFinding);
         LFinding.Key := 'notify:test';
@@ -1494,6 +1513,7 @@ begin
         LFinding.Level := rlHighlySuspicious;
         LFinding.Score := 95;
         Assert.IsTrue(LForm.NotifyAlerts([LFinding], Now));
+        Assert.IsFalse(LForm.BalloonIsReminder, 'Последнее уведомление — тревога');
         Assert.AreEqual(1, LForm.NoticeCount);
         Assert.AreEqual('notify:test', LForm.LastNotice.FindingKey);
         Assert.IsFalse(LForm.NotifyAlerts([LFinding], Now), 'Повтор не уведомляет');

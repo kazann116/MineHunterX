@@ -373,6 +373,7 @@ begin
   LSettings := TMHAppSettings.Default;
   Assert.IsFalse(LSettings.CheckForUpdates, 'Без согласия — никаких запросов в интернет');
   Assert.IsTrue(LSettings.MinimizeToTray);
+  Assert.IsTrue(LSettings.RemindInBackground);
   Assert.IsTrue(LSettings.NotifyAlerts);
   Assert.IsTrue(LSettings.EconomyWhenHidden);
   Assert.AreEqual(Ord(ulRussian), Ord(LSettings.Language));
@@ -386,6 +387,7 @@ var
 begin
   LSettings := TMHAppSettings.Default;
   LSettings.MinimizeToTray := False;
+  LSettings.RemindInBackground := False;
   LSettings.NotifyAlerts := False;
   LSettings.EconomyWhenHidden := False;
   LSettings.CheckForUpdates := True;
@@ -394,6 +396,7 @@ begin
   LSettings.Theme := utDark;
   LLoaded := MHSettingsFromJson(MHSettingsToJson(LSettings));
   Assert.IsFalse(LLoaded.MinimizeToTray);
+  Assert.IsFalse(LLoaded.RemindInBackground);
   Assert.IsFalse(LLoaded.NotifyAlerts);
   Assert.IsFalse(LLoaded.EconomyWhenHidden);
   Assert.IsTrue(LLoaded.CheckForUpdates);
@@ -408,6 +411,7 @@ var
 begin
   LLoaded := MHSettingsFromJson('{"version":1,"intervalMs":2000,"language":"de","theme":42}');
   Assert.IsTrue(LLoaded.MinimizeToTray);
+  Assert.IsTrue(LLoaded.RemindInBackground, 'В старом файле нет ключа — напоминание включено');
   Assert.IsFalse(LLoaded.CheckForUpdates);
   Assert.AreEqual(Ord(ulRussian), Ord(LLoaded.Language), 'Неизвестный язык — русский');
   Assert.AreEqual(Ord(utLight), Ord(LLoaded.Theme));

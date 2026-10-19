@@ -70,6 +70,8 @@ type
     RedactPathsInReports: Boolean;
     /// Закрытие и сворачивание окна убирают MineHunter X в область уведомлений.
     MinimizeToTray: Boolean;
+    /// Напоминать уведомлением, что окно скрыто, а наблюдение продолжается (раз за сеанс).
+    RemindInBackground: Boolean;
     /// Всплывающие уведомления о новых тревогах (уровень «подозрительно» и выше).
     NotifyAlerts: Boolean;
     /// Пока окно скрыто, опрос не чаще одного раза в EconomyIntervalSec.
@@ -205,6 +207,7 @@ begin
   Result.Exclusions := nil;
   Result.RedactPathsInReports := True;
   Result.MinimizeToTray := True;
+  Result.RemindInBackground := True;
   Result.NotifyAlerts := True;
   Result.EconomyWhenHidden := True;
   Result.EconomyIntervalSec := EconomyIntervalMs div 1000;
@@ -430,6 +433,7 @@ begin
     LRoot.AddPair('learningDays', TJSONNumber.Create(ASettings.LearningDays));
     LRoot.AddPair('redactPathsInReports', TJSONBool.Create(ASettings.RedactPathsInReports));
     LRoot.AddPair('minimizeToTray', TJSONBool.Create(ASettings.MinimizeToTray));
+    LRoot.AddPair('remindInBackground', TJSONBool.Create(ASettings.RemindInBackground));
     LRoot.AddPair('notifyAlerts', TJSONBool.Create(ASettings.NotifyAlerts));
     LRoot.AddPair('economyWhenHidden', TJSONBool.Create(ASettings.EconomyWhenHidden));
     LRoot.AddPair('economyIntervalSec', TJSONNumber.Create(ASettings.EconomyIntervalSec));
@@ -524,6 +528,7 @@ begin
     Result.RedactPathsInReports := ReadBool(LRoot, 'redactPathsInReports',
       LDefaults.RedactPathsInReports);
     Result.MinimizeToTray := ReadBool(LRoot, 'minimizeToTray', LDefaults.MinimizeToTray);
+    Result.RemindInBackground := ReadBool(LRoot, 'remindInBackground', LDefaults.RemindInBackground);
     Result.NotifyAlerts := ReadBool(LRoot, 'notifyAlerts', LDefaults.NotifyAlerts);
     Result.EconomyWhenHidden := ReadBool(LRoot, 'economyWhenHidden', LDefaults.EconomyWhenHidden);
     Result.EconomyIntervalSec := ReadInt(LRoot, 'economyIntervalSec', LDefaults.EconomyIntervalSec);
