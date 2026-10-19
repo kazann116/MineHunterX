@@ -170,7 +170,11 @@ procedure ApplyHealth(var AInfo: TMHDiskInfo; const AData: TMHDiskHealthData);
 begin
   AInfo.AttributesSource := AData.Source;
   AInfo.Attributes := AData.Attributes;
-  if not AInfo.HasTemperature and AData.HasTemperature then
+  // Составная температура из журнала NVMe — то, что сообщает сам диск (как HWiNFO, CrystalDiskInfo);
+  // счётчик надёжности Windows у части NVMe отдаёт другое значение (у WD SN570 — 60 °C при 32 °C).
+  // SMART SATA перечитывается редко — он только заполняет пропуск.
+  if AData.HasTemperature and (AData.TemperatureCelsius > 0) and (AData.TemperatureCelsius < 150) and
+     ((AData.Source = MH_HEALTH_SOURCE_NVME) or not AInfo.HasTemperature) then
   begin
     AInfo.HasTemperature := True;
     AInfo.TemperatureCelsius := AData.TemperatureCelsius;

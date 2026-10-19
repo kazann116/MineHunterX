@@ -49,6 +49,7 @@ type
     [Test] procedure ParseInstance;
     [Test] procedure Collect_MergesAllSources;
     [Test] procedure TemperatureFallback_FromSensors;
+    [Test] procedure Health_NvmeTemperatureImplausible_KeepsReliability;
     [Test] procedure Cache_DisksReadRarely_InvalidateForcesReread;
     [Test] procedure WmiFailure_KeepsPreviousAndUsesCounters;
     [Test] procedure ReliabilityDenied_RequiresElevation;
@@ -357,6 +358,33 @@ begin
   Result.ReallocatedSectors := 0;
 end;
 
+procedure TDiskCollectorTests.Health_NvmeTemperatureImplausible_KeepsReliability;
+var
+  LApi: TFakeDiskApi;
+  LIntf: IMHCollector;
+  LResult: TMHCollectionResult;
+  LHealth: TMHDiskHealthData;
+begin
+  // Датчик не заполнен (0 K → −273 °C) или значение вне диапазона — остаётся счётчик Windows.
+  LApi := FakeDiskSet;
+  LHealth := NvmeHealth(1748, 266);
+  LHealth.TemperatureCelsius := -273;
+  LApi.HealthNumbers := [1];
+  LApi.Health := [LHealth];
+  LIntf := TMHDiskCollector.Create(LApi, TFakeClock.Create(FAKE_NOW));
+  LResult := LIntf.Collect(TMHSnapshot.Create(1, FAKE_NOW));
+  Assert.AreEqual(48.0, LResult.Disks[1].TemperatureCelsius, 0.01);
+  LHealth.TemperatureCelsius := 200;
+  LApi.Health := [LHealth];
+  LResult := LIntf.Collect(TMHSnapshot.Create(2, IncMinute(FAKE_NOW, 11)));
+  Assert.AreEqual(48.0, LResult.Disks[1].TemperatureCelsius, 0.01);
+  // Правдоподобное значение — из журнала NVMe.
+  LHealth.TemperatureCelsius := 32;
+  LApi.Health := [LHealth];
+  LResult := LIntf.Collect(TMHSnapshot.Create(3, IncMinute(FAKE_NOW, 22)));
+  Assert.AreEqual(32.0, LResult.Disks[1].TemperatureCelsius, 0.01);
+end;
+
 procedure TDiskCollectorTests.Health_FillsGapsKeepsReliabilityAndRefreshes;
 var
   LApi: TFakeDiskApi;
@@ -376,7 +404,9 @@ begin
   Assert.AreEqual(MH_HEALTH_SOURCE_NVME, LResult.Disks[1].AttributesSource);
   Assert.AreEqual(1, Integer(Length(LResult.Disks[1].Attributes)));
   Assert.AreEqual<Int64>(1200, LResult.Disks[1].PowerOnHours, 'Счётчики надёжности Windows — основной источник');
-  Assert.AreEqual(48.0, LResult.Disks[1].TemperatureCelsius, 0.01);
+  Assert.AreEqual(33.0, LResult.Disks[1].TemperatureCelsius, 0.01,
+    'Температура из журнала NVMe важнее счётчика Windows (48)');
+  Assert.AreEqual(83.0, LResult.Disks[1].TemperatureLimitCelsius, 0.01, 'Порог — из счётчиков');
   Assert.AreEqual(7.0, LResult.Disks[1].WearPercent, 0.01);
   Assert.AreEqual<Int64>(266, LResult.Disks[1].PowerCycles);
   Assert.AreEqual<Int64>(3, LResult.Disks[1].UnsafeShutdowns);
