@@ -14,7 +14,7 @@ uses
   System.SysUtils;
 
 const
-  MH_CORE_VERSION = '0.3.3';
+  MH_CORE_VERSION = '0.3.4';
 
   /// Значение ThreadCount, когда число потоков неизвестно.
   MH_UNKNOWN_COUNT = -1;
