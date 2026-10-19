@@ -57,6 +57,7 @@ type
     FSecondPoints: TArray<TMHMetric>;
     FSecondColor: TColor;
     FFirstLegend, FSecondLegend: string;
+    FMinGapSeconds: Double;
     procedure SetTitle(const AValue: string);
     procedure SetLineColor(AValue: TColor);
     function Fmt(AValue: Double): string;
@@ -83,6 +84,8 @@ type
     property Formatter: TMHValueFormatter read FFormatter write FFormatter;
     /// Разрыв линии, если шаг по времени больше GapFactor × медианного шага.
     property GapFactor: Double read FGapFactor write FGapFactor;
+    /// Шаг короче этого — не разрыв (по умолчанию 90 с: опрос раз в 30 с, пока окно свёрнуто).
+    property MinGapSeconds: Double read FMinGapSeconds write FMinGapSeconds;
   published
     property Align;
     property Anchors;
@@ -95,7 +98,7 @@ type
 
 /// Отрезки непрерывной линии: индексы точек с данными, без больших разрывов.
 function MHSplitSegments(const APoints: TArray<TMHMetric>;
-  AGapFactor: Double): TArray<TArray<Integer>>;
+  AGapFactor: Double; AMinGapSeconds: Double = 0): TArray<TArray<Integer>>;
 
 /// Диапазон оси Y по данным: с небольшим запасом; плоский ряд расширяется.
 /// False — в ряду нет ни одного значения.
@@ -173,7 +176,7 @@ begin
 end;
 
 function MHSplitSegments(const APoints: TArray<TMHMetric>;
-  AGapFactor: Double): TArray<TArray<Integer>>;
+  AGapFactor: Double; AMinGapSeconds: Double): TArray<TArray<Integer>>;
 var
   LResult: TList<TArray<Integer>>;
   LCurrent: TList<Integer>;
@@ -191,7 +194,9 @@ begin
   LResult := TList<TArray<Integer>>.Create;
   LCurrent := TList<Integer>.Create;
   try
-    LMaxStep := MedianStep(APoints) * AGapFactor;
+    // Разрыв — шаг больше GapFactor медианных, но не короче AMinGapSeconds: редкий опрос,
+    // пока окно свёрнуто (экономный режим), разрывом не считается.
+    LMaxStep := Max(MedianStep(APoints) * AGapFactor, AMinGapSeconds / SecsPerDay);
     LPrev := -1;
     for I := 0 to High(APoints) do
     begin
@@ -268,6 +273,7 @@ begin
   FLineColor := TColor($00B06A1F); // синий, контрастный на светлом фоне
   FSecondColor := TColor($001E7FE8); // оранжевый — различим с синим и при нарушениях цветовосприятия
   FGapFactor := 3;
+  FMinGapSeconds := 90;
   Width := 300;
   Height := 140;
 end;
@@ -515,7 +521,7 @@ begin
   Canvas.Pen.Color := FLineColor;
   Canvas.Pen.Width := Max(1, S(2));
   Canvas.Brush.Color := FLineColor;
-  LSegments := MHSplitSegments(FPoints, FGapFactor);
+  LSegments := MHSplitSegments(FPoints, FGapFactor, FMinGapSeconds);
   for LSegment in LSegments do
   begin
     SetLength(LPts, Length(LSegment));
@@ -530,7 +536,7 @@ begin
     Exit;
   Canvas.Pen.Color := FSecondColor;
   Canvas.Brush.Color := FSecondColor;
-  LSegments := MHSplitSegments(FSecondPoints, FGapFactor);
+  LSegments := MHSplitSegments(FSecondPoints, FGapFactor, FMinGapSeconds);
   for LSegment in LSegments do
   begin
     SetLength(LPts, Length(LSegment));

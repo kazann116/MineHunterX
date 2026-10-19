@@ -276,7 +276,7 @@ begin
   LScanPanel.Parent := LHost;
   LScanPanel.Top := 10000; // под таблицами дисков, над результатами проверки
   LScanPanel.Align := alTop;
-  LScanPanel.Height := 64;
+  LScanPanel.Height := 104;
   LScanPanel.BevelOuter := bvNone;
   FBtnScan := TButton.Create(Self);
   FBtnScan.Parent := LScanPanel;
@@ -303,9 +303,25 @@ begin
   FChkWeekly.Checked := FServices.Settings.FileScanWeekly;
   FInitializing := False;
   FChkWeekly.OnClick := WeeklyClick;
+  with TLabel.Create(Self) do
+  begin
+    Parent := LScanPanel;
+    SetBounds(8, 40, 1100, 34);
+    AutoSize := False;
+    WordWrap := True;
+    ShowAccelChar := False;
+    Caption := MHL('Проверка ищет на всех дисках следы майнеров, которые сейчас не запущены: известные майнеры ' +
+      'и их настройки (адреса пулов, кошельки), сценарии их запуска, драйвер WinRing0 и программы рядом с ним, ' +
+      'скрытые программы в системных папках, файлы под видом системных. Ничего не удаляется: найденное можно ' +
+      'открыть, отправить в карантин или отметить как свой файл.',
+      'The scan looks on all disks for traces of miners that are not running now: known miners and their ' +
+      'settings (pool addresses, wallets), their launch scripts, the WinRing0 driver and programs next to it, ' +
+      'hidden programs in system folders, files disguised as system files. Nothing is deleted: you can open ' +
+      'what was found, quarantine it or mark it as your own file.');
+  end;
   FLblScan := TLabel.Create(Self);
   FLblScan.Parent := LScanPanel;
-  FLblScan.SetBounds(8, 42, 1100, 15);
+  FLblScan.SetBounds(8, 80, 1100, 15);
   FLblScan.AutoSize := False;
   FLblScan.ShowAccelChar := False;
   if FServices.Settings.LastFileScanUtc > 0 then
@@ -394,6 +410,12 @@ begin
      MHL('Видеопамять', 'Video memory'), MHL('Температура', 'Temperature'), MHL('Мощность', 'Power')],
     [300, 90, 100, 110, 110, 90]);
   FGpu.OnSelectItem := DeviceSelect;
+  FGpu.Hint := MHL('Температуру видеокарты MineHunter X берёт из Windows (D3DKMT), мощность — у NVIDIA (NVML). ' +
+    'Встроенная видеокарта Intel через эти интерфейсы температуру и мощность не сообщает: HWiNFO читает их ' +
+    'своим драйвером. MineHunter X драйверы не устанавливает.', 'MineHunter X takes the graphics card temperature ' +
+    'from Windows (D3DKMT) and power from NVIDIA (NVML). Intel integrated graphics do not report temperature and ' +
+    'power through these interfaces: HWiNFO reads them with its own driver. MineHunter X does not install drivers.');
+  FGpu.ShowHint := True;
   FGpuChart := TMHLineChart.Create(Self);
   FGpuChart.Parent := FGpuScroll;
   FGpuChart.Height := CHART_HEIGHT;

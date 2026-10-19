@@ -107,6 +107,13 @@ end;
 procedure TChartTests.Segments_EmptyAndAllNoData;
 begin
   Assert.AreEqual(0, Integer(Length(MHSplitSegments(nil, 3))));
+  // Окно свёрнуто: опрос раз в 30 с среди шагов по 2 с — не разрыв; пауза 5 минут — разрыв.
+  Assert.AreEqual('0,1,2,3,4,5', SegmentsText(MHSplitSegments([P(0, 1), P(2, 1), P(4, 1), P(34, 1), P(64, 1), P(66, 1)],
+    3, 90)), 'Экономный опрос — сплошная линия');
+  Assert.AreEqual('0,1,2|3,4', SegmentsText(MHSplitSegments([P(0, 1), P(2, 1), P(4, 1), P(304, 1), P(306, 1)],
+    3, 90)), 'Программа не работала 5 минут — разрыв');
+  Assert.AreEqual('0,1,2|3|4,5', SegmentsText(MHSplitSegments([P(0, 1), P(2, 1), P(4, 1), P(34, 1), P(64, 1),
+    P(66, 1)], 3)), 'Без нижней границы шаг 30 с при медиане 2 с — разрыв (прежнее поведение)');
   Assert.AreEqual(0, Integer(Length(MHSplitSegments([P(0, 0, False), P(1, 0, False)], 3))));
   Assert.AreEqual('0', SegmentsText(MHSplitSegments([P(0, 7)], 3)));
 end;

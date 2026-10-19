@@ -33,6 +33,7 @@ type
     [TearDown] procedure TearDown;
     [Test] procedure Migration_V1ToV2_PreservesData;
     [Test] procedure Context_RoundTrip;
+    [Test] procedure CountSnapshots_ByContextAndPeriod;
     [Test] procedure Findings_RepeatsAreMerged;
     [Test] procedure Findings_EmptyKey_DerivedFromProcessAndCategory;
     [Test] procedure Findings_NewestFirstRangeAndLimit;
@@ -294,6 +295,27 @@ begin
   Assert.AreEqual<TMHWorkContext>(wcIdle, LLoaded[1].Context.WorkContext);
   Assert.IsFalse(LLoaded[2].Context.Available, 'Недоступный контекст хранится как NULL');
   Assert.AreEqual<TMHWorkContext>(wcUnknown, LLoaded[2].Context.WorkContext);
+end;
+
+procedure TStorageV2Tests.CountSnapshots_ByContextAndPeriod;
+var
+  LRepo: TMHSQLiteRepository;
+  LIntf: IMHRepository;
+  I: Integer;
+begin
+  LRepo := Open;
+  LIntf := LRepo;
+  // Прогресс профиля нормы — сколько снимков режима накоплено сейчас, без пересчёта профиля.
+  for I := 1 to 5 do
+    LIntf.SaveSnapshot(Snap(I, FAKE_NOW - I / SecsPerDay, 1, wcWork));
+  LIntf.SaveSnapshot(Snap(10, FAKE_NOW - 1 / SecsPerDay, 1, wcGaming));
+  LIntf.SaveSnapshot(Snap(11, FAKE_NOW - 3, 1, wcWork));
+  LIntf.SaveSnapshot(Snap(12, FAKE_NOW - 2 / SecsPerDay, 1, wcWork, False));
+  Assert.AreEqual<Int64>(5, LRepo.CountSnapshots(FAKE_NOW - 1, FAKE_NOW, wcWork), 'Только режим и период');
+  Assert.AreEqual<Int64>(6, LRepo.CountSnapshots(FAKE_NOW - 5, FAKE_NOW, wcWork));
+  Assert.AreEqual<Int64>(1, LRepo.CountSnapshots(FAKE_NOW - 1, FAKE_NOW, wcGaming));
+  Assert.AreEqual<Int64>(1, LRepo.CountSnapshots(FAKE_NOW - 1, FAKE_NOW, wcUnknown), 'Без контекста — «неизвестно»');
+  Assert.AreEqual<Int64>(0, LRepo.CountSnapshots(FAKE_NOW + 1, FAKE_NOW + 2, wcWork));
 end;
 
 procedure TStorageV2Tests.CacheSize_IsLimited;

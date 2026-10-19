@@ -164,6 +164,8 @@ type
     /// AMaxCount (каждый k-й по времени), по возрастанию времени. Загружаются
     /// метрики и процессы, статусы источников — нет. Для wcUnknown выбираются
     /// снимки без контекста.
+    /// Число снимков режима работы за период (для прогресса профиля нормы).
+    function CountSnapshots(AFromUtc, AToUtc: TDateTime; AContext: TMHWorkContext): Int64;
     function LoadSnapshotsSampled(AFromUtc, AToUtc: TDateTime; AMaxCount: Integer;
       AContext: TMHWorkContext): TArray<TMHSnapshot>;
 
@@ -998,6 +1000,33 @@ begin
         AQuery.ParamByName('t').AsLargeInt := LTo;
         AQuery.ParamByName('n').AsInteger := AMaxCount;
       end, True);
+  finally
+    FLock.Leave;
+  end;
+end;
+
+function TMHSQLiteRepository.CountSnapshots(AFromUtc, AToUtc: TDateTime; AContext: TMHWorkContext): Int64;
+var
+  LWhere: string;
+  LQuery: TFDQuery;
+begin
+  if AContext = wcUnknown then
+    LWhere := 'COALESCE(context, :c) = :c AND ts >= :f AND ts <= :t'
+  else
+    LWhere := 'context = :c AND ts >= :f AND ts <= :t';
+  FLock.Enter;
+  try
+    CheckOpen;
+    LQuery := NewQuery('SELECT COUNT(*) FROM snapshots WHERE ' + LWhere);
+    try
+      LQuery.ParamByName('c').AsWideString := MHWorkContextToName(AContext);
+      LQuery.ParamByName('f').AsLargeInt := MHUtcToUnixMs(AFromUtc);
+      LQuery.ParamByName('t').AsLargeInt := MHUtcToUnixMs(AToUtc);
+      LQuery.Open;
+      Result := LQuery.Fields[0].AsLargeInt;
+    finally
+      LQuery.Free;
+    end;
   finally
     FLock.Leave;
   end;

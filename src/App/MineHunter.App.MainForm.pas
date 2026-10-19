@@ -5,7 +5,7 @@ interface
 uses
   Winapi.Windows, Winapi.Messages, System.SysUtils, System.Classes, System.Actions,
   Vcl.Graphics, Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.StdCtrls, Vcl.ExtCtrls,
-  Vcl.ComCtrls, Vcl.ActnList, Vcl.Menus,
+  Vcl.ComCtrls, Vcl.ActnList, Vcl.Menus, Vcl.AppEvnts,
   MineHunter.Core.Types, MineHunter.Core.Interfaces, MineHunter.App.Bootstrap,
   MineHunter.App.ProcessView, MineHunter.App.Chart, MineHunter.Storage.SQLite,
   MineHunter.App.FindingsView, MineHunter.Core.Reports, MineHunter.Core.Actions,
@@ -281,6 +281,7 @@ type
     FAckList: TListView;
     FAckRemove: TButton;
     FAckKeys: TArray<string>;
+    FAppEvents: TApplicationEvents;
     FProcessActions: TMHFileActions;
     FChangesActions: TMHFileActions;
     FBtnOpenData: TButton;
@@ -312,6 +313,7 @@ type
     procedure CreateAcknowledgeControls;
     procedure CreateDataFolderControls;
     procedure CreateFileActions;
+    procedure AppMessage(var AMsg: TMsg; var AHandled: Boolean);
     procedure LayoutSettings;
     procedure UpdateDataFolderControls;
     procedure OpenDataFolderClick(Sender: TObject);
@@ -437,6 +439,8 @@ type
     function ProcessTarget(out ATarget: TMHFileTarget): Boolean;
     function ChangeTarget(out ATarget: TMHFileTarget): Boolean;
     property ProcessActions: TMHFileActions read FProcessActions;
+    /// Колесо мыши на уровне приложения (для тестов).
+    procedure HandleAppMessage(var AMsg: TMsg; var AHandled: Boolean);
     property ChangesActions: TMHFileActions read FChangesActions;
     property DefaultDataButton: TButton read FBtnDefaultData;
     property AckBox: TGroupBox read FAckBox;
@@ -524,7 +528,7 @@ implementation
 {$R *.dfm}
 
 uses
-  System.Math, System.DateUtils, System.UITypes, System.StrUtils,
+  System.Math, System.DateUtils, System.UITypes, System.StrUtils, System.Types,
   MineHunter.Core.Scanner, MineHunter.App.Display, MineHunter.Collectors.SelfMonitor,
   MineHunter.Collectors.Processes, MineHunter.Collectors.System, MineHunter.Core.Paths,
   MineHunter.Core.SelfAutostart, MineHunter.Collectors.Processes.WinApi,
@@ -598,6 +602,10 @@ begin
 
   CreateDisksPage;
   OnMouseWheel := FormMouseWheel;
+  // Колесо — до раздачи по фокусу: иначе первое движение после перехода на страницу
+  // может уйти элементу с фокусом (список разделов слева), а не странице под курсором.
+  FAppEvents := TApplicationEvents.Create(Self);
+  FAppEvents.OnMessage := AppMessage;
   lbNav.Items.Clear;
   for LPage := Low(TMHPage) to High(TMHPage) do
     lbNav.Items.Add(MHTr(PAGE_TITLES[LPage]));
@@ -1015,6 +1023,23 @@ begin
   ShellExecute(0, 'open', PChar(ParamStr(0)), PChar('--wait-pid=' + IntToStr(GetCurrentProcessId)), nil,
     SW_SHOWNORMAL);
   Quit;
+end;
+
+procedure TMainForm.HandleAppMessage(var AMsg: TMsg; var AHandled: Boolean);
+begin
+  AppMessage(AMsg, AHandled);
+end;
+
+procedure TMainForm.AppMessage(var AMsg: TMsg; var AHandled: Boolean);
+var
+  LPos: TPoint;
+begin
+  if AMsg.message <> WM_MOUSEWHEEL then
+    Exit;
+  // Координаты колеса — экранные; прокручивается страница под курсором, если там нет
+  // элемента с собственной прокруткой (это решает FormMouseWheel).
+  LPos := SmallPointToPoint(TSmallPoint(Cardinal(AMsg.lParam)));
+  FormMouseWheel(FAppEvents, [], SmallInt(HiWord(AMsg.wParam)), LPos, AHandled);
 end;
 
 procedure TMainForm.CreateAcknowledgeControls;
@@ -1779,6 +1804,7 @@ var
   LBaselines: TMHBaselineManager;
   LStorage: TMHSQLiteRepository;
   LMinSamples: Integer;
+  LLearningDays: Integer;
   LPrice: Double;
   LHours, LEnergyPoints: Integer;
   LInventory: IMHInventoryHistory;
@@ -1813,6 +1839,7 @@ begin
   LBaselines := FServices.Baselines;
   LStorage := FServices.Storage;
   LMinSamples := FServices.Settings.Analyzer.BaselineMinSamples;
+  LLearningDays := Max(1, FServices.Settings.LearningDays);
   LPrice := FServices.Settings.ElectricityPrice;
   LHours := HISTORY_HOURS[Max(0, cbHistoryPeriod.ItemIndex)];
   LEnergyPoints := Max(HISTORY_POINTS, LHours * 12);
@@ -1831,6 +1858,7 @@ begin
       LEnergy: TMHEnergyEstimate;
       LChanges: TArray<TMHInventoryItem>;
       LInventoryStart: TDateTime;
+      LCollected: Int64;
     begin
       SetLength(LSeries, Length(HISTORY_KINDS));
       LEnergy := Default(TMHEnergyEstimate);
@@ -1865,11 +1893,26 @@ begin
               [MHWorkContextToString(LContext), LBase.SampleCount, MHFormatUtcAsLocal(LBase.PeriodFromUtc),
                MHFormatUtcAsLocal(LBase.PeriodToUtc)])
           else
-            LInfo := Format(MHL('Профиль нормы для режима «%s» ещё формируется: %d из %d снимков. ' +
-              'Сравнение станет точнее после периода обучения.',
-              'The baseline for the “%s” mode is still being built: %d of %d snapshots. ' +
-              'The comparison will become more accurate after the learning period.'),
-              [MHWorkContextToString(LContext), LBase.SampleCount, LMinSamples]);
+          begin
+            // Сколько снимков накоплено сейчас: профиль пересчитывается раз в час, и его
+            // собственное число отстаёт от накопленного.
+            LCollected := LStorage.CountSnapshots(LTo - LLearningDays, LTo, LContext);
+            if LCollected >= LMinSamples then
+              LInfo := Format(MHL('Профиль нормы для режима «%s»: снимков уже достаточно (%d из %d нужных за ' +
+                '%d дн.) — профиль будет готов после ближайшего пересчёта (раз в час) или сразу по кнопке ' +
+                '«Перестроить норму».', 'Baseline for the “%s” mode: there are already enough snapshots (%d of ' +
+                '%d needed over %d days) — the profile will be ready after the next recalculation (hourly) or ' +
+                'right away with “Rebuild baseline”.'),
+                [MHWorkContextToString(LContext), LCollected, LMinSamples, LLearningDays])
+            else
+              LInfo := Format(MHL('Профиль нормы для режима «%s» ещё формируется: накоплено %d из %d нужных ' +
+                'снимков за %d дн. Снимки этого режима копятся, только пока компьютер работает в нём. ' +
+                'Сравнение станет точнее после периода обучения.',
+                'The baseline for the “%s” mode is still being built: %d of %d needed snapshots collected over ' +
+                '%d days. Snapshots of this mode accumulate only while the computer is in it. The comparison ' +
+                'will become more accurate after the learning period.'),
+                [MHWorkContextToString(LContext), LCollected, LMinSamples, LLearningDays]);
+          end;
         end
         else
           LInfo := MHL('Профиль нормы недоступен без истории наблюдений.',

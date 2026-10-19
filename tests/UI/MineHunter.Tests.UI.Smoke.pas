@@ -1475,6 +1475,7 @@ var
   I, LBefore: Integer;
   LHandled: Boolean;
   LPoint: TPoint;
+  LMsg: TMsg;
 begin
   FForm.SetBounds(0, 0, 1200, 700);
   FForm.Show;
@@ -1506,6 +1507,17 @@ begin
     FForm.OnMouseWheel(FForm, [], -WHEEL_DELTA, LPoint, LHandled);
     Assert.IsTrue(LHandled, 'Колесо над таблицей без прокрутки — странице');
     Assert.IsTrue(LPage.DiskScroll.VertScrollBar.Position > 0);
+    // То же через сообщение приложения — независимо от того, у какого элемента фокус.
+    LPage.DiskScroll.VertScrollBar.Position := 0;
+    FForm.lbNav.SetFocus;
+    LMsg := Default(TMsg);
+    LMsg.message := WM_MOUSEWHEEL;
+    LMsg.wParam := WPARAM(Cardinal(Word(SmallInt(-WHEEL_DELTA))) shl 16);
+    LMsg.lParam := LPARAM(Cardinal(Word(LPoint.X)) or (Cardinal(Word(LPoint.Y)) shl 16));
+    LHandled := False;
+    FForm.HandleAppMessage(LMsg, LHandled);
+    Assert.IsTrue(LHandled, 'Колесо обработано до раздачи по фокусу');
+    Assert.IsTrue(LPage.DiskScroll.VertScrollBar.Position > 0, 'Прокручена страница под курсором, а не список разделов');
 
     // «История»: сравнение с нормой и «что изменилось» — целиком, страница прокручивается.
     FForm.NavigateTo(pgHistory);
@@ -1575,9 +1587,12 @@ begin
   Assert.IsTrue(string(LPage.AttributesCaption.Caption).Contains('WD10JUCT'), LPage.AttributesCaption.Caption);
   Assert.AreEqual(1, LPage.AttributesView.Items.Count);
   Assert.IsTrue(LPage.AttributesView.Items[0].SubItems[0].Contains('правами администратора'), LPage.AttributesView.Items[0].SubItems[0]);
-  // Обновление сохраняет выбранный диск.
+  // Обновление сохраняет выбранный диск и его график (не сбрасывается на «Всего»).
   LPage.UpdateSnapshot(LSnapshot);
   Assert.IsTrue(string(LPage.AttributesCaption.Caption).Contains('WD10JUCT'));
+  Assert.IsTrue(LPage.DiskChart.Title.Contains('WD10JUCT'), LPage.DiskChart.Title);
+  LPage.UpdateSnapshot(LSnapshot);
+  Assert.IsTrue(LPage.DiskChart.Title.Contains('WD10JUCT'), 'Второе обновление: ' + LPage.DiskChart.Title);
   // NVMe-диск: наработка и прочие поля пришли в таблицу дисков.
   LPage.DisksView.Items[1].Selected := True;
   Assert.AreEqual(2, LPage.AttributesView.Items.Count);
