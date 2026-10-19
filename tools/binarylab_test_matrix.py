@@ -1,4 +1,4 @@
-"""Матрица «публичная функция BinaryLab → тесты DUnitX» (docs/binarylab-tests.md).
+﻿"""Матрица «публичная функция BinaryLab → тесты DUnitX» (docs/binarylab-tests.md).
 
 Публичные функции берутся из интерфейсных частей модулей src/Core/BinaryLab и
 страницы/элементов BinaryLab; тесты — процедуры тестовых модулей, в теле которых
@@ -117,6 +117,32 @@ UI_PARTS = [
     ('Сравнение файлов (BinaryDiff в интерфейсе)',
      [_P + 'CompareWith', _P + 'ExportDiff', _C + 'SetRanges', _C + 'OffsetAtX', _C + 'RangeAtX']),
 ]
+
+# Эквивалентные мутанты (не меняют наблюдаемого поведения) — с обоснованием.
+EQUIVALENT_MUTANTS = {
+    ('MineHunter.BinaryLab.Analyzer.pas', 129, 'and → or'):
+        'для секции без данных или за концом файла MHRangeEntropy и так возвращает -1, хеш пуст',
+    ('MineHunter.BinaryLab.Analyzer.pas', 129, '< → <='):
+        'секция, начинающаяся ровно в конце файла, не имеет данных: энтропия -1, хеш пуст',
+    ('MineHunter.BinaryLab.FileType.pas', 201, '>= → >'):
+        'файл из двух байт FF FE и так признаётся текстом (байты печатные)',
+    ('MineHunter.BinaryLab.FileType.pas', 209, '= → <>'):
+        'байты метки UTF-8 печатные: файл остаётся текстом с тем же видом',
+    ('MineHunter.BinaryLab.Report.pas', 433, '< → <='):
+        'при энтропии ровно 6,8 обе ветки дают один и тот же цвет (непрерывная шкала)',
+    ('MineHunter.BinaryLab.Anomalies.pas', 661, '> → >='):
+        'признаки с нулевым весом не меняют ни оценку, ни итог (оценка ниже порога)',
+    ('MineHunter.BinaryLab.Types.pas', 739, '<= → <'):
+        'при нулевой сумме все счётчики нулевые — деления нет, результат 0',
+    ('MineHunter.BinaryLab.Diff.pas', 264, '> → >='):
+        'разница энтропий ровно 0,01 при дробных значениях недостижима; 0,01 сравнивается как порог шума',
+    ('MineHunter.BinaryLab.FileType.pas', 384, 'and → or'):
+        'без сигнатуры ICO поле не читается (сокращённое вычисление), а LWord инициализировано нулём — '
+        'условие «число значков 1..64» ложно; ложный ICO проверен тестом Detect_IconCountWithoutSignature_IsNotIcon',
+    ('MineHunter.BinaryLab.Strings.pas', 771, '<> → ='):
+        'два прохода UTF-16 (чётный и нечётный) меняются местами, объединение результатов то же; '
+        'строка на нечётном смещении через границу блока проверена тестом Strings_Utf16OddOffsetAcrossChunk',
+}
 
 RESULT_FILES = {'Debug': os.path.join(ROOT, 'build', 'tests-Debug.xml'),
                 'Release': os.path.join(ROOT, 'build', 'tests-Release.xml')}
@@ -255,6 +281,48 @@ def assertion_lines(lines, pattern, test):
     return result
 
 
+def mutation_section(missing):
+    """Мутационное тестирование: итог, выжившие → убиты новыми тестами или эквивалентны."""
+    import json
+    path = os.path.join(ROOT, 'build', 'binarylab-mutation.json')
+    if not os.path.exists(path):
+        return []
+    data = json.load(open(path, encoding='utf-8'))
+    again_path = os.path.join(ROOT, 'build', 'binarylab-mutation-survivors.json')
+    again = {}
+    if os.path.exists(again_path):
+        for r in json.load(open(again_path, encoding='utf-8'))['results']:
+            again[(r['unit'], r['line'], r['mutation'])] = r['status']
+    out = ['', '## Мутационное тестирование', '',
+           'В копию модуля ядра вносится одна ошибка, тесты собираются и запускаются (`python tools/binarylab_mutation.py`).',
+           'Мутант должен быть убит упавшим тестом. Выжившие повторены после новых тестов',
+           '(`--survivors`, `tests/Unit/MineHunter.Tests.BinaryLab.Mutation.pas`); эквивалентные — с обоснованием.', '',
+           'Первый прогон: мутантов %d, скомпилировалось %d, убито %d, выжило %d (%.1f%%).' % (
+               data['mutants'], data['compiled'], data['killed'], data['survived'], data['score_percent']), '',
+           '| Мутант | Было выжившим | Итог |', '|---|---|---|']
+    final_killed = data['killed']
+    equivalent = 0
+    for r in data['results']:
+        if r['status'] != 'выжил':
+            continue
+        key = (r['unit'], r['line'], r['mutation'])
+        name = '`%s:%d` %s' % (r['unit'].replace('MineHunter.BinaryLab.', ''), r['line'], r['mutation'])
+        if again.get(key, '').startswith('убит'):
+            final_killed += 1
+            result = 'убит новыми тестами'
+        elif key in EQUIVALENT_MUTANTS:
+            equivalent += 1
+            result = 'эквивалентный: ' + EQUIVALENT_MUTANTS[key]
+        else:
+            result = '**выжил**'
+            missing.append('Мутант %s:%d %s выжил и не признан эквивалентным' % key)
+        out.append('| %s | `%s` | %s |' % (name, r['mutated'].replace('|', '\\|'), result))
+    useful = data['compiled'] - equivalent
+    out += ['', 'Итог: из %d неэквивалентных мутантов убито %d (%.1f%%), эквивалентных %d.' % (
+        useful, final_killed, 100.0 * final_killed / useful if useful else 0, equivalent)]
+    return out
+
+
 def main():
     tests = test_procedures()
     results = load_results()
@@ -358,6 +426,7 @@ def main():
                                                             run_text, shown or '**нет**'))
     # Интерфейс по частям ТЗ: каждая функция части — со случаями и итогами прогонов.
     by_key = {'%s.%s' % (u.replace('MineHunter.', ''), n): (c, r) for u, n, _h, c, r in rows}
+    out += mutation_section(missing)
     out += ['', '## Интерфейс: отчёт по каждой функции', '']
     for part, keys in UI_PARTS:
         out += ['### ' + part, '', '| Функция | Граничные и ошибочные случаи | Прогон |', '|---|---|---|']

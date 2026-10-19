@@ -226,6 +226,7 @@
         <DCCReference Include="Unit\MineHunter.Tests.BinaryLab.Content.pas"/>
         <DCCReference Include="Unit\MineHunter.Tests.BinaryLab.Integration.pas"/>
         <DCCReference Include="Unit\MineHunter.Tests.BinaryLab.Api.pas"/>
+        <DCCReference Include="Unit\MineHunter.Tests.BinaryLab.Mutation.pas"/>
         <DCCReference Include="UI\MineHunter.Tests.UI.BinaryLabControls.pas"/>
         <RcCompile Include="..\src\App\MineHunter.App.Styles.rc">
             <Form>..\src\App\MineHunter.App.Styles.res</Form>

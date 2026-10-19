@@ -113,8 +113,14 @@ def main():
         if os.path.exists(hits_file):
             os.remove(hits_file)
         env = dict(os.environ, MH_TRACE_FILE=hits_file)
-        run = subprocess.run([exe, '--exitbehavior:Continue', '--consolemode:Quiet'], capture_output=True, env=env,
-                             cwd=os.path.dirname(exe), timeout=3000)
+        xml = os.path.join(ROOT, 'build', 'tmp', out_name, 'results.xml')
+        run = subprocess.run([exe, '--exitbehavior:Continue', '--consolemode:Quiet', '--xml:' + xml], capture_output=True,
+                             env=env, cwd=os.path.dirname(exe), timeout=3000)
+        if os.path.exists(xml):
+            text = open(xml, encoding='utf-8', errors='replace').read()
+            for name, message in re.findall(r'<test-case name="([^"]+)"[^>]*success="False"[^>]*>[\s\S]*?'
+                                            r'<message>([\s\S]*?)</message>', text):
+                print('FAILED (%s): %s — %s' % (config, name, message.strip()[:300]))
         out = run.stdout.decode('cp866', errors='replace')
         found = re.search(r'Tests Found\s*:\s*(\d+)', out)
         passed = re.search(r'Tests Passed\s*:\s*(\d+)', out)

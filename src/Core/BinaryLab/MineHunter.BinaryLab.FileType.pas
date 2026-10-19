@@ -252,6 +252,12 @@ begin
   AKind := bkUnknown;
   ADescription := '';
   ASize := -1;
+  // Прочитанные поля заголовков начинаются с нуля: проверка поля без успешного
+  // чтения не должна зависеть от содержимого памяти.
+  LWord := 0;
+  LDWord := 0;
+  LDWord2 := 0;
+  LByte := 0;
   Result := True;
   if AReader.MatchesAt(AOffset, [$4D, $5A]) then
   begin

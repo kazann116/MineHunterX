@@ -164,6 +164,7 @@ uses
   MineHunter.Tests.BinaryLab.Content in 'Unit\MineHunter.Tests.BinaryLab.Content.pas',
   MineHunter.Tests.BinaryLab.Integration in 'Unit\MineHunter.Tests.BinaryLab.Integration.pas',
   MineHunter.Tests.BinaryLab.Api in 'Unit\MineHunter.Tests.BinaryLab.Api.pas',
+  MineHunter.Tests.BinaryLab.Mutation in 'Unit\MineHunter.Tests.BinaryLab.Mutation.pas',
   MineHunter.Tests.UI.BinaryLabControls in 'UI\MineHunter.Tests.UI.BinaryLabControls.pas';
 
 var
