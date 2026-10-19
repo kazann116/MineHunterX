@@ -104,6 +104,15 @@ RESULT_FILES = {'Debug': os.path.join(ROOT, 'build', 'tests-Debug.xml'),
                 'Release': os.path.join(ROOT, 'build', 'tests-Release.xml')}
 
 
+def load_isolated():
+    """Итоги изолированного прогона (tools/binarylab_isolated_run.py): сборка → {тест: пройден}."""
+    path = os.path.join(ROOT, 'build', 'binarylab-isolated.json')
+    if not os.path.exists(path):
+        return {}
+    import json
+    return json.load(open(path, encoding='utf-8'))
+
+
 def load_results():
     """Итоги прогонов DUnitX (NUnit XML): сборка → {тест: пройден}. Нет файла — сборка пропускается."""
     results = {}
@@ -219,6 +228,7 @@ def assertion_lines(lines, pattern, test):
 def main():
     tests = test_procedures()
     results = load_results()
+    isolated = load_isolated()
     rows = []
     missing = []
     used = set()
@@ -262,6 +272,12 @@ def main():
                     elif not cases_run[t]:
                         missing.append('%s — тест %s не пройден в %s' % (key, t, config))
                 run.append('%s %d/%d' % (config, passed, len(case_tests)))
+            for config, cases_run in isolated.items():
+                alone = sum(1 for t in case_tests if cases_run.get(t) is True)
+                for t in case_tests:
+                    if cases_run.get(t) is not True:
+                        missing.append('%s — тест %s не прошёл изолированно в %s' % (key, t, config))
+                run.append('отдельно %s %d/%d' % (config, alone, len(case_tests)))
             run_text = ', '.join(run) or 'не запускались'
 
             used.add(key)
@@ -275,7 +291,9 @@ def main():
            'Внутренние методы отрисовки и потоков проверяются через публичное поведение страницы и элементов.', '',
            '## Требования ТЗ → тесты', '',
            'Колонка «Прогон» — итоги последнего запуска всех тестов (`build/tests-Debug.xml`,',
-           '`build/tests-Release.xml`, отчёты NUnit XML DUnitX): сколько тестов случаев выполнено и пройдено.', '',
+           '`build/tests-Release.xml`, отчёты NUnit XML DUnitX): сколько тестов случаев выполнено и пройдено;',
+           '«отдельно» — каждый тест случая запущен своим процессом (`python tools/binarylab_isolated_run.py`,',
+           '`build/binarylab-isolated.json`).', '',
            '| Требование | Тесты (граничные и ошибочные случаи) | Прогон |', '|---|---|---|']
     for requirement, names in REQUIREMENTS:
         found = [n for n in names if any(proc == n for _u, _f, proc, _b, _l in tests)]
