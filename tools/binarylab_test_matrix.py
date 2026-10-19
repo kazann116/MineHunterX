@@ -113,7 +113,10 @@ def test_procedures():
                 for hname, hbody in helpers.items():
                     if re.search(r'\b' + re.escape(hname) + r'\b', body):
                         full += hbody
-                result.append((unit.replace('MineHunter.Tests.', ''), fixture, name, full))
+                # Засчитываются только тесты с проверками (Assert — в тесте или его
+                # вспомогательных подпрограммах), а не упоминание функции.
+                if 'Assert.' in full:
+                    result.append((unit.replace('MineHunter.Tests.', ''), fixture, name, full))
     return result
 
 
