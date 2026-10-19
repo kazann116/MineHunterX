@@ -155,6 +155,69 @@
 | `App.BinaryLabPage` | `ParseOffset` | пусто; посторонние символы; hex и десятичная запись | `BinaryLab_AnalyzeNavigateFindExportCompare` | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 6/6, строк Assert выполнено в Release 6/6 | TMainFormSmokeTests.BinaryLab_AnalyzeNavigateFindExportCompare |
 | `App.BinaryLabPage` | `ShowOffset` | без файла; отрицательное смещение; длина меньше 1 | `BinaryLab_PageMethods_WithoutDataAreSafe` | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 5/5, строк Assert выполнено в Release 5/5 | TMainFormSmokeTests.BinaryLab_AnalyzeNavigateFindExportCompare, TMainFormSmokeTests.BinaryLab_PageMethods_WithoutDataAreSafe |
 
+## Интерфейс: отчёт по каждой функции
+
+### Интерактивная карта (энтропия, гистограмма)
+
+| Функция | Граничные и ошибочные случаи | Прогон |
+|---|---|---|
+| `App.BinaryLab.Controls.SetData` | пустые данные; крошечное окно | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 7/7, строк Assert выполнено в Release 7/7 |
+| `App.BinaryLab.Controls.SetBands` | полоса в подсказке | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 2/2, строк Assert выполнено в Release 2/2 |
+| `App.BinaryLab.Controls.BlockAtPoint` | точка вне карты; блоков больше, чем клеток | Debug 2/2, Release 2/2, отдельно Debug 2/2, отдельно Release 2/2, строк Assert выполнено в Debug 5/5, строк Assert выполнено в Release 5/5 |
+| `App.BinaryLab.Controls.CellRect` | крайние клетки и агрегирование | Debug 2/2, Release 2/2, отдельно Debug 2/2, отдельно Release 2/2, строк Assert выполнено в Debug 11/11, строк Assert выполнено в Release 11/11 |
+| `App.BinaryLab.Controls.CellCount` | блоков больше, чем клеток | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 2/2, строк Assert выполнено в Release 2/2 |
+| `App.BinaryLab.Controls.BlockCount` | до данных и после пустых данных — 0 | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 4/4, строк Assert выполнено в Release 4/4 |
+| `App.BinaryLab.Controls.BlocksPerCell` | блоков больше, чем клеток | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 2/2, строк Assert выполнено в Release 2/2 |
+| `App.BinaryLab.Controls.EntropyColor` | концы шкалы различны, монотонность | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 7/7, строк Assert выполнено в Release 7/7 |
+| `App.BinaryLab.Controls.SetHistogram` | пустой массив; меньше 256 значений | Debug 2/2, Release 2/2, отдельно Debug 2/2, отдельно Release 2/2, строк Assert выполнено в Debug 7/7, строк Assert выполнено в Release 7/7 |
+| `App.BinaryLab.Controls.ByteAtPoint` | неровная ширина — каждый байт достижим; точка вне графика | Debug 2/2, Release 2/2, отдельно Debug 2/2, отдельно Release 2/2, строк Assert выполнено в Debug 6/6, строк Assert выполнено в Release 6/6 |
+| `App.BinaryLab.Controls.BarRect` | крошечный размер окна | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 1/1, строк Assert выполнено в Release 1/1 |
+| `App.BinaryLab.Controls.BarFraction` | пустая гистограмма; нулевой и максимальный столбец; шкалы | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 9/9, строк Assert выполнено в Release 9/9 |
+| `App.BinaryLab.Controls.HintTextAt` | точка вне данных | Debug 2/2, Release 2/2, отдельно Debug 2/2, отдельно Release 2/2, строк Assert выполнено в Debug 12/12, строк Assert выполнено в Release 12/12 |
+| `App.BinaryLab.Controls.MHBlendColor` | доли 0, 1 и 0,5 | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 4/4, строк Assert выполнено в Release 4/4 |
+
+### Hex Viewer (просмотр, поиск, смещения, подсветка)
+
+| Функция | Граничные и ошибочные случаи | Прогон |
+|---|---|---|
+| `App.BinaryLab.Controls.GotoOffset` | смещение уже на экране; за концом; без окна | Debug 3/3, Release 3/3, отдельно Debug 3/3, отдельно Release 3/3, строк Assert выполнено в Debug 11/11, строк Assert выполнено в Release 11/11 |
+| `App.BinaryLab.Controls.FindNext` | не найдено — позиция прежняя; переход в начало; регистр; без источника | Debug 3/3, Release 3/3, отдельно Debug 3/3, отдельно Release 3/3, строк Assert выполнено в Debug 9/9, строк Assert выполнено в Release 9/9 |
+| `App.BinaryLab.Controls.AddHighlight` | до создания окна; поиск подсветки вне диапазонов | Debug 2/2, Release 2/2, отдельно Debug 2/2, отдельно Release 2/2, строк Assert выполнено в Debug 5/5, строк Assert выполнено в Release 5/5 |
+| `App.BinaryLab.Controls.ClearHighlights` | после очистки подсветки нет | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 2/2, строк Assert выполнено в Release 2/2 |
+| `App.BinaryLab.Controls.HighlightAt` | смещение вне подсветки → False | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 6/6, строк Assert выполнено в Release 6/6 |
+| `App.BinaryLab.Controls.HighlightCount` | после очистки — 0 | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 2/2, строк Assert выполнено в Release 2/2 |
+| `App.BinaryLab.Controls.OffsetAtPoint` | точки вне колонок; без источника; без окна | Debug 3/3, Release 3/3, отдельно Debug 3/3, отдельно Release 3/3, строк Assert выполнено в Debug 7/7, строк Assert выполнено в Release 7/7 |
+| `App.BinaryLab.Controls.PointOfOffset` | смещение вне экрана; без источника | Debug 2/2, Release 2/2, отдельно Debug 2/2, отдельно Release 2/2, строк Assert выполнено в Debug 5/5, строк Assert выполнено в Release 5/5 |
+| `App.BinaryLab.Controls.VisibleRows` | огромный виртуальный файл | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 6/6, строк Assert выполнено в Release 6/6 |
+| `App.BinaryLab.Controls.RowCount` | без источника — 0 | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 1/1, строк Assert выполнено в Release 1/1 |
+| `App.BinaryLab.Controls.OffsetDigits` | ровно 4 ГБ и на байт больше; без источника | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 5/5, строк Assert выполнено в Release 5/5 |
+| `App.BinaryLab.Controls.ContentWidth` | точки правее данных | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 1/1, строк Assert выполнено в Release 1/1 |
+| `App.BinaryLab.Controls.ScrollRows` | не выше начала | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 3/3, строк Assert выполнено в Release 3/3 |
+| `App.BinaryLab.Controls.InvalidateData` | сброс кэша после прокрутки | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 2/2, строк Assert выполнено в Release 2/2 |
+| `App.BinaryLabPage.ShowOffset` | без файла; отрицательное смещение; длина меньше 1 | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 5/5, строк Assert выполнено в Release 5/5 |
+| `App.BinaryLabPage.ParseOffset` | пусто; посторонние символы; hex и десятичная запись | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 6/6, строк Assert выполнено в Release 6/6 |
+| `App.BinaryLabPage.FindPattern` | без файла; пустой шаблон; не найдено → -1 | Debug 2/2, Release 2/2, отдельно Debug 2/2, отдельно Release 2/2, строк Assert выполнено в Debug 8/8, строк Assert выполнено в Release 8/8 |
+
+### Асинхронный анализ (фон, отмена, закрытие во время работы)
+
+| Функция | Граничные и ошибочные случаи | Прогон |
+|---|---|---|
+| `App.BinaryLabPage.OpenFile` | пустой путь; отсутствующий файл; повторное открытие во время работы | Debug 2/2, Release 2/2, отдельно Debug 2/2, отдельно Release 2/2, строк Assert выполнено в Debug 12/12, строк Assert выполнено в Release 12/12 |
+| `App.BinaryLabPage.Cancel` | в простое; во время анализа; закрытие окна во время анализа | Debug 2/2, Release 2/2, отдельно Debug 2/2, отдельно Release 2/2, строк Assert выполнено в Debug 4/4, строк Assert выполнено в Release 4/4 |
+| `App.BinaryLabPage.Busy` | после ошибки, отмены и закрытия окна — False | Debug 2/2, Release 2/2, отдельно Debug 2/2, отдельно Release 2/2, строк Assert выполнено в Debug 14/14, строк Assert выполнено в Release 14/14 |
+| `App.BinaryLabPage.ExportReport` | без отчёта — файла нет | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 2/2, строк Assert выполнено в Release 2/2 |
+
+### Сравнение файлов (BinaryDiff в интерфейсе)
+
+| Функция | Граничные и ошибочные случаи | Прогон |
+|---|---|---|
+| `App.BinaryLabPage.CompareWith` | без отчёта; пустой путь; отсутствующий файл — ошибка, отчёт сохранён | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 6/6, строк Assert выполнено в Release 6/6 |
+| `App.BinaryLabPage.ExportDiff` | без сравнения — файла нет | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 2/2, строк Assert выполнено в Release 2/2 |
+| `App.BinaryLab.Controls.SetRanges` | нулевой размер файла | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 3/3, строк Assert выполнено в Release 3/3 |
+| `App.BinaryLab.Controls.OffsetAtX` | края полосы; нулевой размер файла | Debug 2/2, Release 2/2, отдельно Debug 2/2, отдельно Release 2/2, строк Assert выполнено в Debug 11/11, строк Assert выполнено в Release 11/11 |
+| `App.BinaryLab.Controls.RangeAtX` | вне диапазонов; нулевой размер файла | Debug 2/2, Release 2/2, отдельно Debug 2/2, отдельно Release 2/2, строк Assert выполнено в Debug 4/4, строк Assert выполнено в Release 4/4 |
+
+
 ## Проверки по функциям
 
 Строки `Assert`, которые проверяют функцию в тестах её граничных и ошибочных случаев: строка с

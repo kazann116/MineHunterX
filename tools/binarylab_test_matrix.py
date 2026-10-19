@@ -100,6 +100,24 @@ def public_api(path):
     return names
 
 
+_C = 'App.BinaryLab.Controls.'
+_P = 'App.BinaryLabPage.'
+# Части интерфейса из ТЗ → публичные функции элементов и страницы (каждая функция App.* — в одной части).
+UI_PARTS = [
+    ('Интерактивная карта (энтропия, гистограмма)',
+     [_C + n for n in ('SetData', 'SetBands', 'BlockAtPoint', 'CellRect', 'CellCount', 'BlockCount', 'BlocksPerCell',
+                       'EntropyColor', 'SetHistogram', 'ByteAtPoint', 'BarRect', 'BarFraction', 'HintTextAt',
+                       'MHBlendColor')]),
+    ('Hex Viewer (просмотр, поиск, смещения, подсветка)',
+     [_C + n for n in ('GotoOffset', 'FindNext', 'AddHighlight', 'ClearHighlights', 'HighlightAt', 'HighlightCount',
+                       'OffsetAtPoint', 'PointOfOffset', 'VisibleRows', 'RowCount', 'OffsetDigits', 'ContentWidth',
+                       'ScrollRows', 'InvalidateData')] + [_P + 'ShowOffset', _P + 'ParseOffset', _P + 'FindPattern']),
+    ('Асинхронный анализ (фон, отмена, закрытие во время работы)',
+     [_P + n for n in ('OpenFile', 'Cancel', 'Busy', 'ExportReport')]),
+    ('Сравнение файлов (BinaryDiff в интерфейсе)',
+     [_P + 'CompareWith', _P + 'ExportDiff', _C + 'SetRanges', _C + 'OffsetAtX', _C + 'RangeAtX']),
+]
+
 RESULT_FILES = {'Debug': os.path.join(ROOT, 'build', 'tests-Debug.xml'),
                 'Release': os.path.join(ROOT, 'build', 'tests-Release.xml')}
 
@@ -338,6 +356,22 @@ def main():
         out.append('| `%s` | `%s` | %s | %s | %s | %s |' % (unit.replace('MineHunter.', ''), name, cases or '**нет**',
                                                             ', '.join('`%s`' % t for t in case_tests) or '**нет**',
                                                             run_text, shown or '**нет**'))
+    # Интерфейс по частям ТЗ: каждая функция части — со случаями и итогами прогонов.
+    by_key = {'%s.%s' % (u.replace('MineHunter.', ''), n): (c, r) for u, n, _h, c, r in rows}
+    out += ['', '## Интерфейс: отчёт по каждой функции', '']
+    for part, keys in UI_PARTS:
+        out += ['### ' + part, '', '| Функция | Граничные и ошибочные случаи | Прогон |', '|---|---|---|']
+        for key in keys:
+            if key not in by_key:
+                missing.append('Интерфейс: %s — %s не найдена' % (part, key))
+                continue
+            (cases, _tests, run_text), _checks = by_key[key]
+            out.append('| `%s` | %s | %s |' % (key, cases, run_text))
+        out.append('')
+    covered = {k for _p, keys in UI_PARTS for k in keys}
+    for key in by_key:
+        if key.startswith('App.') and key not in covered:
+            missing.append('Интерфейс: функция %s не отнесена ни к одной части' % key)
     conditional = []
     for _unit, _name, _hits, _cases, checks in rows:
         for rel, lineno, test, _text in checks:
