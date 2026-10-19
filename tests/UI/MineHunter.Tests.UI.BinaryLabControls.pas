@@ -447,6 +447,8 @@ begin
   SetData(100 * 1024);
   FView.TopOffset := 16 * 500;
   LTop := FView.TopOffset;
+  // Цикл ниже проверяет каждую видимую строку — их должно быть несколько.
+  Assert.IsTrue(FView.VisibleRows >= 2, Format('Видимых строк: %d', [FView.VisibleRows]));
   for LAscii := False to True do
     for LRow := 0 to FView.VisibleRows - 1 do
       for I := 0 to High(COLS) do

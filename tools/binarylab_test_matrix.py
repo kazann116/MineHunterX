@@ -154,6 +154,35 @@ def test_procedures():
     return result
 
 
+SOURCE_LINES = {}
+
+
+def condition_of(rel, lineno):
+    """Условие (if/else/while/case), под которым стоит строка теста; None — выполняется всегда."""
+    if rel not in SOURCE_LINES:
+        SOURCE_LINES[rel] = open(os.path.join(ROOT, rel), encoding='utf-8-sig').read().split('\n')
+    lines = SOURCE_LINES[rel]
+    indent = len(lines[lineno - 1]) - len(lines[lineno - 1].lstrip())
+    for j in range(lineno - 2, -1, -1):
+        text = lines[j]
+        if not text.strip():
+            continue
+        level = len(text) - len(text.lstrip())
+        low = text.strip().lower()
+        if level >= indent:
+            continue
+        if low == 'begin':
+            # Строка перед begin (if … then, for … do) стоит на том же уровне.
+            indent = level + 1
+            continue
+        if low.startswith(('if ', 'else', 'while ', 'case ')) or low.endswith(' then'):
+            return text.strip()
+        if low.startswith(('procedure ', 'function ', 'try', 'finally', 'except', 'var')):
+            return None
+        indent = level
+    return None
+
+
 def assertion_lines(lines, pattern, test):
     """Строки Assert теста, проверяющие функцию: с её вызовом или сразу после вызова."""
     result = []
@@ -270,9 +299,21 @@ def main():
         out.append('| `%s` | `%s` | %s | %s | %s | %s |' % (unit.replace('MineHunter.', ''), name, cases or '**нет**',
                                                             ', '.join('`%s`' % t for t in case_tests) or '**нет**',
                                                             run_text, shown or '**нет**'))
+    conditional = []
+    for _unit, _name, _hits, _cases, checks in rows:
+        for rel, lineno, test, _text in checks:
+            guard = condition_of(rel, lineno)
+            if guard:
+                conditional.append((rel, lineno, test, guard))
     out += ['', '## Проверки по функциям', '',
             'Строки `Assert`, которые проверяют функцию в тестах её граничных и ошибочных случаев: строка с',
-            'вызовом функции или проверка сразу после вызова (файл:строка — текст проверки).', '']
+            'вызовом функции или проверка сразу после вызова (файл:строка — текст проверки).', '',
+            'DUnitX прерывает тест на первой неудачной проверке, поэтому пройденный тест означает, что каждая',
+            'выполненная строка `Assert` в нём прошла. Строки под условием `if` перечислены ниже: для каждой тест',
+            'отдельно проверяет, что ветка выполнялась (счётчик или предусловие).', '']
+    for rel, lineno, test, guard in conditional:
+        out.append('- условная: `%s:%d` (%s) под `%s`' % (rel, lineno, test, guard))
+    out.append('')
     total_checks = 0
     for unit, name, _hits, _cases, checks in rows:
         total_checks += len(checks)
@@ -283,8 +324,8 @@ def main():
         if len(checks) > 12:
             out.append('- … и ещё %d' % (len(checks) - 12))
         out.append('')
-    out += ['Функций: %d, проверок: %d, пропусков: %d. Прогоны: %s.' % (
-        len(rows), total_checks, len(missing),
+    out += ['Функций: %d, проверок: %d (под условием: %d), пропусков: %d. Прогоны: %s.' % (
+        len(rows), total_checks, len(conditional), len(missing),
         ', '.join('%s — %d тестов, пройдено %d' % (c, len(r), sum(1 for v in r.values() if v))
                   for c, r in results.items()) or 'нет')]
     target = os.path.join(ROOT, 'docs', 'binarylab-tests.md')

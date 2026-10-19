@@ -391,6 +391,7 @@ end;
 
 procedure TBinaryLabPeTests.Truncated_AtEveryLength_NeverRaises;
 var
+  LChecked: Integer;
   LFull, LCut: TBytes;
   LLength: Integer;
   LPe: TMHPeInfo;
@@ -408,15 +409,21 @@ begin
     LBuilder.Free;
   end;
   LLength := 0;
+  LChecked := 0;
   while LLength <= Length(LFull) do
   begin
     LCut := Copy(LFull, 0, LLength);
     LPe := Parse(LCut);
     if LPe.Valid and (LLength < Length(LFull)) and (LLength > $400) then
+    begin
       Assert.IsTrue(Length(LPe.Warnings) > 0, Format('Обрезка до %d байт без предупреждений', [LLength]));
+      Inc(LChecked);
+    end;
     Inc(LLength, 37);
   end;
-  Assert.Pass('Разбор обрезанных файлов не вызывает исключений');
+  // Проверка предупреждений действительно выполнялась на многих длинах обрезки.
+  Assert.IsTrue(LChecked >= 10, Format('Проверено длин: %d', [LChecked]));
+  Assert.IsTrue(Parse(LFull).Valid and (Length(Parse(LFull).Warnings) = 0), 'Целый файл — без предупреждений');
 end;
 
 procedure TBinaryLabPeTests.HugeCounts_AreClampedWithWarnings;
