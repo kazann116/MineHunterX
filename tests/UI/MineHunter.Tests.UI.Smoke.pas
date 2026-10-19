@@ -1887,8 +1887,8 @@ var
   LQuarantineFs: TFakeQuarantineOps;
   LPage: TMHDisksPage;
   LWatch: TStopwatch;
-  LStates: string;
-  I, LHits: Integer;
+  LStates, LReal: string;
+  I, LHits, LAsked: Integer;
 begin
   GTestDiskApi := FakeDiskSet;
   LQuarantineFs := TFakeQuarantineOps.Create;
@@ -1922,6 +1922,15 @@ begin
         LFs.AddFile('D:\Docs\letter.txt', 'hello');
         LPage.ScanFs := LFs;
         LPage.ScanRoots := ['D:\'];
+        // Майнер скрыт от Проводника (атрибуты подменены — у виртуальных файлов их нет на диске).
+        LPage.GetAttributes :=
+          function(const APath: string): Cardinal
+          begin
+            if APath.ToLower.EndsWith('xmrig.exe') then
+              Result := $26
+            else
+              Result := $10;
+          end;
         LPage.StartScan;
         Assert.IsTrue(LPage.ScanRunning);
         LWatch := TStopwatch.StartNew;
@@ -1935,6 +1944,19 @@ begin
         Assert.IsTrue(LServices.Settings.LastFileScanUtc > 0, 'Время проверки запомнено');
         Assert.IsTrue(string(LPage.ScanLabel.Caption).Contains('найдено 2'), string(LPage.ScanLabel.Caption));
         Assert.AreEqual('file-scan', LServices.ActionLog.LoadActions(1)[0].Action);
+
+        // Столбец «Скрыт от Проводника».
+        for I := 0 to LPage.HitsView.Items.Count - 1 do
+          if string(LPage.HitsView.Items[I].SubItems[2]).ToLower.EndsWith('xmrig.exe') then
+          begin
+            Assert.AreEqual('файл скрытый, системный', LPage.HitsView.Items[I].SubItems[4]);
+            LPage.HitsView.Items[I].Selected := True;
+          end
+          else
+            Assert.AreEqual('', LPage.HitsView.Items[I].SubItems[4]);
+        // Файла нет на настоящем диске — сообщение вместо пустой папки в Проводнике.
+        LPage.OpenSelectedHitLocation;
+        Assert.Contains(string(LPage.ScanStatusLabel.Caption), 'уже нет');
 
         // Карантин из результатов (с подтверждением) и «это мой файл».
         LForm.ConfirmAction :=
@@ -1967,6 +1989,35 @@ begin
         while LPage.ScanRunning and (LWatch.ElapsedMilliseconds < 15000) do
           CheckSynchronize(20);
         Assert.IsFalse(LPage.ScanRunning);
+
+        // Скрытый файл, который есть на диске: перед Проводником — объяснение и вопрос; отказ — без Проводника.
+        LReal := TPath.Combine(FTempDir, 'xmrig.exe');
+        TFile.WriteAllText(LReal, 'MZ');
+        LFs.AddFile(LReal, 'MZ');
+        LPage.ScanRoots := [FTempDir];
+        LPage.StartScan;
+        LWatch := TStopwatch.StartNew;
+        while LPage.ScanRunning and (LWatch.ElapsedMilliseconds < 15000) do
+          CheckSynchronize(20);
+        LAsked := 0;
+        LStates := '';
+        LForm.ConfirmAction :=
+          function(const AQuestion: string): Boolean
+          begin
+            Inc(LAsked);
+            LStates := AQuestion;
+            Result := False;
+          end;
+        for I := 0 to LPage.HitsView.Items.Count - 1 do
+          if SameText(LPage.HitsView.Items[I].SubItems[2], LReal) then
+            LPage.HitsView.Items[I].Selected := True;
+        Assert.IsNotNull(LPage.HitsView.Selected);
+        LPage.ScanStatusLabel.Caption := '';
+        LPage.OpenSelectedHitLocation;
+        Assert.AreEqual(1, LAsked);
+        Assert.Contains(LStates, 'может выглядеть пустой');
+        Assert.Contains(LStates, 'Открыть папку в Проводнике?');
+        Assert.AreEqual('', string(LPage.ScanStatusLabel.Caption), 'Отказ — Проводник не открывался');
 
         // Плановая проверка: включается флажком, срабатывает только в простое.
         LPage.WeeklyCheckBox.Checked := True;

@@ -46,6 +46,10 @@ type
     [Test] procedure Classify_Masquerade_HiddenExe_Artifact;
     [Test] procedure Classify_Clean;
     [Test] procedure Classify_HiddenAndNearMiner;
+    [Test] procedure Hidden_AttributesText;
+    [Test] procedure Hidden_NoteExplainsFileAndFolders;
+    [Test] procedure Hidden_NothingHiddenOrNoData_Empty;
+    [Test] procedure Classify_KeepsAttributesInHit;
   end;
 
   [TestFixture]
@@ -62,6 +66,7 @@ type
   TFileScanIntegrationTests = class
   public
     [Test] procedure RealFolder_FindsPlantedFiles;
+    [Test] procedure RealHiddenSystemFile_AttributesAndNote;
   end;
 
 implementation
@@ -412,6 +417,123 @@ begin
 end;
 
 { TFileScanIntegrationTests }
+
+/// Атрибуты по таблице: 'C:\ProgramData' и т. п. (нет в таблице — MH_NO_ATTRIBUTES).
+function AttributesFrom(const APairs: array of string): TMHGetAttributes;
+var
+  LMap: TArray<string>;
+  I: Integer;
+begin
+  SetLength(LMap, Length(APairs));
+  for I := 0 to High(APairs) do
+    LMap[I] := APairs[I];
+  Result :=
+    function(const APath: string): Cardinal
+    var
+      J: Integer;
+    begin
+      J := 0;
+      while J < High(LMap) do
+      begin
+        if SameText(LMap[J], APath) then
+          Exit(StrToInt(LMap[J + 1]));
+        Inc(J, 2);
+      end;
+      Result := MH_NO_ATTRIBUTES;
+    end;
+end;
+
+procedure TFileScanRuleTests.Hidden_AttributesText;
+begin
+  Assert.AreEqual('скрытый', MHHiddenAttributesText($2));
+  Assert.AreEqual('системный', MHHiddenAttributesText($4));
+  Assert.AreEqual('скрытый, системный', MHHiddenAttributesText($26));
+  Assert.AreEqual('', MHHiddenAttributesText($20), 'Только «архивный» — не скрыт');
+  Assert.AreEqual('', MHHiddenAttributesText(0));
+  Assert.AreEqual('', MHHiddenAttributesText(MH_NO_ATTRIBUTES), 'Не прочитаны — не «скрытый»');
+end;
+
+procedure TFileScanRuleTests.Hidden_NoteExplainsFileAndFolders;
+var
+  LGet: TMHGetAttributes;
+  LNote: string;
+begin
+  // Как на компьютере пользователя: win.exe скрытый и системный, ProgramData — скрытая папка,
+  // у корня диска свои атрибуты (скрытый, системный) — он не считается.
+  LGet := AttributesFrom(['C:\ProgramData\Microsoft\win.exe', '38', 'C:\ProgramData\Microsoft', '16',
+    'C:\ProgramData', '18', 'C:', '22', 'C:\ProgramData\Microsoft\temp', '16',
+    'C:\ProgramData\Microsoft\temp\H.bat', '32']);
+  Assert.AreEqual('файл скрытый, системный; в скрытой папке',
+    MHHiddenShortText('C:\ProgramData\Microsoft\win.exe', LGet));
+  LNote := MHHiddenLocationNote('C:\ProgramData\Microsoft\win.exe', LGet);
+  Assert.Contains(LNote, '«win.exe» помечен как скрытый, системный');
+  Assert.Contains(LNote, 'Скрытая папка на пути: C:\ProgramData.');
+  Assert.Contains(LNote, 'может выглядеть пустой');
+  Assert.Contains(LNote, 'Скрытые элементы');
+  Assert.Contains(LNote, 'Скрывать защищённые системные файлы', 'Для системного файла — и этот флажок');
+  Assert.DoesNotContain(LNote, 'C:,', 'Корень диска не перечисляется');
+  // Обычный файл в скрытой папке: только папка, без совета про системные файлы.
+  Assert.AreEqual('в скрытой папке', MHHiddenShortText('C:\ProgramData\Microsoft\temp\H.bat', LGet));
+  LNote := MHHiddenLocationNote('C:\ProgramData\Microsoft\temp\H.bat', LGet);
+  Assert.Contains(LNote, 'C:\ProgramData');
+  Assert.DoesNotContain(LNote, 'помечен как');
+  Assert.DoesNotContain(LNote, 'защищённые системные');
+  // Несколько скрытых папок — все, от ближней к дальней.
+  LGet := AttributesFrom(['D:\a\b\c.exe', '32', 'D:\a\b', '18', 'D:\a', '18']);
+  Assert.Contains(MHHiddenLocationNote('D:\a\b\c.exe', LGet), 'D:\a\b, D:\a');
+  // Сетевой путь: корень ресурса не считается.
+  LGet := AttributesFrom(['\\srv\share\x\m.exe', '2', '\\srv\share\x', '16', '\\srv\share', '18']);
+  Assert.AreEqual('файл скрытый', MHHiddenShortText('\\srv\share\x\m.exe', LGet));
+end;
+
+procedure TFileScanRuleTests.Hidden_NothingHiddenOrNoData_Empty;
+var
+  LGet: TMHGetAttributes;
+begin
+  LGet := AttributesFrom(['C:\Tools\app.exe', '32', 'C:\Tools', '16', 'C:', '22']);
+  Assert.AreEqual('', MHHiddenShortText('C:\Tools\app.exe', LGet));
+  Assert.AreEqual('', MHHiddenLocationNote('C:\Tools\app.exe', LGet));
+  // Файла нет и атрибуты папок не прочитать — ничего не утверждается.
+  Assert.AreEqual('', MHHiddenLocationNote('E:\gone\x.exe', AttributesFrom([])));
+  Assert.AreEqual('', MHHiddenLocationNote('', LGet));
+  Assert.AreEqual('', MHHiddenLocationNote('C:\Tools\app.exe', nil));
+  Assert.AreEqual('', MHHiddenShortText('C:\Tools\app.exe', nil));
+  Assert.AreEqual('', MHHiddenShortText('x.exe', LGet), 'Без папки');
+end;
+
+procedure TFileScanRuleTests.Classify_KeepsAttributesInHit;
+var
+  LHit: TMHScanHit;
+begin
+  Assert.IsTrue(MHClassifyFile('C:\Users\u\AppData\Roaming\svc\xmrig.exe', $26, 1000, nil, 'C:\Windows',
+    TMHRiskThresholds.Default, LHit));
+  Assert.AreEqual<Cardinal>($26, LHit.Attributes);
+end;
+
+procedure TFileScanIntegrationTests.RealHiddenSystemFile_AttributesAndNote;
+var
+  LDir, LPath: string;
+  LAttr: Cardinal;
+begin
+  LDir := TPath.Combine(TPath.GetTempPath, 'MineHunterTests\hidden-' +
+    TGUID.NewGuid.ToString.Replace('{', '').Replace('}', ''));
+  ForceDirectories(LDir);
+  LPath := TPath.Combine(LDir, 'win.exe');
+  try
+    TFile.WriteAllText(LPath, 'MZ');
+    Assert.IsTrue(SetFileAttributes(PChar(LPath), FILE_ATTRIBUTE_HIDDEN or FILE_ATTRIBUTE_SYSTEM));
+    LAttr := MHWinFileAttributes(LPath);
+    Assert.IsTrue(LAttr and FILE_ATTRIBUTE_HIDDEN <> 0);
+    Assert.IsTrue(LAttr and FILE_ATTRIBUTE_SYSTEM <> 0);
+    Assert.IsTrue(MHHiddenShortText(LPath, MHWinFileAttributes).StartsWith('файл скрытый, системный'));
+    Assert.Contains(MHHiddenLocationNote(LPath, MHWinFileAttributes), 'Скрывать защищённые системные файлы');
+    Assert.AreEqual(MH_NO_ATTRIBUTES, MHWinFileAttributes(TPath.Combine(LDir, 'нет.exe')));
+    Assert.AreEqual(MH_NO_ATTRIBUTES, MHWinFileAttributes(''));
+  finally
+    SetFileAttributes(PChar(LPath), FILE_ATTRIBUTE_NORMAL);
+    TDirectory.Delete(LDir, True);
+  end;
+end;
 
 procedure TFileScanIntegrationTests.RealFolder_FindsPlantedFiles;
 var

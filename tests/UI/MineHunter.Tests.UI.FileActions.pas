@@ -29,12 +29,14 @@ type
     FTarget: TMHFileTarget;
     FHasTarget: Boolean;
     FDir: string;
+    FHiddenPath: string;
   public
     [Setup] procedure Setup;
     [TearDown] procedure TearDown;
     [Test] procedure DetailsText_FullPathArgumentsAndDetails;
     [Test] procedure Sha256_OfFile;
     [Test] procedure ShowInFolder_SelectsFileOrOpensFolder;
+    [Test] procedure ShowInFolder_HiddenFile_ExplainsAndAsks;
     [Test] procedure VirusTotal_HashOnlyConsentOncePerSession;
     [Test] procedure Menu_ItemsFollowSelectedRow;
     [Test] procedure Menu_OpenInBinaryLab;
@@ -43,7 +45,7 @@ type
 implementation
 
 uses
-  System.IOUtils;
+  System.IOUtils, Winapi.Windows;
 
 procedure TFileActionsTests.Setup;
 begin
@@ -72,6 +74,16 @@ begin
     procedure(const AFile, AParameters: string)
     begin
       FOpened.Add(AFile + '|' + AParameters);
+    end;
+  // Атрибуты не зависят от того, что временная папка лежит в скрытой AppData.
+  FHiddenPath := '';
+  FActions.GetAttributes :=
+    function(const APath: string): Cardinal
+    begin
+      if SameText(APath, FHiddenPath) then
+        Result := FILE_ATTRIBUTE_HIDDEN or FILE_ATTRIBUTE_SYSTEM
+      else
+        Result := FILE_ATTRIBUTE_NORMAL;
     end;
   FDir := TPath.Combine(TPath.GetTempPath, 'MineHunterTests\fileactions-' +
     TGUID.NewGuid.ToString.Replace('{', '').Replace('}', ''));
@@ -132,14 +144,71 @@ begin
   TFile.WriteAllText(LTarget.Path, 'x');
   Assert.IsTrue(FActions.ShowInFolder(LTarget));
   Assert.AreEqual('explorer.exe|/select,"' + LTarget.Path + '"', FOpened[0], 'Проводник с выделенным файлом');
-  // Файла уже нет, папка осталась — открывается папка.
+  Assert.AreEqual(0, FAsked, 'Обычный файл — без вопросов');
+  // Файла уже нет, папка осталась — после вопроса открывается папка.
   LTarget.Path := TPath.Combine(FDir, 'gone.exe');
   Assert.IsTrue(FActions.ShowInFolder(LTarget));
+  Assert.AreEqual(1, FAsked, 'Сказано, что файла больше нет');
   Assert.AreEqual(FDir + '|', FOpened[1]);
+  FAnswer := False;
+  Assert.IsFalse(FActions.ShowInFolder(LTarget));
+  Assert.AreEqual(2, FOpened.Count, 'Отказ — папка не открывается');
+  FAnswer := True;
   LTarget.Path := 'Q:\NoSuchFolder\x.exe';
   Assert.IsFalse(FActions.ShowInFolder(LTarget));
   Assert.IsTrue(FActions.LastError.Contains('не найден'), FActions.LastError);
   Assert.AreEqual(2, FOpened.Count);
+end;
+
+procedure TFileActionsTests.ShowInFolder_HiddenFile_ExplainsAndAsks;
+var
+  LTarget: TMHFileTarget;
+  LQuestion: string;
+begin
+  LTarget := Default(TMHFileTarget);
+  LTarget.Path := TPath.Combine(FDir, 'win.exe');
+  TFile.WriteAllText(LTarget.Path, 'MZ');
+  FHiddenPath := LTarget.Path;
+  LQuestion := '';
+  FActions.Free;
+  FActions := TMHFileActions.Create(FForm, FList,
+    function(out ATarget: TMHFileTarget): Boolean
+    begin
+      ATarget := FTarget;
+      Result := FHasTarget;
+    end,
+    function(const AQuestion: string): Boolean
+    begin
+      Inc(FAsked);
+      LQuestion := AQuestion;
+      Result := FAnswer;
+    end);
+  FActions.ShellOpen :=
+    procedure(const AFile, AParameters: string)
+    begin
+      FOpened.Add(AFile + '|' + AParameters);
+    end;
+  FActions.GetAttributes :=
+    function(const APath: string): Cardinal
+    begin
+      if SameText(APath, FHiddenPath) then
+        Result := FILE_ATTRIBUTE_HIDDEN or FILE_ATTRIBUTE_SYSTEM
+      else
+        Result := FILE_ATTRIBUTE_NORMAL;
+    end;
+  // Отказ: Проводник не открывается, ошибки не показываются.
+  FAnswer := False;
+  Assert.IsFalse(FActions.ShowInFolder(LTarget));
+  Assert.AreEqual(1, FAsked);
+  Assert.AreEqual(0, FOpened.Count);
+  Assert.Contains(LQuestion, 'скрытый, системный');
+  Assert.Contains(LQuestion, 'может выглядеть пустой');
+  Assert.Contains(LQuestion, 'Открыть папку в Проводнике?');
+  Assert.AreEqual('Отменено пользователем', FActions.LastError);
+  // Согласие: Проводник с выделенным файлом.
+  FAnswer := True;
+  Assert.IsTrue(FActions.ShowInFolder(LTarget));
+  Assert.AreEqual('explorer.exe|/select,"' + LTarget.Path + '"', FOpened[0]);
 end;
 
 procedure TFileActionsTests.VirusTotal_HashOnlyConsentOncePerSession;

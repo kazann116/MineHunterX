@@ -67,6 +67,8 @@ type
   public
     Path: string;
     SizeBytes: Int64;
+    /// Атрибуты файла при проверке (FILE_ATTRIBUTE_*).
+    Attributes: Cardinal;
     Title: string;
     Evidence: TArray<TMHEvidence>;
     Score: Integer;
@@ -123,6 +125,25 @@ function MHScanReadLimit(const APath: string; AAttributes: Cardinal; ASize: Int6
 
 /// Признак майнера в содержимом ('' — нет): адрес пула, параметры, имя алгоритма.
 function MHFindMinerMarker(const AData: TBytes): string;
+
+const
+  /// Атрибуты не прочитаны (INVALID_FILE_ATTRIBUTES).
+  MH_NO_ATTRIBUTES = Cardinal($FFFFFFFF);
+
+type
+  /// Атрибуты файла или папки (MH_NO_ATTRIBUTES — нет или нельзя прочитать).
+  TMHGetAttributes = reference to function(const APath: string): Cardinal;
+
+/// «скрытый», «системный», «скрытый, системный» или ''.
+function MHHiddenAttributesText(AAttributes: Cardinal): string;
+
+/// Почему файл не виден в Проводнике: сам файл скрытый/системный или лежит в скрытой
+/// папке (корень диска не учитывается). '' — ничего не скрыто. Текст объясняет, что папка
+/// в Проводнике может выглядеть пустой, и как включить показ скрытых файлов.
+function MHHiddenLocationNote(const APath: string; const AGetAttributes: TMHGetAttributes): string;
+
+/// Короткая пометка для таблицы: «файл скрытый, системный», «в скрытой папке» или ''.
+function MHHiddenShortText(const APath: string; const AGetAttributes: TMHGetAttributes): string;
 
 implementation
 
@@ -329,6 +350,7 @@ begin
     Inc(LRaw, LItem.Weight);
   AHit.Path := APath;
   AHit.SizeBytes := ASize;
+  AHit.Attributes := AAttributes;
   AHit.Evidence := LEvidence;
   AHit.Score := MHClampScore(LRaw);
   AHit.Level := AThresholds.LevelOf(AHit.Score);
@@ -488,6 +510,104 @@ begin
   end;
   if Assigned(AOnProgress) then
     AOnProgress(FProgress);
+end;
+
+function MHHiddenAttributesText(AAttributes: Cardinal): string;
+var
+  LHidden, LSystem: Boolean;
+begin
+  if AAttributes = MH_NO_ATTRIBUTES then
+    Exit('');
+  LHidden := AAttributes and FILE_ATTRIBUTE_HIDDEN_MH <> 0;
+  LSystem := AAttributes and FILE_ATTRIBUTE_SYSTEM_MH <> 0;
+  if LHidden and LSystem then
+    Result := MHL('скрытый, системный', 'hidden, system')
+  else if LHidden then
+    Result := MHL('скрытый', 'hidden')
+  else if LSystem then
+    Result := MHL('системный', 'system')
+  else
+    Result := '';
+end;
+
+/// Скрытые папки на пути к файлу (без корня диска), от ближней к дальней.
+function HiddenFolders(const APath: string; const AGetAttributes: TMHGetAttributes): TArray<string>;
+var
+  LDir, LParent: string;
+  LAttr: Cardinal;
+  I: Integer;
+begin
+  Result := nil;
+  LDir := ExcludeTrailingPathDelimiter(ExtractFileDir(APath));
+  for I := 1 to 64 do
+  begin
+    if LDir = '' then
+      Break;
+    LParent := ExcludeTrailingPathDelimiter(ExtractFileDir(LDir));
+    // Корень диска («C:» или «\\сервер\ресурс») — у него свои атрибуты, Проводник его показывает.
+    if (LParent = LDir) or (LParent = '') or (ExtractFileDrive(LDir) = LDir) then
+      Break;
+    LAttr := AGetAttributes(LDir);
+    if (LAttr <> MH_NO_ATTRIBUTES) and (LAttr and FILE_ATTRIBUTE_HIDDEN_MH <> 0) then
+      Result := Result + [LDir];
+    LDir := LParent;
+  end;
+end;
+
+function MHHiddenShortText(const APath: string; const AGetAttributes: TMHGetAttributes): string;
+var
+  LText: string;
+begin
+  Result := '';
+  if (APath = '') or not Assigned(AGetAttributes) then
+    Exit;
+  LText := MHHiddenAttributesText(AGetAttributes(APath));
+  if LText <> '' then
+    Result := MHL('файл ', 'file ') + LText;
+  if Length(HiddenFolders(APath, AGetAttributes)) > 0 then
+  begin
+    if Result <> '' then
+      Result := Result + '; ';
+    Result := Result + MHL('в скрытой папке', 'in a hidden folder');
+  end;
+end;
+
+function MHHiddenLocationNote(const APath: string; const AGetAttributes: TMHGetAttributes): string;
+var
+  LAttr: Cardinal;
+  LFileText: string;
+  LFolders: TArray<string>;
+  LSystem: Boolean;
+begin
+  Result := '';
+  if (APath = '') or not Assigned(AGetAttributes) then
+    Exit;
+  LAttr := AGetAttributes(APath);
+  LFileText := MHHiddenAttributesText(LAttr);
+  LFolders := HiddenFolders(APath, AGetAttributes);
+  if (LFileText = '') and (Length(LFolders) = 0) then
+    Exit;
+  LSystem := (LAttr <> MH_NO_ATTRIBUTES) and (LAttr and FILE_ATTRIBUTE_SYSTEM_MH <> 0);
+  if LFileText <> '' then
+    Result := Format(MHL('Файл «%s» помечен как %s.', 'The file "%s" is marked as %s.'),
+      [ExtractFileName(APath), LFileText]);
+  if Length(LFolders) > 0 then
+    Result := Trim(Result + ' ' + Format(MHL('Скрытая папка на пути: %s.', 'Hidden folder on the path: %s.'),
+      [string.Join(', ', LFolders)]));
+  Result := Result + ' ' + MHL('Проводник по умолчанию такие не показывает, поэтому папка может выглядеть ' +
+    'пустой, хотя файл на месте.', 'Explorer does not show these by default, so the folder may look empty ' +
+    'although the file is there.') + sLineBreak + sLineBreak +
+    MHL('Как увидеть: в Проводнике «Вид» → «Показать» → «Скрытые элементы» (Windows 10: вкладка «Вид» → ' +
+    'флажок «Скрытые элементы»).', 'To see them: in Explorer, View → Show → Hidden items (Windows 10: the View ' +
+    'tab → the Hidden items box).');
+  if LSystem then
+    Result := Result + ' ' + MHL('Для системных файлов ещё: «Параметры папок» → «Вид» → снять флажок ' +
+      '«Скрывать защищённые системные файлы».', 'For system files also: Folder Options → View → clear ' +
+      '"Hide protected operating system files".');
+  Result := Result + sLineBreak + sLineBreak + MHL('Скрытый исполняемый файл вне папок программ — частый ' +
+    'приём маскировки майнеров. Путь можно скопировать, а файл — разобрать в BinaryLab без запуска.',
+    'A hidden executable outside program folders is a common miner disguise. You can copy the path and ' +
+    'analyse the file in BinaryLab without running it.');
 end;
 
 end.

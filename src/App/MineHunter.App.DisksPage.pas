@@ -41,6 +41,7 @@ type
     FChkWeekly: TCheckBox;
     FLblScan: TLabel;
     FHitsView: TListView;
+    FGetAttributes: TMHGetAttributes;
     FBtnOpen: TButton;
     FBtnQuarantine: TButton;
     FBtnAllow: TButton;
@@ -132,6 +133,11 @@ type
     property VolumesView: TListView read FVolumes;
     property IoView: TListView read FIo;
     property HitsView: TListView read FHitsView;
+    /// Атрибуты файлов и папок (тесты подменяют).
+    property GetAttributes: TMHGetAttributes read FGetAttributes write FGetAttributes;
+    /// «Открыть папку» для выделенной находки проверки файлов (с объяснением для скрытых).
+    procedure OpenSelectedHitLocation;
+    property ScanStatusLabel: TLabel read FLblScan;
     property WeeklyCheckBox: TCheckBox read FChkWeekly;
     property ScanLabel: TLabel read FLblScan;
     procedure QuarantineSelected;
@@ -178,6 +184,7 @@ begin
   FSheet := ASheet;
   FServices := AServices;
   FConfirm := AConfirm;
+  FGetAttributes := MHWinFileAttributes;
   FNotice := ANotice;
   FScanFs := TMHWinFileScanFs.Create;
   FHistory := TObjectDictionary<string, TMHSeriesBuffer>.Create([doOwnsValues]);
@@ -355,7 +362,7 @@ begin
   FBtnAllow.OnClick := AllowClick;
   FHitsView := NewList(LHost, alTop, 0,
     [MHL('Оценка', 'Score'), MHL('Уровень', 'Level'), MHL('Что найдено', 'What was found'), MHL('Файл', 'File'),
-     MHL('Размер', 'Size')], [55, 140, 330, 480, 80]);
+     MHL('Размер', 'Size'), MHL('Скрыт от Проводника', 'Hidden from Explorer')], [55, 140, 330, 480, 80, 220]);
   // Кнопки действий — под результатами проверки.
   LButtons.Top := FHitsView.Top + FHitsView.Height + 1;
   FHitsView.OnSelectItem := HitSelect;
@@ -1337,6 +1344,7 @@ begin
       LItem.SubItems.Add(LHit.Title);
       LItem.SubItems.Add(LHit.Path);
       LItem.SubItems.Add(MHFormatSize(LHit.SizeBytes));
+      LItem.SubItems.Add(MHHiddenShortText(LHit.Path, FGetAttributes));
     end;
   finally
     FHitsView.Items.EndUpdate;
@@ -1385,11 +1393,31 @@ begin
 end;
 
 procedure TMHDisksPage.OpenClick(Sender: TObject);
+begin
+  OpenSelectedHitLocation;
+end;
+
+procedure TMHDisksPage.OpenSelectedHitLocation;
 var
   LHit: TMHScanHit;
+  LNote: string;
+  LResult: TMHActionResult;
 begin
-  if SelectedHit(LHit) then
-    FServices.Actions.OpenFileLocation(LHit.Path);
+  if not SelectedHit(LHit) then
+    Exit;
+  if not FileExists(LHit.Path) then
+  begin
+    FLblScan.Caption := Format(MHL('Файла «%s» уже нет: его удалили или переместили после проверки.',
+      'The file "%s" is gone: it was deleted or moved after the scan.'), [LHit.Path]);
+    Exit;
+  end;
+  // Скрытый файл или скрытая папка: без объяснения папка в Проводнике выглядит пустой.
+  LNote := MHHiddenLocationNote(LHit.Path, FGetAttributes);
+  if (LNote <> '') and not FConfirm(LNote + sLineBreak + sLineBreak +
+    MHL('Открыть папку в Проводнике?', 'Open the folder in Explorer?')) then
+    Exit;
+  LResult := FServices.Actions.OpenFileLocation(LHit.Path);
+  FLblScan.Caption := LResult.Message;
 end;
 
 procedure TMHDisksPage.QuarantineClick(Sender: TObject);

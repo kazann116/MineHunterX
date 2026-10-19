@@ -22,6 +22,9 @@ type
 /// Корни локальных несъёмных дисков: «C:\», «D:\» …
 function MHLocalFixedRoots: TArray<string>;
 
+/// Атрибуты файла или папки средствами Windows (GetFileAttributes); MH_NO_ATTRIBUTES — нет.
+function MHWinFileAttributes(const APath: string): Cardinal;
+
 implementation
 
 uses
@@ -130,6 +133,13 @@ begin
   finally
     CloseHandle(LHandle);
   end;
+end;
+
+function MHWinFileAttributes(const APath: string): Cardinal;
+begin
+  if APath = '' then
+    Exit(MH_NO_ATTRIBUTES);
+  Result := GetFileAttributes(PChar(LongPath(APath)));
 end;
 
 end.

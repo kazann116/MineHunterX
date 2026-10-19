@@ -17,7 +17,8 @@
 interface
 
 uses
-  System.SysUtils, System.Classes, Vcl.Controls, Vcl.ComCtrls, Vcl.Menus;
+  System.SysUtils, System.Classes, Vcl.Controls, Vcl.ComCtrls, Vcl.Menus, MineHunter.Core.FileScan,
+  MineHunter.Core.FileScan.WinApi;
 
 type
   TMHFileTarget = record
@@ -46,6 +47,7 @@ type
     FItemDetails, FItemOpen, FItemVirusTotal, FItemCopy, FItemBinaryLab: TMenuItem;
     FLastError: string;
     FOnBinaryLab: TMHFileTargetProc;
+    FGetAttributes: TMHGetAttributes;
     function NewItem(const ACaption: string; AClick: TNotifyEvent): TMenuItem;
     procedure MenuPopup(Sender: TObject);
     procedure DetailsClick(Sender: TObject);
@@ -58,7 +60,9 @@ type
   public
     constructor Create(AOwner: TComponent; AList: TListView; const AGetTarget: TMHFileTargetFunc;
       const AConfirm: TMHFileConfirm); reintroduce;
-    /// Проводник с выделенным файлом; нет файла — его папка. False — ни файла, ни папки.
+    /// Проводник с выделенным файлом; нет файла — его папка. Скрытый файл или скрытая папка
+    /// на пути, а также исчезнувший файл — сначала объяснение и вопрос (иначе папка в
+    /// Проводнике выглядит пустой). False — ни файла, ни папки или пользователь отказался.
     function ShowInFolder(const ATarget: TMHFileTarget): Boolean;
     /// Отчёт VirusTotal по SHA-256 (при необходимости хеш считается). False — отказ или ошибка.
     function CheckVirusTotal(var ATarget: TMHFileTarget): Boolean;
@@ -66,6 +70,8 @@ type
     procedure ShowDetails(const ATarget: TMHFileTarget);
     property Menu: TPopupMenu read FMenu;
     property ShellOpen: TMHShellOpen read FShellOpen write FShellOpen;
+    /// Атрибуты файлов и папок (тесты подменяют).
+    property GetAttributes: TMHGetAttributes read FGetAttributes write FGetAttributes;
     /// «Открыть в BinaryLab»: пункт меню виден, только если обработчик задан.
     property OnBinaryLab: TMHFileTargetProc read FOnBinaryLab write FOnBinaryLab;
     property BinaryLabItem: TMenuItem read FItemBinaryLab;
@@ -197,6 +203,7 @@ begin
     begin
       ShellExecute(0, 'open', PChar(AFile), PChar(AParameters), nil, SW_SHOWNORMAL);
     end;
+  FGetAttributes := MHWinFileAttributes;
   FMenu := TPopupMenu.Create(Self);
   FMenu.OnPopup := MenuPopup;
   FItemDetails := NewItem(MHL('Подробности…', 'Details…'), DetailsClick);
@@ -249,17 +256,32 @@ end;
 
 function TMHFileActions.ShowInFolder(const ATarget: TMHFileTarget): Boolean;
 var
-  LDir: string;
+  LDir, LNote: string;
+
+  function Agreed(const AQuestion: string): Boolean;
+  begin
+    Result := not Assigned(FConfirm) or FConfirm(AQuestion);
+    if not Result then
+      FLastError := MHL('Отменено пользователем', 'Cancelled by the user');
+  end;
+
 begin
   FLastError := '';
   if (ATarget.Path <> '') and FileExists(ATarget.Path) then
   begin
+    LNote := MHHiddenLocationNote(ATarget.Path, FGetAttributes);
+    if (LNote <> '') and not Agreed(LNote + sLineBreak + sLineBreak +
+      MHL('Открыть папку в Проводнике?', 'Open the folder in Explorer?')) then
+      Exit(False);
     FShellOpen('explorer.exe', '/select,"' + ATarget.Path + '"');
     Exit(True);
   end;
   LDir := ExtractFileDir(ATarget.Path);
   if (LDir <> '') and DirectoryExists(LDir) then
   begin
+    if not Agreed(Format(MHL('Файла «%s» уже нет: его удалили или переместили. Открыть папку %s?',
+      'The file "%s" is gone: it was deleted or moved. Open the folder %s?'), [ExtractFileName(ATarget.Path), LDir])) then
+      Exit(False);
     FShellOpen(LDir, '');
     Exit(True);
   end;
