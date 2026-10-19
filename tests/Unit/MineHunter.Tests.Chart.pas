@@ -105,7 +105,14 @@ begin
 end;
 
 procedure TChartTests.Segments_EmptyAndAllNoData;
+var
+  LSince: TArray<TMHMetric>;
 begin
+  // Последние N минут по времени, а не последние N точек.
+  LSince := MHPointsSince([P(0, 1), P(10, 2), P(20, 3), P(30, 4)], P(15, 0).TimestampUtc);
+  Assert.AreEqual(2, Integer(Length(LSince)));
+  Assert.AreEqual(3.0, LSince[0].Value, 0.01);
+  Assert.AreEqual(0, Integer(Length(MHPointsSince([P(0, 1)], P(5, 0).TimestampUtc))));
   Assert.AreEqual(0, Integer(Length(MHSplitSegments(nil, 3))));
   // Окно свёрнуто: опрос раз в 30 с среди шагов по 2 с — не разрыв; пауза 5 минут — разрыв.
   Assert.AreEqual('0,1,2,3,4,5', SegmentsText(MHSplitSegments([P(0, 1), P(2, 1), P(4, 1), P(34, 1), P(64, 1), P(66, 1)],

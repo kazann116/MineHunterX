@@ -100,6 +100,10 @@ type
 function MHSplitSegments(const APoints: TArray<TMHMetric>;
   AGapFactor: Double; AMinGapSeconds: Double = 0): TArray<TArray<Integer>>;
 
+/// Точки не раньше AFromUtc (живые графики показывают последние N минут по времени,
+/// а не последние N точек: когда Windows притормаживает свёрнутое окно, точки реже).
+function MHPointsSince(const APoints: TArray<TMHMetric>; AFromUtc: TDateTime): TArray<TMHMetric>;
+
 /// Диапазон оси Y по данным: с небольшим запасом; плоский ряд расширяется.
 /// False — в ряду нет ни одного значения.
 function MHComputeRange(const APoints: TArray<TMHMetric>; out ARange: TMHValueRange): Boolean;
@@ -218,6 +222,16 @@ begin
     LCurrent.Free;
     LResult.Free;
   end;
+end;
+
+function MHPointsSince(const APoints: TArray<TMHMetric>; AFromUtc: TDateTime): TArray<TMHMetric>;
+var
+  I: Integer;
+begin
+  for I := 0 to High(APoints) do
+    if APoints[I].TimestampUtc >= AFromUtc then
+      Exit(Copy(APoints, I, MaxInt));
+  Result := nil;
 end;
 
 function MHComputeRange(const APoints: TArray<TMHMetric>; out ARange: TMHValueRange): Boolean;

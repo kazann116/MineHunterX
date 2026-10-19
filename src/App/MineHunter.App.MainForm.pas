@@ -177,6 +177,8 @@ type
     procedure btnRemoveExclusionClick(Sender: TObject);
   private const
     LIVE_POINTS = 300;
+    /// Окно живых графиков «Обзора», минут.
+    LIVE_MINUTES = 10;
     HISTORY_POINTS = 600;
     HISTORY_HOURS: array[0..3] of Integer = (1, 6, 24, 168);
     RETENTION_DAYS: array[0..4] of Integer = (1, 3, 7, 14, 30);
@@ -1768,6 +1770,7 @@ var
   LStatus: TMHSourceStatus;
   LCpu, LMemLoad, LActive, LGpu: TMHMetric;
   LTiles: TArray<TMHTileData>;
+  LFrom: TDateTime;
   LTile: TMHTileData;
 begin
   // Нет источника «system» в снимке — значит, он не подключён; графики не трогаем.
@@ -1783,10 +1786,17 @@ begin
   FLiveMem.Add(LMemLoad);
   FLiveDisk.Add(LActive);
   FLiveGpu.Add(LGpu);
-  FChartCpu.SetPoints(FLiveCpu.ToArray);
-  FChartMem.SetPoints(FLiveMem.ToArray);
-  FChartDisk.SetPoints(FLiveDisk.ToArray);
-  FChartGpu.SetPoints(FLiveGpu.ToArray);
+  // «Нагрузка за последние 10 минут» — по времени: точки могут идти реже (окно свёрнуто,
+  // экономный режим), тогда 300 точек растянулись бы на полчаса.
+  LFrom := ASnapshot.TimestampUtc - LIVE_MINUTES / MinsPerDay;
+  FChartCpu.SetTimeWindow(LFrom, ASnapshot.TimestampUtc);
+  FChartMem.SetTimeWindow(LFrom, ASnapshot.TimestampUtc);
+  FChartDisk.SetTimeWindow(LFrom, ASnapshot.TimestampUtc);
+  FChartGpu.SetTimeWindow(LFrom, ASnapshot.TimestampUtc);
+  FChartCpu.SetPoints(MHPointsSince(FLiveCpu.ToArray, LFrom));
+  FChartMem.SetPoints(MHPointsSince(FLiveMem.ToArray, LFrom));
+  FChartDisk.SetPoints(MHPointsSince(FLiveDisk.ToArray, LFrom));
+  FChartGpu.SetPoints(MHPointsSince(FLiveGpu.ToArray, LFrom));
 
   LTiles := MHBuildDashboardTiles(ASnapshot);
   for LTile in LTiles do
