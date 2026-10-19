@@ -70,7 +70,7 @@ type
       out AError: string; out AAccessDenied: Boolean): Boolean;
   end;
 
-  TMHDiskCollector = class(TInterfacedObject, IMHCollector, IMHCacheInvalidation)
+  TMHDiskCollector = class(TInterfacedObject, IMHCollector, IMHCacheInvalidation, IMHRefreshConfigurable)
   public const
     SourceIdValue = 'disks';
     DiskRefreshSeconds = 600;
@@ -94,6 +94,9 @@ type
     FNvmeHealthUtc: TDateTime;
     FSmartUtc: TDateTime;
     FSmartDenied: Boolean;
+    FDiskRefreshSec: Integer;
+    FVolumeRefreshSec: Integer;
+    FNvmeRefreshSec: Integer;
     function Expired(AUtc, ANow: TDateTime; ASeconds: Integer): Boolean;
     procedure RefreshCaches(ANow: TDateTime);
     procedure RefreshHealth(ANvme: Boolean);
@@ -104,6 +107,8 @@ type
     function GetDisplayName: string;
     function Collect(const ASnapshot: TMHSnapshot): TMHCollectionResult;
     procedure Invalidate;
+    /// Частота обновления из настроек (0 — только при запуске и по «Проверить сейчас»).
+    procedure ApplyRefresh(const AIntervals: TMHRefreshIntervals);
     /// Сколько раз перечитывался список дисков (для тестов кэша).
     property ReadCount: Integer read FReadCount;
   end;
@@ -208,6 +213,16 @@ begin
   FApi := AApi;
   FClock := AClock;
   FHealth := TDictionary<Integer, TMHDiskHealthData>.Create;
+  FDiskRefreshSec := DiskRefreshSeconds;
+  FVolumeRefreshSec := VolumeRefreshSeconds;
+  FNvmeRefreshSec := NvmeHealthRefreshSeconds;
+end;
+
+procedure TMHDiskCollector.ApplyRefresh(const AIntervals: TMHRefreshIntervals);
+begin
+  FDiskRefreshSec := Max(0, AIntervals.DiskInfoSec);
+  FVolumeRefreshSec := Max(0, AIntervals.VolumesSec);
+  FNvmeRefreshSec := Max(0, AIntervals.NvmeHealthSec);
 end;
 
 destructor TMHDiskCollector.Destroy;
@@ -261,6 +276,9 @@ end;
 
 function TMHDiskCollector.Expired(AUtc, ANow: TDateTime; ASeconds: Integer): Boolean;
 begin
+  // «Выкл.»: только первое чтение и после Invalidate («Проверить сейчас»).
+  if ASeconds <= 0 then
+    Exit(AUtc = 0);
   Result := (AUtc = 0) or (ANow < AUtc) or ((ANow - AUtc) * SecsPerDay >= ASeconds);
 end;
 
@@ -272,7 +290,7 @@ var
   LError: string;
   LDenied: Boolean;
 begin
-  if Expired(FDisksUtc, ANow, DiskRefreshSeconds) then
+  if Expired(FDisksUtc, ANow, FDiskRefreshSec) then
   begin
     Inc(FReadCount);
     FDisksUtc := ANow;
@@ -284,7 +302,7 @@ begin
     else
       FDisksError := LError; // прежний список остаётся — диски редко меняются
   end;
-  if Expired(FReliabilityUtc, ANow, DiskRefreshSeconds) then
+  if Expired(FReliabilityUtc, ANow, FDiskRefreshSec) then
   begin
     FReliabilityUtc := ANow;
     if FApi.ReadReliability(LReliability, LError, LDenied) then
@@ -299,17 +317,17 @@ begin
       FReliabilityDenied := LDenied;
     end;
   end;
-  if Expired(FNvmeHealthUtc, ANow, NvmeHealthRefreshSeconds) then
+  if Expired(FNvmeHealthUtc, ANow, FNvmeRefreshSec) then
   begin
     FNvmeHealthUtc := ANow;
     RefreshHealth(True);
   end;
-  if Expired(FSmartUtc, ANow, DiskRefreshSeconds) then
+  if Expired(FSmartUtc, ANow, FDiskRefreshSec) then
   begin
     FSmartUtc := ANow;
     RefreshHealth(False);
   end;
-  if Expired(FVolumesUtc, ANow, VolumeRefreshSeconds) then
+  if Expired(FVolumesUtc, ANow, FVolumeRefreshSec) then
   begin
     FVolumesUtc := ANow;
     if FApi.ReadVolumes(LVolumes, LError) then

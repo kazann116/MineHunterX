@@ -54,6 +54,7 @@ type
     [Test] procedure ReliabilityDenied_RequiresElevation;
     [Test] procedure Health_FillsGapsKeepsReliabilityAndRefreshes;
     [Test] procedure Health_SmartDenied_Note;
+    [Test] procedure Refresh_OffAndCustomIntervals;
     [Test] procedure NothingAvailable_Unavailable;
     [Test] procedure VolumeFreePercent;
   end;
@@ -402,6 +403,38 @@ begin
   LResult := LIntf.Collect(TMHSnapshot.Create(5, IncMinute(FAKE_NOW, 12)));
   Assert.AreEqual('', LResult.Disks[1].AttributesSource);
   Assert.AreEqual(0, Integer(Length(LResult.Disks[1].Attributes)));
+end;
+
+procedure TDiskCollectorTests.Refresh_OffAndCustomIntervals;
+var
+  LApi: TFakeDiskApi;
+  LCollector: TMHDiskCollector;
+  LIntf: IMHCollector;
+  LIntervals: TMHRefreshIntervals;
+begin
+  LApi := FakeDiskSet;
+  LCollector := TMHDiskCollector.Create(LApi, TFakeClock.Create(FAKE_NOW));
+  LIntf := LCollector;
+  // «Выкл.»: список дисков и SMART — только при запуске и по «Проверить сейчас».
+  LIntervals := TMHRefreshIntervals.Default;
+  LIntervals.DiskInfoSec := 0;
+  LIntervals.NvmeHealthSec := 0;
+  LCollector.ApplyRefresh(LIntervals);
+  LIntf.Collect(TMHSnapshot.Create(1, FAKE_NOW));
+  LIntf.Collect(TMHSnapshot.Create(2, IncHour(FAKE_NOW, 5)));
+  Assert.AreEqual(1, LApi.DiskReads, 'Через 5 часов не перечитан');
+  Assert.AreEqual(2, LApi.HealthReads, 'Атрибуты тоже только при запуске (два диска)');
+  (LIntf as IMHCacheInvalidation).Invalidate;
+  LIntf.Collect(TMHSnapshot.Create(3, IncHour(FAKE_NOW, 6)));
+  Assert.AreEqual(2, LApi.DiskReads, '«Проверить сейчас» перечитывает');
+  Assert.AreEqual(4, LApi.HealthReads);
+  // Свой интервал: раз в 5 минут.
+  LIntervals.DiskInfoSec := 300;
+  LCollector.ApplyRefresh(LIntervals);
+  LIntf.Collect(TMHSnapshot.Create(4, IncMinute(IncHour(FAKE_NOW, 6), 4)));
+  Assert.AreEqual(2, LApi.DiskReads);
+  LIntf.Collect(TMHSnapshot.Create(5, IncMinute(IncHour(FAKE_NOW, 6), 6)));
+  Assert.AreEqual(3, LApi.DiskReads, 'Через 6 минут при интервале 5 минут — перечитан');
 end;
 
 procedure TDiskCollectorTests.Health_SmartDenied_Note;

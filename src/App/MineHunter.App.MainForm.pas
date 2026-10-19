@@ -187,7 +187,7 @@ type
       mkGpuTemperatureCelsius);
     HISTORY_TITLES: array[0..6] of string = ('Процессор', 'Память', 'Активность диска',
       'Чтение с диска', 'Запись на диск', 'Видеокарта', 'Температура видеокарты');
-    IntervalChoicesMs: array[0..4] of Cardinal = (1000, 2000, 3000, 5000, 10000);
+    IntervalChoicesMs: array[0..7] of Cardinal = (1000, 2000, 3000, 5000, 10000, 15000, 30000, 60000);
     HIGH_CPU_CHOICES: array[0..4] of Integer = (10, 15, 25, 40, 60);
     SUSTAINED_CHOICES: array[0..3] of Integer = (5, 10, 15, 30);
     LEARNING_CHOICES: array[0..3] of Integer = (1, 3, 7, 14);
@@ -290,6 +290,10 @@ type
     FBtnChangeData: TButton;
     FBtnDefaultData: TButton;
     FDataDirRoot: string;
+    /// «Частота обновления»: списки и их значения (секунды) по номеру в Tag.
+    FRefreshBox: TGroupBox;
+    FRefreshCombos: TArray<TComboBox>;
+    FRefreshValues: TArray<TArray<Integer>>;
     FRestartAction: TProc;
     FDisksSheet: TTabSheet;
     FDisksPage: TMHDisksPage;
@@ -317,6 +321,11 @@ type
     procedure CreateFileActions;
     procedure AppMessage(var AMsg: TMsg; var AHandled: Boolean);
     procedure LayoutSettings;
+    procedure CreateRefreshSettings;
+    procedure FillRefreshCombos;
+    procedure RefreshSettingChange(Sender: TObject);
+    function EconomyCaption: string;
+    function IntArray(const AValues: array of Integer): TArray<Integer>;
     procedure UpdateDataFolderControls;
     procedure OpenDataFolderClick(Sender: TObject);
     procedure ChangeDataFolderClick(Sender: TObject);
@@ -446,6 +455,9 @@ type
     property ChangesActions: TMHFileActions read FChangesActions;
     property DefaultDataButton: TButton read FBtnDefaultData;
     property AckBox: TGroupBox read FAckBox;
+    property RefreshBox: TGroupBox read FRefreshBox;
+    /// Списки «Частоты обновления»: экономный режим, датчики видеокарт, разделы, NVMe, диски, «Запуски».
+    property RefreshCombos: TArray<TComboBox> read FRefreshCombos;
     property QuarantineList: TListView read FQuarantineList;
     /// Строит план исправления выбранной находки, спрашивает подтверждение и выполняет.
     procedure RemediateSelected;
@@ -536,7 +548,7 @@ uses
   MineHunter.Core.SelfAutostart, MineHunter.Collectors.Processes.WinApi,
   MineHunter.App.Lang, MineHunter.App.Theme, MineHunter.Core.Updates.WinApi, Winapi.ShellAPI,
   System.IOUtils, MineHunter.Core.Lang, MineHunter.Collectors.NetAdapters, MineHunter.Core.DataDir,
-  MineHunter.Core.Launches, MineHunter.Collectors.ProcessEvents.WinApi;
+  MineHunter.Core.Launches, MineHunter.Collectors.ProcessEvents.WinApi, System.Generics.Collections;
 
 function PercentText(AValue: Double): string; forward;
 
@@ -646,6 +658,7 @@ begin
   CreateAppearanceControls;
   CreateAcknowledgeControls;
   CreateDataFolderControls;
+  CreateRefreshSettings;
   LayoutSettings;
   CreateFileActions;
   cbHistoryPeriod.Items.Clear;
@@ -918,13 +931,187 @@ begin
     FBtnDefaultData.Enabled := not MHSamePath(MHResolveDataDir(FDataDirRoot), FDataDirRoot);
 end;
 
+function TMainForm.EconomyCaption: string;
+begin
+  Result := Format(MHTr('Экономный режим: пока окно скрыто, опрос раз в %d с'), [FServices.Settings.EconomyIntervalSec]);
+end;
+
+const
+  /// Варианты «Частоты обновления», секунды (0 — «выкл.»).
+  REFRESH_ECONOMY: array[0..4] of Integer = (10, 30, 60, 120, 300);
+  REFRESH_GPU: array[0..5] of Integer = (0, 2, 5, 10, 30, 60);
+  REFRESH_VOLUMES: array[0..4] of Integer = (0, 10, 30, 60, 300);
+  REFRESH_NVME: array[0..4] of Integer = (0, 30, 60, 300, 600);
+  REFRESH_DISKS: array[0..4] of Integer = (0, 300, 600, 1800, 3600);
+  REFRESH_LAUNCHES: array[0..4] of Integer = (0, 2, 5, 10, 30);
+
+function RefreshChoiceText(ASeconds: Integer; ALaunches: Boolean): string;
+begin
+  if ASeconds <= 0 then
+  begin
+    if ALaunches then
+      Exit(MHL('выкл. — по кнопке «Обновить»', 'off — with the Refresh button'));
+    Exit(MHL('выкл. — при запуске и по «Проверить сейчас»', 'off — at startup and with Check now'));
+  end;
+  if (ASeconds >= 60) and (ASeconds mod 60 = 0) then
+    Result := Format(MHL('раз в %d мин', 'every %d min'), [ASeconds div 60])
+  else
+    Result := Format(MHL('раз в %d с', 'every %d s'), [ASeconds]);
+end;
+
+procedure TMainForm.CreateRefreshSettings;
+const
+  ROW = 30;
+var
+  LTop, I: Integer;
+  LCaptions: TArray<string>;
+  LHints: TArray<string>;
+  LCombo: TComboBox;
+begin
+  FRefreshBox := TGroupBox.Create(Self);
+  FRefreshBox.Parent := sbSettings;
+  FRefreshBox.Caption := MHL('Частота обновления', 'Refresh rate');
+  LCaptions := [MHL('Опрос, пока окно скрыто (экономный режим):', 'Polling while the window is hidden (economy):'),
+    MHL('Температура и мощность видеокарт:', 'Graphics card temperature and power:'),
+    MHL('Разделы и свободное место:', 'Volumes and free space:'),
+    MHL('Журнал здоровья NVMe:', 'NVMe health log:'),
+    MHL('Список дисков, износ, ошибки, SMART:', 'Disk list, wear, errors, SMART:'),
+    MHL('Таблица «Запуски» на экране:', 'Launches table on screen:')];
+  LHints := [MHL('Действует, если включён экономный режим (раздел «Работа в фоне»).',
+      'Applies when economy mode is on (Background section).'),
+    MHL('Датчики видеокарт (D3DKMT, NVML).', 'Graphics card sensors (D3DKMT, NVML).'),
+    MHL('Буквы дисков, метки, объём и свободное место.', 'Drive letters, labels, size and free space.'),
+    MHL('Наработка, включения, ошибки носителя дисков NVMe.', 'Power-on hours, power cycles, media errors of NVMe disks.'),
+    MHL('Частый опрос SMART может будить спящие жёсткие диски.', 'Frequent SMART polling can wake sleeping hard disks.'),
+    MHL('Как часто перечитывать журнал, пока страница «Запуски» открыта.',
+      'How often to reload the journal while the Launches page is open.')];
+  FRefreshValues := [IntArray(REFRESH_ECONOMY), IntArray(REFRESH_GPU), IntArray(REFRESH_VOLUMES),
+    IntArray(REFRESH_NVME), IntArray(REFRESH_DISKS), IntArray(REFRESH_LAUNCHES)];
+  LTop := 26;
+  with TLabel.Create(Self) do
+  begin
+    Parent := FRefreshBox;
+    SetBounds(16, LTop, 640, 30);
+    AutoSize := False;
+    WordWrap := True;
+    ShowAccelChar := False;
+    Caption := MHL('Основной опрос (процессы, загрузка, память, сеть) — «Интервал опроса» вверху страницы; ' +
+      'его останавливает кнопка «Остановить». «Выкл.» — значение читается при запуске и по «Проверить сейчас».',
+      'The main polling (processes, load, memory, network) is the polling interval at the top of the page; ' +
+      'the Stop button stops it. "Off" — the value is read at startup and with Check now.');
+  end;
+  Inc(LTop, 38);
+  SetLength(FRefreshCombos, Length(LCaptions));
+  for I := 0 to High(LCaptions) do
+  begin
+    with TLabel.Create(Self) do
+    begin
+      Parent := FRefreshBox;
+      SetBounds(16, LTop + 4, 330, 15);
+      Caption := LCaptions[I];
+      ShowAccelChar := False;
+    end;
+    LCombo := TComboBox.Create(Self);
+    LCombo.Parent := FRefreshBox;
+    LCombo.Style := csDropDownList;
+    LCombo.SetBounds(350, LTop, 310, 23);
+    LCombo.Tag := I;
+    LCombo.Hint := LHints[I];
+    LCombo.ShowHint := True;
+    LCombo.OnChange := RefreshSettingChange;
+    FRefreshCombos[I] := LCombo;
+    Inc(LTop, ROW);
+  end;
+  FRefreshBox.SetBounds(gbStorage.Left, 0, gbStorage.Width, LTop + 10);
+  FillRefreshCombos;
+end;
+
+function TMainForm.IntArray(const AValues: array of Integer): TArray<Integer>;
+var
+  I: Integer;
+begin
+  SetLength(Result, Length(AValues));
+  for I := 0 to High(AValues) do
+    Result[I] := AValues[I];
+end;
+
+procedure TMainForm.FillRefreshCombos;
+var
+  LCurrent: TArray<Integer>;
+  LValues: TArray<Integer>;
+  I, J, LIndex: Integer;
+begin
+  if Length(FRefreshCombos) = 0 then
+    Exit;
+  LCurrent := [FServices.Settings.EconomyIntervalSec, FServices.Settings.Refresh.GpuSensorsSec,
+    FServices.Settings.Refresh.VolumesSec, FServices.Settings.Refresh.NvmeHealthSec,
+    FServices.Settings.Refresh.DiskInfoSec, FServices.Settings.LaunchesReloadSec];
+  FInitializingSettings := True;
+  try
+    for I := 0 to High(FRefreshCombos) do
+    begin
+      // Значение из файла настроек, которого нет среди вариантов, не теряется.
+      LValues := Copy(FRefreshValues[I]);
+      LIndex := -1;
+      for J := 0 to High(LValues) do
+        if LValues[J] = LCurrent[I] then
+          LIndex := J;
+      if LIndex < 0 then
+      begin
+        LValues := LValues + [LCurrent[I]];
+        TArray.Sort<Integer>(LValues);
+        for J := 0 to High(LValues) do
+          if LValues[J] = LCurrent[I] then
+            LIndex := J;
+        FRefreshValues[I] := LValues;
+      end;
+      FRefreshCombos[I].Items.Clear;
+      for J := 0 to High(LValues) do
+        FRefreshCombos[I].Items.Add(RefreshChoiceText(LValues[J], I = High(FRefreshCombos)));
+      FRefreshCombos[I].ItemIndex := LIndex;
+    end;
+  finally
+    FInitializingSettings := False;
+  end;
+  if FLaunchesPage <> nil then
+    FLaunchesPage.ReloadSec := FServices.Settings.LaunchesReloadSec;
+end;
+
+procedure TMainForm.RefreshSettingChange(Sender: TObject);
+var
+  LSettings: TMHAppSettings;
+  LValue: Integer;
+  LCombo: TComboBox;
+begin
+  if FInitializingSettings or not (Sender is TComboBox) then
+    Exit;
+  LCombo := TComboBox(Sender);
+  if (LCombo.ItemIndex < 0) or (LCombo.ItemIndex > High(FRefreshValues[LCombo.Tag])) then
+    Exit;
+  LValue := FRefreshValues[LCombo.Tag][LCombo.ItemIndex];
+  LSettings := FServices.Settings;
+  case LCombo.Tag of
+    0: LSettings.EconomyIntervalSec := LValue;
+    1: LSettings.Refresh.GpuSensorsSec := LValue;
+    2: LSettings.Refresh.VolumesSec := LValue;
+    3: LSettings.Refresh.NvmeHealthSec := LValue;
+    4: LSettings.Refresh.DiskInfoSec := LValue;
+    5: LSettings.LaunchesReloadSec := LValue;
+  end;
+  ChangeSettings(LSettings);
+  if FLaunchesPage <> nil then
+    FLaunchesPage.ReloadSec := FServices.Settings.LaunchesReloadSec;
+  if FChkEconomy <> nil then
+    FChkEconomy.Caption := EconomyCaption;
+end;
+
 procedure TMainForm.LayoutSettings;
 var
   LBoxes: TArray<TControl>;
   LTop, I: Integer;
 begin
   // Группы настроек — сверху вниз в этом порядке, с одинаковым отступом.
-  LBoxes := [gbStorage, gbAnalysis, gbExclusions, FAckBox, gbActionLog, FQuarantineBox, FBackgroundBox,
+  LBoxes := [gbStorage, FRefreshBox, gbAnalysis, gbExclusions, FAckBox, gbActionLog, FQuarantineBox, FBackgroundBox,
     FAppearanceBox];
   LTop := gbStorage.Top;
   for I := 0 to High(LBoxes) do
@@ -3296,8 +3483,7 @@ begin
       MHL('Не чаще одного уведомления в минуту; об одной находке — один раз, повторно — если риск вырос.',
       'At most one notification per minute; once per finding, again only if the risk has increased.'),
       FServices.Settings.NotifyAlerts);
-    FChkEconomy := AddCheck(Format(MHTr('Экономный режим: пока окно скрыто, опрос раз в %d с'),
-      [TMHAppSettings.EconomyIntervalMs div 1000]),
+    FChkEconomy := AddCheck(EconomyCaption,
       MHL('Снижает нагрузку самого MineHunter X, когда вы не смотрите на окно.',
       'Reduces the load of MineHunter X itself while you are not looking at the window.'),
       FServices.Settings.EconomyWhenHidden);
@@ -4166,6 +4352,7 @@ begin
     FChkTray.Checked := FServices.Settings.MinimizeToTray;
     FChkNotify.Checked := FServices.Settings.NotifyAlerts;
     FChkEconomy.Checked := FServices.Settings.EconomyWhenHidden;
+    FChkEconomy.Caption := EconomyCaption;
     FChkUpdates.Checked := FServices.Settings.CheckForUpdates;
     FCbLanguage.ItemIndex := Ord(FServices.Settings.Language);
     FCbTheme.ItemIndex := Ord(FServices.Settings.Theme);
@@ -4176,6 +4363,7 @@ begin
   InitStorageSettings;
   InitAnalysisSettings;
   RefreshExclusions;
+  FillRefreshCombos;
 end;
 
 procedure TMainForm.ExportSettingsClick(Sender: TObject);

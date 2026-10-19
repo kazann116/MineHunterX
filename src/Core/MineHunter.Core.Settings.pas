@@ -45,8 +45,12 @@ type
     MaxLearningDays = 90;
     MaxElectricityPrice = 1000.0;
     DefaultElectricityPrice = 6.0;
-    /// Интервал опроса, пока окно скрыто (экономный режим), мс.
+    /// Интервал опроса, пока окно скрыто (экономный режим), по умолчанию, мс.
     EconomyIntervalMs = 30000;
+    /// Перечитывание таблицы «Запуски» на экране по умолчанию, секунды.
+    DefaultLaunchesReloadSec = 5;
+    /// Предел любого интервала частоты обновления, секунды (сутки).
+    MaxRefreshSec = 86400;
   public
     /// Интервал опроса, мс (TMHScannerOptions.MinIntervalMs..MaxIntervalMs).
     IntervalMs: Cardinal;
@@ -68,8 +72,14 @@ type
     MinimizeToTray: Boolean;
     /// Всплывающие уведомления о новых тревогах (уровень «подозрительно» и выше).
     NotifyAlerts: Boolean;
-    /// Пока окно скрыто, опрос не чаще одного раза в TMHAppSettings.EconomyIntervalMs.
+    /// Пока окно скрыто, опрос не чаще одного раза в EconomyIntervalSec.
     EconomyWhenHidden: Boolean;
+    /// Интервал опроса в экономном режиме, секунды.
+    EconomyIntervalSec: Integer;
+    /// Частота обновления редко меняющихся данных (датчики видеокарт, разделы, диски).
+    Refresh: TMHRefreshIntervals;
+    /// Перечитывание таблицы «Запуски», пока она на экране, секунды (0 — только по кнопке).
+    LaunchesReloadSec: Integer;
     /// Цена электроэнергии за кВт·ч (в рублях) для оценки стоимости нагрузки.
     ElectricityPrice: Double;
     /// Проверять новые версии на GitHub (по умолчанию выключено: без запросов в интернет).
@@ -197,6 +207,9 @@ begin
   Result.MinimizeToTray := True;
   Result.NotifyAlerts := True;
   Result.EconomyWhenHidden := True;
+  Result.EconomyIntervalSec := EconomyIntervalMs div 1000;
+  Result.Refresh := TMHRefreshIntervals.Default;
+  Result.LaunchesReloadSec := DefaultLaunchesReloadSec;
   Result.ElectricityPrice := DefaultElectricityPrice;
   Result.CheckForUpdates := False;
   Result.FileScanWeekly := False;
@@ -220,6 +233,12 @@ begin
   Result.MaxDatabaseMB := EnsureRange(MaxDatabaseMB, MinDatabaseSizeMB, MaxDatabaseSizeMB);
   Result.Analyzer := Analyzer.Normalized;
   Result.LearningDays := EnsureRange(LearningDays, MinLearningDays, MaxLearningDays);
+  Result.EconomyIntervalSec := EnsureRange(EconomyIntervalSec, 5, 3600);
+  Result.Refresh.GpuSensorsSec := EnsureRange(Refresh.GpuSensorsSec, 0, MaxRefreshSec);
+  Result.Refresh.VolumesSec := EnsureRange(Refresh.VolumesSec, 0, MaxRefreshSec);
+  Result.Refresh.NvmeHealthSec := EnsureRange(Refresh.NvmeHealthSec, 0, MaxRefreshSec);
+  Result.Refresh.DiskInfoSec := EnsureRange(Refresh.DiskInfoSec, 0, MaxRefreshSec);
+  Result.LaunchesReloadSec := EnsureRange(LaunchesReloadSec, 0, 3600);
   if IsNan(ElectricityPrice) or IsInfinite(ElectricityPrice) or (ElectricityPrice < 0) then
     Result.ElectricityPrice := DefaultElectricityPrice
   else
@@ -413,6 +432,12 @@ begin
     LRoot.AddPair('minimizeToTray', TJSONBool.Create(ASettings.MinimizeToTray));
     LRoot.AddPair('notifyAlerts', TJSONBool.Create(ASettings.NotifyAlerts));
     LRoot.AddPair('economyWhenHidden', TJSONBool.Create(ASettings.EconomyWhenHidden));
+    LRoot.AddPair('economyIntervalSec', TJSONNumber.Create(ASettings.EconomyIntervalSec));
+    LRoot.AddPair('gpuSensorsSec', TJSONNumber.Create(ASettings.Refresh.GpuSensorsSec));
+    LRoot.AddPair('volumesSec', TJSONNumber.Create(ASettings.Refresh.VolumesSec));
+    LRoot.AddPair('nvmeHealthSec', TJSONNumber.Create(ASettings.Refresh.NvmeHealthSec));
+    LRoot.AddPair('diskInfoSec', TJSONNumber.Create(ASettings.Refresh.DiskInfoSec));
+    LRoot.AddPair('launchesReloadSec', TJSONNumber.Create(ASettings.LaunchesReloadSec));
     LRoot.AddPair('electricityPrice', TJSONNumber.Create(ASettings.ElectricityPrice));
     LRoot.AddPair('checkForUpdates', TJSONBool.Create(ASettings.CheckForUpdates));
     LRoot.AddPair('fileScanWeekly', TJSONBool.Create(ASettings.FileScanWeekly));
@@ -501,6 +526,12 @@ begin
     Result.MinimizeToTray := ReadBool(LRoot, 'minimizeToTray', LDefaults.MinimizeToTray);
     Result.NotifyAlerts := ReadBool(LRoot, 'notifyAlerts', LDefaults.NotifyAlerts);
     Result.EconomyWhenHidden := ReadBool(LRoot, 'economyWhenHidden', LDefaults.EconomyWhenHidden);
+    Result.EconomyIntervalSec := ReadInt(LRoot, 'economyIntervalSec', LDefaults.EconomyIntervalSec);
+    Result.Refresh.GpuSensorsSec := ReadInt(LRoot, 'gpuSensorsSec', LDefaults.Refresh.GpuSensorsSec);
+    Result.Refresh.VolumesSec := ReadInt(LRoot, 'volumesSec', LDefaults.Refresh.VolumesSec);
+    Result.Refresh.NvmeHealthSec := ReadInt(LRoot, 'nvmeHealthSec', LDefaults.Refresh.NvmeHealthSec);
+    Result.Refresh.DiskInfoSec := ReadInt(LRoot, 'diskInfoSec', LDefaults.Refresh.DiskInfoSec);
+    Result.LaunchesReloadSec := ReadInt(LRoot, 'launchesReloadSec', LDefaults.LaunchesReloadSec);
     Result.ElectricityPrice := ReadDouble(LRoot, 'electricityPrice', LDefaults.ElectricityPrice);
     Result.CheckForUpdates := ReadBool(LRoot, 'checkForUpdates', LDefaults.CheckForUpdates);
     Result.FileScanWeekly := ReadBool(LRoot, 'fileScanWeekly', LDefaults.FileScanWeekly);

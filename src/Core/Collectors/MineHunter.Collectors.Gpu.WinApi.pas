@@ -21,17 +21,18 @@
        Библиотека загружается только из System32 или из каталога NVSMI в
        Program Files (защита от подмены DLL), функции — через GetProcAddress.
   Дескрипторы адаптеров открываются на время опроса и сразу закрываются.
-  Датчики опрашиваются не чаще раза в SENSOR_REFRESH_MS.
+  Датчики опрашиваются не чаще раза в SensorRefreshMs (по умолчанию SENSOR_REFRESH_MS,
+  меняется в настройках; 0 — только первый раз и после Invalidate).
 }
 
 interface
 
 uses
   Winapi.Windows,
-  MineHunter.Collectors.Gpu, MineHunter.Collectors.Pdh;
+  MineHunter.Core.Interfaces, MineHunter.Collectors.Gpu, MineHunter.Collectors.Pdh;
 
 type
-  TMHWinGpuApi = class(TInterfacedObject, IMHGpuApi)
+  TMHWinGpuApi = class(TInterfacedObject, IMHGpuApi, IMHRefreshConfigurable, IMHCacheInvalidation)
   private type
     TNvmlDevice = Pointer;
     TNvmlInit = function: Integer; cdecl;
@@ -53,6 +54,7 @@ type
     FAdapterSharedCounter: THandle;
     FCounterError: string;
     FSensorTick: UInt64;
+    FSensorRefreshMs: Cardinal;
     FSensors: TArray<TMHGpuSensor>;
     FSensorReason: string;
     // NVML
@@ -74,6 +76,8 @@ type
   public
     constructor Create;
     destructor Destroy; override;
+    procedure ApplyRefresh(const AIntervals: TMHRefreshIntervals);
+    procedure Invalidate;
     function GetCounters: TMHGpuCounters;
     function GetSensors(out AReason: string): TArray<TMHGpuSensor>;
   end;
@@ -225,9 +229,23 @@ end;
 
 { TMHWinGpuApi }
 
+procedure TMHWinGpuApi.ApplyRefresh(const AIntervals: TMHRefreshIntervals);
+begin
+  if AIntervals.GpuSensorsSec <= 0 then
+    FSensorRefreshMs := 0
+  else
+    FSensorRefreshMs := Cardinal(AIntervals.GpuSensorsSec) * 1000;
+end;
+
+procedure TMHWinGpuApi.Invalidate;
+begin
+  FSensorTick := 0;
+end;
+
 constructor TMHWinGpuApi.Create;
 begin
   inherited Create;
+  FSensorRefreshMs := SENSOR_REFRESH_MS;
   FPdh := TMHPdhQuery.Create;
   FEngineCounter := FPdh.AddCounter('\GPU Engine(*)\Utilization Percentage');
   if FEngineCounter = 0 then
@@ -550,7 +568,7 @@ var
   LNow: UInt64;
 begin
   LNow := GetTickCount64;
-  if (FSensorTick = 0) or (LNow - FSensorTick >= SENSOR_REFRESH_MS) then
+  if (FSensorTick = 0) or ((FSensorRefreshMs > 0) and (LNow - FSensorTick >= FSensorRefreshMs)) then
   begin
     FSensorTick := LNow;
     try

@@ -34,6 +34,7 @@ type
     [TearDown] procedure TearDown;
     [Test] procedure Defaults_AreDocumentedValues;
     [Test] procedure Normalized_ClampsRanges;
+    [Test] procedure Refresh_DefaultsRoundTripAndClamp;
     [Test] procedure Normalized_DropsInvalidAndDuplicateExclusions;
     [Test] procedure Load_MissingFile_ReturnsDefaults;
     [Test] procedure SaveLoad_RoundTrip;
@@ -266,6 +267,48 @@ begin
   Assert.IsTrue(LSettings.RedactPathsInReports);
   Assert.AreEqual(0, Integer(Length(LSettings.Exclusions)));
   Assert.AreEqual(TMHRiskThresholds.Default.Suspicious, LSettings.Analyzer.Thresholds.Suspicious);
+end;
+
+procedure TSettingsTests.Refresh_DefaultsRoundTripAndClamp;
+var
+  LStore: TMHSettingsStore;
+  LSaved, LLoaded: TMHAppSettings;
+begin
+  // По умолчанию — как было до настройки: датчики 5 с, разделы 30 с, NVMe 1 мин, диски 10 мин.
+  LSaved := TMHAppSettings.Default;
+  Assert.AreEqual(30, LSaved.EconomyIntervalSec);
+  Assert.AreEqual(5, LSaved.Refresh.GpuSensorsSec);
+  Assert.AreEqual(30, LSaved.Refresh.VolumesSec);
+  Assert.AreEqual(60, LSaved.Refresh.NvmeHealthSec);
+  Assert.AreEqual(600, LSaved.Refresh.DiskInfoSec);
+  Assert.AreEqual(5, LSaved.LaunchesReloadSec);
+  LSaved.EconomyIntervalSec := 120;
+  LSaved.Refresh.GpuSensorsSec := 0;
+  LSaved.Refresh.VolumesSec := 300;
+  LSaved.Refresh.NvmeHealthSec := 0;
+  LSaved.Refresh.DiskInfoSec := 3600;
+  LSaved.LaunchesReloadSec := 0;
+  LStore := TMHSettingsStore.Create(FPath, FLoggerIntf);
+  try
+    LStore.Save(LSaved);
+    Assert.IsTrue(LStore.Load(LLoaded));
+  finally
+    LStore.Free;
+  end;
+  Assert.AreEqual(120, LLoaded.EconomyIntervalSec);
+  Assert.AreEqual(0, LLoaded.Refresh.GpuSensorsSec, '«Выкл.» сохраняется');
+  Assert.AreEqual(300, LLoaded.Refresh.VolumesSec);
+  Assert.AreEqual(0, LLoaded.Refresh.NvmeHealthSec);
+  Assert.AreEqual(3600, LLoaded.Refresh.DiskInfoSec);
+  Assert.AreEqual(0, LLoaded.LaunchesReloadSec);
+  // Границы: отрицательные — «выкл.», экономный режим не чаще раза в 5 с.
+  LSaved.EconomyIntervalSec := 1;
+  LSaved.Refresh.VolumesSec := -10;
+  LSaved.Refresh.DiskInfoSec := 10000000;
+  LSaved := LSaved.Normalized;
+  Assert.AreEqual(5, LSaved.EconomyIntervalSec);
+  Assert.AreEqual(0, LSaved.Refresh.VolumesSec);
+  Assert.AreEqual(TMHAppSettings.MaxRefreshSec, LSaved.Refresh.DiskInfoSec);
 end;
 
 procedure TSettingsTests.Normalized_ClampsRanges;

@@ -72,6 +72,7 @@ type
     [Test] procedure Pages_TablesShownWholeAndWheelScrollsPage;
     [Test] procedure Settings_CheckedFindingsAfterAllowedPrograms_DataFolder;
     [Test] procedure FileActions_LaunchesAndProcesses;
+    [Test] procedure Settings_RefreshRates;
   end;
 
 implementation
@@ -90,7 +91,7 @@ uses
   MineHunter.Tests.Appearance, MineHunter.Tests.Disks, MineHunter.Tests.FileScan,
   MineHunter.Collectors.Disks, MineHunter.Core.FileScan, MineHunter.App.DisksPage,
   Winapi.CommCtrl, Winapi.Messages, Vcl.Forms, Vcl.Controls, System.Types, MineHunter.App.ListViews,
-  MineHunter.Tests.Fakes, MineHunter.Core.DataDir, MineHunter.App.FileActions;
+  MineHunter.Tests.Fakes, MineHunter.Core.DataDir, MineHunter.App.FileActions, Vcl.StdCtrls;
 
 var
   // Подмена операций ОС для тестов действий (nil — настоящие операции).
@@ -934,6 +935,14 @@ begin
         Assert.IsTrue(LForm.HiddenToTray);
         Assert.AreEqual(TMHAppSettings.EconomyIntervalMs, LServices.Scanner.Options.IntervalMs);
         LForm.ShowFromTray;
+        // Интервал экономного режима — из «Частоты обновления».
+        LForm.RefreshCombos[0].ItemIndex := LForm.RefreshCombos[0].Items.Count - 1; // 5 мин
+        LForm.RefreshCombos[0].OnChange(LForm.RefreshCombos[0]);
+        Assert.AreEqual(300, LServices.Settings.EconomyIntervalSec);
+        Assert.IsTrue(string(LForm.EconomyCheckBox.Caption).Contains('300'), LForm.EconomyCheckBox.Caption);
+        LForm.HideToTray;
+        Assert.AreEqual<Cardinal>(300000, LServices.Scanner.Options.IntervalMs);
+        LForm.ShowFromTray;
         Assert.AreEqual(LNormal, LServices.Scanner.Options.IntervalMs);
         LForm.EconomyCheckBox.Checked := False; // OnClick сохраняет настройку
         Assert.IsFalse(LServices.Settings.EconomyWhenHidden);
@@ -1374,6 +1383,32 @@ begin
   FForm.LaunchesPage.FilterEdit.Text := 'APP3'; // OnChange перечитывает журнал
   Assert.AreEqual(1, FForm.LaunchesPage.List.Items.Count);
   Assert.AreEqual('app3.exe', FForm.LaunchesPage.List.Items[0].SubItems[0]);
+end;
+
+procedure TMainFormSmokeTests.Settings_RefreshRates;
+var
+  LCombo: TComboBox;
+begin
+  Assert.AreEqual(6, Integer(Length(FForm.RefreshCombos)));
+  Assert.IsTrue(FForm.RefreshBox.Top > FForm.gbStorage.Top, 'После «Истории наблюдений»');
+  Assert.IsTrue(FForm.gbAnalysis.Top > FForm.RefreshBox.Top);
+  // Значения по умолчанию выбраны.
+  Assert.AreEqual('раз в 5 с', string(FForm.RefreshCombos[1].Text));
+  Assert.AreEqual('раз в 10 мин', string(FForm.RefreshCombos[4].Text));
+  // Датчики видеокарт — «выкл.».
+  LCombo := FForm.RefreshCombos[1];
+  LCombo.ItemIndex := 0;
+  LCombo.OnChange(LCombo);
+  Assert.AreEqual(0, FServices.Settings.Refresh.GpuSensorsSec);
+  Assert.IsTrue(string(LCombo.Text).Contains('Проверить сейчас'), LCombo.Text);
+  // «Запуски» — только по кнопке.
+  LCombo := FForm.RefreshCombos[5];
+  LCombo.ItemIndex := 0;
+  LCombo.OnChange(LCombo);
+  Assert.AreEqual(0, FServices.Settings.LaunchesReloadSec);
+  Assert.AreEqual(0, FForm.LaunchesPage.ReloadSec);
+  // Основной опрос: больше вариантов (до минуты).
+  Assert.AreEqual(8, FForm.cbInterval.Items.Count);
 end;
 
 procedure TMainFormSmokeTests.FileActions_LaunchesAndProcesses;

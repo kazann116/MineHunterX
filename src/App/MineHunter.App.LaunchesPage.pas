@@ -34,6 +34,7 @@ type
     FHasSource: Boolean;
     FActions: TMHFileActions;
     FConfirm: TMHFileConfirm;
+    FReloadSec: Integer;
     function SelectedTarget(out ATarget: TMHFileTarget): Boolean;
     procedure RefreshClick(Sender: TObject);
     procedure FilterChange(Sender: TObject);
@@ -53,6 +54,9 @@ type
     property Rows: TArray<TMHLaunchRecord> read FRows;
     /// Действия со строкой: подробности, папка, VirusTotal, копирование.
     property Actions: TMHFileActions read FActions;
+    /// Перечитывание таблицы, пока страница на экране, секунды (0 — только кнопкой «Обновить»
+    /// и при открытии страницы).
+    property ReloadSec: Integer read FReloadSec write FReloadSec;
     /// Подтверждение обращений вовне (VirusTotal); задаёт главное окно.
     property Confirm: TMHFileConfirm read FConfirm write FConfirm;
     /// Сведения выбранной строки для действий с файлом.
@@ -143,6 +147,7 @@ begin
       Caption := LCaptions[I];
       Width := LWidths[I];
     end;
+  FReloadSec := ReloadSeconds;
   FActions := TMHFileActions.Create(Self, FList, SelectedTarget,
     function(const AQuestion: string): Boolean
     begin
@@ -205,8 +210,8 @@ begin
   FHasSource := ASnapshot.FindSource(TMHProcessEventCollector.SourceIdValue, LStatus);
   if FHasSource then
     FEtw := LStatus.State = ssSuccess;
-  if AVisible and ((FLastReloadUtc = 0) or
-     ((ASnapshot.TimestampUtc - FLastReloadUtc) * SecsPerDay >= ReloadSeconds)) then
+  if AVisible and ((FLastReloadUtc = 0) or ((FReloadSec > 0) and
+     ((ASnapshot.TimestampUtc - FLastReloadUtc) * SecsPerDay >= FReloadSec))) then
     Reload;
 end;
 

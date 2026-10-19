@@ -85,13 +85,17 @@ type
     EngineType: string;
   end;
 
-  TMHGpuCollector = class(TInterfacedObject, IMHCollector)
+  TMHGpuCollector = class(TInterfacedObject, IMHCollector, IMHRefreshConfigurable, IMHCacheInvalidation)
   public const
     SourceIdValue = 'gpu';
   private
     FApi: IMHGpuApi;
     FClock: IMHClock;
   public
+    /// Частота опроса датчиков передаётся источнику, если он её поддерживает.
+    procedure ApplyRefresh(const AIntervals: TMHRefreshIntervals);
+    /// «Проверить сейчас»: датчики перечитываются в следующем цикле.
+    procedure Invalidate;
     constructor Create(const AApi: IMHGpuApi; const AClock: IMHClock);
     function GetSourceId: string;
     function GetDisplayName: string;
@@ -329,6 +333,22 @@ begin
   finally
     LList.Free;
   end;
+end;
+
+procedure TMHGpuCollector.ApplyRefresh(const AIntervals: TMHRefreshIntervals);
+var
+  LRefresh: IMHRefreshConfigurable;
+begin
+  if Supports(FApi, IMHRefreshConfigurable, LRefresh) then
+    LRefresh.ApplyRefresh(AIntervals);
+end;
+
+procedure TMHGpuCollector.Invalidate;
+var
+  LCache: IMHCacheInvalidation;
+begin
+  if Supports(FApi, IMHCacheInvalidation, LCache) then
+    LCache.Invalidate;
 end;
 
 function TMHGpuCollector.Collect(const ASnapshot: TMHSnapshot): TMHCollectionResult;

@@ -11,7 +11,8 @@ interface
 uses
   System.SysUtils,
   DUnitX.TestFramework,
-  MineHunter.Core.Types, MineHunter.Collectors.NetAdapters;
+  MineHunter.Core.Types, MineHunter.Core.Interfaces, MineHunter.Collectors.NetAdapters,
+  MineHunter.Tests.GpuSensors;
 
 type
   TFakeNetApi = class(TInterfacedObject, IMHNetAdapterApi)
@@ -36,6 +37,15 @@ type
   TGpuAdapterTests = class
   public
     [Test] procedure PerAdapter_LoadMemoryNameTemperaturePower;
+    [Test] procedure Refresh_ForwardedToSensorSource;
+  end;
+
+  TRefreshableGpuApi = class(TFakeGpuApi, IMHRefreshConfigurable, IMHCacheInvalidation)
+  public
+    SensorsSec: Integer;
+    Invalidated: Integer;
+    procedure ApplyRefresh(const AIntervals: TMHRefreshIntervals);
+    procedure Invalidate;
   end;
 
   [TestFixture]
@@ -51,8 +61,8 @@ function Raw(AIndex: Cardinal; const AAlias: string; AIfType: Cardinal; AHardwar
 implementation
 
 uses
-  MineHunter.Core.Interfaces, MineHunter.Collectors.NetAdapters.WinApi, MineHunter.Collectors.Gpu,
-  MineHunter.Tests.Fakes, MineHunter.Tests.GpuSensors;
+  MineHunter.Collectors.NetAdapters.WinApi, MineHunter.Collectors.Gpu,
+  MineHunter.Tests.Fakes;
 
 function Raw(AIndex: Cardinal; const AAlias: string; AIfType: Cardinal; AHardware, AUp: Boolean;
   AIn, AOut: UInt64; AFilter: Boolean): TMHRawNetAdapter;
@@ -235,6 +245,38 @@ begin
   Assert.AreEqual(64.0 * 1024 * 1024, LNv.SharedMemoryBytes, 1);
   Assert.IsTrue(LIgpu.Name.Contains('1'), 'Без датчика — «Видеокарта N»: ' + LIgpu.Name);
   Assert.IsFalse(LIgpu.HasPower);
+end;
+
+{ TRefreshableGpuApi }
+
+procedure TRefreshableGpuApi.ApplyRefresh(const AIntervals: TMHRefreshIntervals);
+begin
+  SensorsSec := AIntervals.GpuSensorsSec;
+end;
+
+procedure TRefreshableGpuApi.Invalidate;
+begin
+  Inc(Invalidated);
+end;
+
+procedure TGpuAdapterTests.Refresh_ForwardedToSensorSource;
+var
+  LApi: TRefreshableGpuApi;
+  LIntf: IMHCollector;
+  LIntervals: TMHRefreshIntervals;
+begin
+  LApi := TRefreshableGpuApi.Create;
+  LIntf := TMHGpuCollector.Create(LApi, TFakeClock.Create(FAKE_NOW));
+  LIntervals := TMHRefreshIntervals.Default;
+  LIntervals.GpuSensorsSec := 30;
+  (LIntf as IMHRefreshConfigurable).ApplyRefresh(LIntervals);
+  Assert.AreEqual(30, LApi.SensorsSec, 'Частота датчиков — источнику');
+  (LIntf as IMHCacheInvalidation).Invalidate;
+  Assert.AreEqual(1, LApi.Invalidated, '«Проверить сейчас» перечитывает датчики');
+  // Источник без настройки (подделка без интерфейсов) — без ошибок.
+  LIntf := TMHGpuCollector.Create(TFakeGpuApi.Create, TFakeClock.Create(FAKE_NOW));
+  (LIntf as IMHRefreshConfigurable).ApplyRefresh(LIntervals);
+  (LIntf as IMHCacheInvalidation).Invalidate;
 end;
 
 { TNetAdapterIntegrationTests }

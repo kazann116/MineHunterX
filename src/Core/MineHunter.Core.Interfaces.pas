@@ -60,6 +60,27 @@ type
     property DisplayName: string read GetDisplayName;
   end;
 
+  /// Частота обновления редко меняющихся данных, секунды. 0 — «выкл.»: значение читается
+  /// при запуске и по «Проверить сейчас» (Invalidate), но не обновляется само.
+  TMHRefreshIntervals = record
+    /// Температура и мощность видеокарт.
+    GpuSensorsSec: Integer;
+    /// Разделы и свободное место.
+    VolumesSec: Integer;
+    /// Журнал здоровья NVMe.
+    NvmeHealthSec: Integer;
+    /// Список дисков, износ и ошибки (счётчики Windows), SMART дисков SATA.
+    DiskInfoSec: Integer;
+    class function Default: TMHRefreshIntervals; static;
+  end;
+
+  /// Коллектор (или его источник), частоту обновления которого можно менять на ходу.
+  /// Вызывается из главного потока; значения — целые, запись атомарна.
+  IMHRefreshConfigurable = interface
+    ['{6F0B7C1E-2E1A-4F57-9A0C-3D5B8E7A1C12}']
+    procedure ApplyRefresh(const AIntervals: TMHRefreshIntervals);
+  end;
+
   /// Коллектор с кэшем (автозапуск, признаки вмешательства): Invalidate
   /// заставляет следующий Collect перечитать источники («Проверить сейчас»).
   IMHCacheInvalidation = interface
@@ -150,6 +171,16 @@ type
 function MHLogLevelToString(ALevel: TMHLogLevel): string;
 
 implementation
+
+{ TMHRefreshIntervals }
+
+class function TMHRefreshIntervals.Default: TMHRefreshIntervals;
+begin
+  Result.GpuSensorsSec := 5;
+  Result.VolumesSec := 30;
+  Result.NvmeHealthSec := 60;
+  Result.DiskInfoSec := 600;
+end;
 
 function MHLogLevelToString(ALevel: TMHLogLevel): string;
 begin

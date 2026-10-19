@@ -45,6 +45,8 @@ type
   private
     FContainer: TMHContainer;
     FScanner: TMHScanner;
+    /// Коллекторы сканера — для настройки частоты обновления на ходу.
+    FCollectors: TArray<IMHCollector>;
     FLogger: IMHLogger;
     FLogReader: IMHLogReader;
     FClock: IMHClock;
@@ -118,7 +120,7 @@ type
     /// Автозапуск MineHunter X вместе с Windows (ветка Run текущего пользователя).
     property SelfAutostart: TMHSelfAutostart read FSelfAutostart;
     /// Окно скрыто: при включённой настройке EconomyWhenHidden опрос замедляется
-    /// до TMHAppSettings.EconomyIntervalMs (если обычный интервал короче).
+    /// до TMHAppSettings.EconomyIntervalSec (если обычный интервал короче).
     property EconomyMode: Boolean read FEconomyMode write SetEconomyMode;
     /// Интервал опроса с учётом экономного режима, мс.
     function EffectiveIntervalMs: Cardinal;
@@ -395,8 +397,8 @@ begin
   FContainer.TryResolve<IMHAnalyzer>(FAnalyzerIntf);
   if (FAnalyzerIntf <> nil) and ((FAnalyzerIntf as TObject) is TMHThreatAnalyzer) then
     FAnalyzer := TMHThreatAnalyzer(FAnalyzerIntf as TObject);
-  FScanner := TMHScanner.Create(FContainer.ResolveAll<IMHCollector>, FAnalyzerIntf,
-    FClock, FLogger);
+  FCollectors := FContainer.ResolveAll<IMHCollector>;
+  FScanner := TMHScanner.Create(FCollectors, FAnalyzerIntf, FClock, FLogger);
   FLogger.Log(llInfo, 'app', 'MineHunter X ' + MH_CORE_VERSION + ' запущен');
 
   // Хранилище необязательно: без него работает мониторинг, но не история.
@@ -471,8 +473,9 @@ end;
 function TMHAppServices.EffectiveIntervalMs: Cardinal;
 begin
   Result := FSettings.IntervalMs;
-  if FEconomyMode and FSettings.EconomyWhenHidden and (Result < TMHAppSettings.EconomyIntervalMs) then
-    Result := TMHAppSettings.EconomyIntervalMs;
+  if FEconomyMode and FSettings.EconomyWhenHidden and
+     (Result < Cardinal(FSettings.EconomyIntervalSec) * 1000) then
+    Result := Cardinal(FSettings.EconomyIntervalSec) * 1000;
 end;
 
 procedure TMHAppServices.ApplyScanInterval;
@@ -502,9 +505,15 @@ end;
 procedure TMHAppServices.ApplySettings(const ASettings: TMHAppSettings);
 var
   LStorage: TMHStorageOptions;
+  LCollector: IMHCollector;
+  LRefresh: IMHRefreshConfigurable;
 begin
   FSettings := ASettings.Normalized;
   ApplyScanInterval;
+  // Частота обновления датчиков, разделов и дисков — без перезапуска.
+  for LCollector in FCollectors do
+    if Supports(LCollector, IMHRefreshConfigurable, LRefresh) then
+      LRefresh.ApplyRefresh(FSettings.Refresh);
   if FStorage <> nil then
   begin
     LStorage := FStorage.Options;
