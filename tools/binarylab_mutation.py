@@ -71,7 +71,7 @@ UI_FILES = [os.path.join(ROOT, 'src', 'App', 'MineHunter.App.BinaryLab.Controls.
 SMOKE_TESTS = ['BinaryLab_PageAndMenus', 'BinaryLab_AnalyzeNavigateFindExportCompare',
                'BinaryLab_ButtonsDialogsAndDoubleClicks', 'BinaryLab_PageMethods_WithoutDataAreSafe',
                'BinaryLab_ErrorsCancelAndCloseWhileBusy', 'BinaryLab_DoubleClickEdgeCases',
-               'BinaryLab_CheckButtonAndPathField']
+               'BinaryLab_CheckButtonAndPathField', 'BinaryLab_FolderPath_ChoosesFileIncludingHidden']
 
 
 def source_files(ui):

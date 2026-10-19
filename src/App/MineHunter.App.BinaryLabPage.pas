@@ -38,6 +38,17 @@ type
   TMHChooseFileFunc = reference to function(const ATitle, AFilter, ADefaultName: string; ASave: Boolean;
     out AFileName: string): Boolean;
 
+  /// Файл папки для выбора: имя, размер, атрибуты (в том числе скрытые и системные).
+  TMHFolderFile = record
+    Name: string;
+    SizeBytes: Int64;
+    Attributes: Cardinal;
+  end;
+
+  /// Выбор файла из списка файлов папки (включая скрытые). Тесты подменяют.
+  TMHChooseInFolderFunc = reference to function(const AFolder: string; const AFiles: TArray<TMHFolderFile>;
+    out AFileName: string): Boolean;
+
   TMHBinaryLabPage = class(TComponent)
   public const
     TabOverview = 0;
@@ -62,6 +73,7 @@ type
     FServices: TMHAppServices;
     FOptions: TMHBinaryLabOptions;
     FChooseFile: TMHChooseFileFunc;
+    FChooseInFolder: TMHChooseInFolderFunc;
     // Панель действий и итог.
     FOpenButton, FCompareButton, FCancelButton, FExportButton, FCheckButton: TButton;
     /// Путь проверяемого файла: виден целиком, копируется, в него можно вставить свой путь.
@@ -174,6 +186,8 @@ type
     procedure StringsData(Sender: TObject; Item: TListItem);
     function DefaultChooseFile(const ATitle, AFilter, ADefaultName: string; ASave: Boolean;
       out AFileName: string): Boolean;
+    function DefaultChooseInFolder(const AFolder: string; const AFiles: TArray<TMHFolderFile>;
+      out AFileName: string): Boolean;
   public
     constructor Create(AOwner: TComponent; ASheet: TWinControl; AServices: TMHAppServices); reintroduce;
     destructor Destroy; override;
@@ -199,6 +213,10 @@ type
     property LastFindOffset: Int64 read FLastFindOffset;
     property Options: TMHBinaryLabOptions read FOptions write FOptions;
     property ChooseFile: TMHChooseFileFunc read FChooseFile write FChooseFile;
+    property ChooseInFolder: TMHChooseInFolderFunc read FChooseInFolder write FChooseInFolder;
+    /// Файлы папки (без вложенных папок), включая скрытые и системные, по имени.
+    /// False — папку не прочитать.
+    class function ListFolderFiles(const AFolder: string; out AFiles: TArray<TMHFolderFile>): Boolean; static;
     property Tabs: TPageControl read FTabs;
     property HexView: TMHHexView read FHex;
     property EntropyMap: TMHEntropyMap read FMap;
@@ -240,7 +258,8 @@ uses
   System.Math, System.SyncObjs, System.DateUtils, System.StrUtils, Vcl.Dialogs,
   MineHunter.Core.Interfaces, MineHunter.Core.Lang, MineHunter.Collectors.Files,
   MineHunter.BinaryLab.Analyzer, MineHunter.BinaryLab.Pe, MineHunter.BinaryLab.Diff,
-  MineHunter.BinaryLab.Report, MineHunter.BinaryLab.Verdicts;
+  MineHunter.BinaryLab.Report, MineHunter.BinaryLab.Verdicts, System.IOUtils, System.Generics.Defaults,
+  System.UITypes, Vcl.Forms, MineHunter.Core.FileScan, MineHunter.Core.FileScan.WinApi;
 
 const
   SECTION_COLORS: array[0..5] of TColor = ($F0B060, $60C060, $4090F0, $C070C0, $40C0C0, $B0A040);
@@ -294,6 +313,7 @@ begin
   FDiffOffsets := TList<Int64>.Create;
   FLastFindOffset := -1;
   FChooseFile := DefaultChooseFile;
+  FChooseInFolder := DefaultChooseInFolder;
   BuildToolbar(ASheet);
   FTabs := TPageControl.Create(Self);
   FTabs.Parent := ASheet;
@@ -413,15 +433,16 @@ begin
   FPathEdit.Parent := LTop;
   FPathEdit.SetBounds(8, 38, Max(200, LTop.Width - 8 - 130 - 16), 23);
   FPathEdit.Anchors := [akLeft, akTop, akRight];
-  FPathEdit.TextHint := MHL('Путь к файлу (можно вставить) — «Проверить». BinaryLab разбирает файл без запуска: ' +
-    'структура, энтропия, строки, вложения, аномалии.', 'File path (you can paste one) — “Check”. BinaryLab ' +
-    'analyses a file without running it: structure, entropy, strings, embedded objects, anomalies.');
+  FPathEdit.TextHint := MHL('Путь к файлу или папке (можно вставить) — «Проверить». BinaryLab разбирает файл без ' +
+    'запуска: структура, энтропия, строки, вложения, аномалии.', 'File or folder path (you can paste one) — “Check”. ' +
+    'BinaryLab analyses a file without running it: structure, entropy, strings, embedded objects, anomalies.');
   FPathEdit.OnKeyPress := PathEditKeyPress;
   FCheckButton := NewButton(LTop, MHL('Проверить', 'Check'), FPathEdit.Left + FPathEdit.Width + 8, 36, 130,
     CheckClick);
   FCheckButton.Anchors := [akTop, akRight];
-  FCheckButton.Hint := MHL('Проверить файл из поля (пустое поле — выбрать файл; тот же файл — проверить заново).',
-    'Check the file in the field (empty field — choose a file; the same file — check it again).');
+  FCheckButton.Hint := MHL('Проверить файл из поля (пустое поле — выбрать файл; папка — выбрать её файл, в том числе ' +
+    'скрытый; тот же файл — проверить заново).', 'Check the file in the field (empty field — choose a file; a folder — ' +
+    'choose one of its files, hidden ones included; the same file — check it again).');
   FCheckButton.ShowHint := True;
   FLevelShape := TShape.Create(Self);
   FLevelShape.Parent := LTop;
@@ -1467,7 +1488,8 @@ end;
 
 procedure TMHBinaryLabPage.CheckClick(Sender: TObject);
 var
-  LPath: string;
+  LPath, LFile: string;
+  LFiles: TArray<TMHFolderFile>;
 begin
   if FBusy then
     Exit;
@@ -1477,6 +1499,26 @@ begin
     OpenClick(Sender);
     Exit;
   end;
+  if DirectoryExists(LPath) then
+  begin
+    // Папка (в том числе скрытая): файлы показываются все — Проводник скрытые и системные не показывает.
+    if not ListFolderFiles(LPath, LFiles) then
+    begin
+      FLastError := MHL('Папку не прочитать: ', 'Cannot read the folder: ') + LPath;
+      SetStage(FLastError, 0);
+      Exit;
+    end;
+    if Length(LFiles) = 0 then
+    begin
+      FLastError := MHL('В папке нет файлов (в том числе скрытых): ', 'The folder has no files (hidden ones included): ') +
+        LPath;
+      SetStage(FLastError, 0);
+      Exit;
+    end;
+    if FChooseInFolder(LPath, LFiles, LFile) and (LFile <> '') then
+      OpenFile(TPath.Combine(LPath, LFile));
+    Exit;
+  end;
   if not FileExists(LPath) then
   begin
     FLastError := MHL('Файл не найден: ', 'File not found: ') + LPath;
@@ -1484,6 +1526,116 @@ begin
     Exit;
   end;
   OpenFile(LPath);
+end;
+
+class function TMHBinaryLabPage.ListFolderFiles(const AFolder: string; out AFiles: TArray<TMHFolderFile>): Boolean;
+var
+  LEntries: TArray<TMHFsEntry>;
+  LEntry: TMHFsEntry;
+  LFile: TMHFolderFile;
+  LFs: IMHFileScanFs;
+begin
+  AFiles := nil;
+  LFs := TMHWinFileScanFs.Create;
+  Result := LFs.ListDirectory(AFolder, LEntries);
+  if not Result then
+    Exit;
+  for LEntry in LEntries do
+    if not LEntry.IsDirectory then
+    begin
+      LFile.Name := LEntry.Name;
+      LFile.SizeBytes := LEntry.SizeBytes;
+      LFile.Attributes := LEntry.Attributes;
+      AFiles := AFiles + [LFile];
+    end;
+  TArray.Sort<TMHFolderFile>(AFiles, TComparer<TMHFolderFile>.Construct(
+    function(const A, B: TMHFolderFile): Integer
+    begin
+      Result := CompareText(A.Name, B.Name);
+    end));
+end;
+
+function TMHBinaryLabPage.DefaultChooseInFolder(const AFolder: string; const AFiles: TArray<TMHFolderFile>;
+  out AFileName: string): Boolean;
+var
+  LForm: TForm;
+  LList: TListView;
+  LNote: TLabel;
+  LButtons: TPanel;
+  LOk, LCancel: TButton;
+  LFile: TMHFolderFile;
+begin
+  AFileName := '';
+  LForm := TForm.CreateNew(nil);
+  try
+    LForm.Caption := MHL('Файлы папки — ', 'Folder files — ') + AFolder;
+    LForm.Position := poMainFormCenter;
+    LForm.BorderIcons := [biSystemMenu];
+    LForm.SetBounds(0, 0, 720, 420);
+    LNote := TLabel.Create(LForm);
+    LNote.Parent := LForm;
+    LNote.Align := alTop;
+    LNote.WordWrap := True;
+    LNote.AlignWithMargins := True;
+    LNote.ShowAccelChar := False;
+    LNote.Caption := MHL('Показаны все файлы, в том числе скрытые и системные — Проводник их по умолчанию не ' +
+      'показывает. Выберите файл для разбора (он не запускается).', 'All files are shown, hidden and system ones ' +
+      'included — Explorer does not show them by default. Choose a file to analyse (it is not run).');
+    LButtons := TPanel.Create(LForm);
+    LButtons.Parent := LForm;
+    LButtons.Align := alBottom;
+    LButtons.Height := 44;
+    LButtons.BevelOuter := bvNone;
+    LOk := TButton.Create(LForm);
+    LOk.Parent := LButtons;
+    LOk.SetBounds(8, 8, 140, 28);
+    LOk.Caption := MHL('Проверить', 'Check');
+    LOk.ModalResult := mrOk;
+    LOk.Default := True;
+    LCancel := TButton.Create(LForm);
+    LCancel.Parent := LButtons;
+    LCancel.SetBounds(156, 8, 100, 28);
+    LCancel.Caption := MHL('Отмена', 'Cancel');
+    LCancel.ModalResult := mrCancel;
+    LCancel.Cancel := True;
+    LList := TListView.Create(LForm);
+    LList.Parent := LForm;
+    LList.Align := alClient;
+    LList.ViewStyle := vsReport;
+    LList.ReadOnly := True;
+    LList.RowSelect := True;
+    LList.HideSelection := False;
+    with LList.Columns.Add do
+    begin
+      Caption := MHL('Файл', 'File');
+      Width := 300;
+    end;
+    with LList.Columns.Add do
+    begin
+      Caption := MHL('Размер, байт', 'Size, bytes');
+      Width := 120;
+      Alignment := taRightJustify;
+    end;
+    with LList.Columns.Add do
+    begin
+      Caption := MHL('Скрыт от Проводника', 'Hidden from Explorer');
+      Width := 220;
+    end;
+    for LFile in AFiles do
+      with LList.Items.Add do
+      begin
+        Caption := LFile.Name;
+        SubItems.Add(SizeText(LFile.SizeBytes));
+        SubItems.Add(MHHiddenAttributesText(LFile.Attributes));
+      end;
+    if LList.Items.Count > 0 then
+      LList.Items[0].Selected := True;
+    Result := (LForm.ShowModal = mrOk) and (LList.Selected <> nil);
+    if Result then
+      AFileName := LList.Selected.Caption;
+  finally
+    LForm.Free;
+  end;
 end;
 
 procedure TMHBinaryLabPage.PathEditKeyPress(Sender: TObject; var Key: Char);
@@ -1703,7 +1855,8 @@ begin
     try
       LOpen.Title := ATitle;
       LOpen.Filter := AFilter;
-      LOpen.Options := [ofFileMustExist, ofHideReadOnly, ofEnableSizing];
+      // Скрытые и системные файлы видны и при выключенном показе в Проводнике.
+      LOpen.Options := [ofFileMustExist, ofHideReadOnly, ofEnableSizing, ofForceShowHidden];
       Result := LOpen.Execute;
       if Result then
         AFileName := LOpen.FileName;

@@ -82,6 +82,7 @@ type
     [Test] procedure BinaryLab_PageMethods_WithoutDataAreSafe;
     [Test] procedure BinaryLab_DoubleClickEdgeCases;
     [Test] procedure BinaryLab_CheckButtonAndPathField;
+    [Test] procedure BinaryLab_FolderPath_ChoosesFileIncludingHidden;
     [Test] procedure Tables_DoubleBufferedAgainstFlicker;
     [Test] procedure Tables_CopyRowsAndFileMenus;
   end;
@@ -797,6 +798,73 @@ begin
   Assert.AreEqual(LChosen, LPage.PathEdit.Text);
   Assert.IsTrue(WaitForBinaryLab(30000));
   Assert.AreEqual(LChosen, LPage.Report.Path);
+end;
+
+procedure TMainFormSmokeTests.BinaryLab_FolderPath_ChoosesFileIncludingHidden;
+var
+  LPage: TMHBinaryLabPage;
+  LDir, LEmpty, LHidden, LChoice, LFolderSeen: string;
+  LSeen: TArray<TMHFolderFile>;
+  LCalls: Integer;
+  LFiles: TArray<TMHFolderFile>;
+begin
+  LPage := FForm.BinaryLabPage;
+  LDir := TPath.Combine(FTempDir, 'WindowsTask');
+  ForceDirectories(LDir);
+  TFile.Copy(WriteSample('amd-sample.exe', False), TPath.Combine(LDir, 'AMD.exe'));
+  TFile.WriteAllText(TPath.Combine(LDir, 'winlogon.bat'), '@echo off');
+  LHidden := TPath.Combine(LDir, 'AMD.exe');
+  ForceDirectories(TPath.Combine(LDir, 'sub')); // вложенные папки не показываются
+  Assert.IsTrue(SetFileAttributes(PChar(LHidden), FILE_ATTRIBUTE_HIDDEN or FILE_ATTRIBUTE_SYSTEM));
+  Assert.IsTrue(SetFileAttributes(PChar(LDir), FILE_ATTRIBUTE_HIDDEN or FILE_ATTRIBUTE_SYSTEM or
+    FILE_ATTRIBUTE_DIRECTORY));
+  try
+    // Список файлов папки: скрытые тоже, по имени, без вложенных папок.
+    Assert.IsTrue(TMHBinaryLabPage.ListFolderFiles(LDir, LFiles));
+    Assert.AreEqual(2, Integer(Length(LFiles)));
+    Assert.AreEqual('AMD.exe', LFiles[0].Name);
+    Assert.IsTrue(LFiles[0].Attributes and FILE_ATTRIBUTE_HIDDEN <> 0);
+    Assert.AreEqual('winlogon.bat', LFiles[1].Name);
+    Assert.AreEqual<Int64>(9, LFiles[1].SizeBytes);
+    Assert.IsFalse(TMHBinaryLabPage.ListFolderFiles(TPath.Combine(FTempDir, 'нет папки'), LFiles));
+
+    LCalls := 0;
+    LChoice := '';
+    LPage.ChooseInFolder :=
+      function(const AFolder: string; const AFiles: TArray<TMHFolderFile>; out AFileName: string): Boolean
+      begin
+        Inc(LCalls);
+        LFolderSeen := AFolder;
+        LSeen := AFiles;
+        AFileName := LChoice;
+        Result := LChoice <> '';
+      end;
+    // Отказ в выборе — ничего не запускается.
+    LPage.PathEdit.Text := '"' + LDir + '\"';
+    LPage.CheckButton.Click;
+    Assert.AreEqual(1, LCalls);
+    Assert.AreEqual(ExcludeTrailingPathDelimiter(LDir), ExcludeTrailingPathDelimiter(LFolderSeen));
+    Assert.AreEqual(2, Integer(Length(LSeen)), 'Скрытый файл в списке');
+    Assert.IsFalse(LPage.Busy);
+    Assert.AreEqual('', LPage.LastError, 'Папка — не ошибка «файл не найден»');
+    // Выбран скрытый системный файл — разбирается.
+    LChoice := 'AMD.exe';
+    LPage.CheckButton.Click;
+    Assert.IsTrue(LPage.Busy);
+    Assert.IsTrue(WaitForBinaryLab(30000));
+    Assert.AreEqual('', LPage.LastError);
+    Assert.IsTrue(SameText(LHidden, LPage.Report.Path), LPage.Report.Path);
+    // Пустая папка — понятное сообщение без выбора.
+    LEmpty := TPath.Combine(FTempDir, 'empty');
+    ForceDirectories(LEmpty);
+    LPage.PathEdit.Text := LEmpty;
+    LPage.CheckButton.Click;
+    Assert.AreEqual(2, LCalls);
+    Assert.Contains(LPage.LastError, 'нет файлов');
+  finally
+    SetFileAttributes(PChar(LHidden), FILE_ATTRIBUTE_NORMAL);
+    SetFileAttributes(PChar(LDir), FILE_ATTRIBUTE_DIRECTORY);
+  end;
 end;
 
 procedure TMainFormSmokeTests.Tables_DoubleBufferedAgainstFlicker;

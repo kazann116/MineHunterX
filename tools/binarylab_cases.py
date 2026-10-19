@@ -293,6 +293,9 @@ CASES = {
     'App.BinaryLabPage.FindPattern': ('без файла; пустой шаблон; не найдено → -1',
                                       ['BinaryLab_PageMethods_WithoutDataAreSafe',
                                        'BinaryLab_AnalyzeNavigateFindExportCompare']),
+    'App.BinaryLabPage.ListFolderFiles': ('скрытые и системные файлы; вложенные папки не показываются; '
+                                          'отсутствующая папка; пустая папка',
+                                          ['BinaryLab_FolderPath_ChoosesFileIncludingHidden']),
     'App.BinaryLabPage.CleanPath': ('пробелы и кавычки по краям; пустая строка; пустые кавычки; одна кавычка',
                                     ['BinaryLab_CheckButtonAndPathField']),
     'App.BinaryLabPage.OpenFile': ('пустой путь; отсутствующий файл; повторное открытие во время работы',

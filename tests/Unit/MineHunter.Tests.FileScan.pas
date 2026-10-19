@@ -50,6 +50,10 @@ type
     [Test] procedure Hidden_NoteExplainsFileAndFolders;
     [Test] procedure Hidden_NothingHiddenOrNoData_Empty;
     [Test] procedure Classify_KeepsAttributesInHit;
+    [Test] procedure AntivirusBlock_PolicyDetected;
+    [Test] procedure AntivirusBlock_OrdinaryPoliciesIgnored;
+    [Test] procedure Classify_AntivirusPolicyAndScript;
+    [Test] procedure ReadLimits_XmlOnlyHiddenOrSuspicious;
   end;
 
   [TestFixture]
@@ -508,6 +512,84 @@ begin
   Assert.IsTrue(MHClassifyFile('C:\Users\u\AppData\Roaming\svc\xmrig.exe', $26, 1000, nil, 'C:\Windows',
     TMHRiskThresholds.Default, LHit));
   Assert.AreEqual<Cardinal>($26, LHit.Attributes);
+end;
+
+const
+  // Фрагмент политики из набора C:\ProgramData\WindowsTask (сокращён).
+  AV_POLICY =
+    '<AppLockerPolicy Version="1">'#13#10 +
+    '  <RuleCollection Type="Exe" EnforcementMode="NotConfigured">'#13#10 +
+    '    <FilePublisherRule Id="1" Name="Подписано O=AO KASPERSKY LAB" UserOrGroupSid="S-1-1-0" Action="Deny">'#13#10 +
+    '      <Conditions><FilePublisherCondition PublisherName="O=AO KASPERSKY LAB, L=MOSCOW, C=RU" ' +
+    'ProductName="*" BinaryName="*" /></Conditions></FilePublisherRule>'#13#10 +
+    '    <FilePublisherRule Id="2" Name="ESET" UserOrGroupSid="S-1-1-0" Action="Deny">'#13#10 +
+    '      <Conditions><FilePublisherCondition PublisherName="O=ESET, SPOL. S R.O., L=BRATISLAVA, C=SK" ' +
+    'ProductName="*" BinaryName="*" /></Conditions></FilePublisherRule>'#13#10 +
+    '    <FilePublisherRule Id="3" Name="MBAM" UserOrGroupSid="S-1-1-0" Action="Deny">'#13#10 +
+    '      <Conditions><FilePublisherCondition PublisherName="O=MALWAREBYTES INC., S=CALIFORNIA, C=US" ' +
+    'ProductName="*" BinaryName="*" /></Conditions></FilePublisherRule>'#13#10 +
+    '  </RuleCollection>'#13#10 +
+    '</AppLockerPolicy>';
+
+procedure TFileScanRuleTests.AntivirusBlock_PolicyDetected;
+var
+  LText: string;
+begin
+  LText := MHFindAntivirusBlock(TEncoding.UTF8.GetBytes(AV_POLICY));
+  Assert.Contains(LText, 'запретов: 3');
+  Assert.Contains(LText, 'антивирусов в списке: 3');
+  Assert.Contains(LText, 'kaspersky, eset, malwarebytes');
+  // Политика в UTF-16 (так сохраняет Get-AppLockerPolicy -Xml) — то же.
+  Assert.AreEqual(LText, MHFindAntivirusBlock(TEncoding.Unicode.GetBytes(AV_POLICY)));
+  // Сценарий, применяющий политику.
+  Assert.AreEqual('Set-AppLockerPolicy', MHFindPolicyCommand(TEncoding.ANSI.GetBytes(
+    '@echo off'#13#10'PowerShell.exe -command "Import-Module applocker" ; ' +
+    '"Set-AppLockerPolicy -XMLPolicy C:\ProgramData\WindowsTask\new.xml"')));
+  Assert.AreEqual('Set-AppLockerPolicy', MHFindPolicyCommand(TEncoding.Unicode.GetBytes('set-applockerpolicy -x a')));
+end;
+
+procedure TFileScanRuleTests.AntivirusBlock_OrdinaryPoliciesIgnored;
+begin
+  Assert.AreEqual('', MHFindAntivirusBlock(nil));
+  Assert.AreEqual('', MHFindAntivirusBlock(TEncoding.UTF8.GetBytes('kaspersky eset action="deny"')),
+    'Не политика AppLocker');
+  // Корпоративная политика: разрешения и запрет одной программы — не находка.
+  Assert.AreEqual('', MHFindAntivirusBlock(TEncoding.UTF8.GetBytes(
+    '<AppLockerPolicy><FilePublisherRule Action="Allow" Name="KASPERSKY ESET" /></AppLockerPolicy>')),
+    'Только разрешения');
+  Assert.AreEqual('', MHFindAntivirusBlock(TEncoding.UTF8.GetBytes(
+    '<AppLockerPolicy><FilePublisherRule Action="Deny" Name="O=AO KASPERSKY LAB" /></AppLockerPolicy>')),
+    'Один издатель — может быть обычной политикой');
+  Assert.AreEqual('', MHFindPolicyCommand(TEncoding.ANSI.GetBytes('Get-AppLockerPolicy -Effective')));
+  Assert.AreEqual('', MHFindPolicyCommand(nil));
+end;
+
+procedure TFileScanRuleTests.Classify_AntivirusPolicyAndScript;
+var
+  LHit: TMHScanHit;
+begin
+  Assert.IsTrue(MHClassifyFile('C:\ProgramData\WindowsTask\new.xml', $26, Length(AV_POLICY),
+    TEncoding.UTF8.GetBytes(AV_POLICY), 'C:\Windows', TMHRiskThresholds.Default, LHit));
+  Assert.AreEqual(EV_FILE_AV_BLOCK, LHit.Evidence[0].Code);
+  Assert.IsTrue(LHit.Score >= 85, IntToStr(LHit.Score));
+  Assert.IsTrue(Ord(LHit.Level) >= Ord(rlHighlySuspicious), 'Высокая степень подозрения');
+  Assert.IsTrue(MHClassifyFile('C:\ProgramData\WindowsTask\winlogon.bat', $26, 120, TEncoding.ANSI.GetBytes(
+    'PowerShell.exe -command "Set-AppLockerPolicy -XMLPolicy C:\ProgramData\WindowsTask\new.xml"'),
+    'C:\Windows', TMHRiskThresholds.Default, LHit));
+  Assert.AreEqual(EV_FILE_POLICY_SCRIPT, LHit.Evidence[0].Code);
+  // Тот же текст в документе (.txt) — не сценарий: только политика считается.
+  Assert.IsFalse(MHClassifyFile('C:\Users\u\Documents\notes.txt', 0, 40, TEncoding.ANSI.GetBytes(
+    'how to use Set-AppLockerPolicy'), 'C:\Windows', TMHRiskThresholds.Default, LHit));
+end;
+
+procedure TFileScanRuleTests.ReadLimits_XmlOnlyHiddenOrSuspicious;
+begin
+  Assert.AreEqual(31199, MHScanReadLimit('C:\ProgramData\WindowsTask\new.xml', $26, 31199), 'Скрытый системный');
+  Assert.AreEqual(500, MHScanReadLimit('D:\Projects\app\settings.xml', $2, 500), 'Скрытый');
+  Assert.AreEqual(0, MHScanReadLimit('D:\Projects\app\settings.xml', $20, 500), 'Обычный XML не читается');
+  Assert.AreEqual(0, MHScanReadLimit('C:\ProgramData\WindowsTask\new.xml', $26, MH_SCAN_TEXT_LIMIT + 1),
+    'Больше лимита текста');
+  Assert.AreEqual(0, MHScanReadLimit('C:\ProgramData\WindowsTask\new.xml', $26, 0));
 end;
 
 procedure TFileScanIntegrationTests.RealHiddenSystemFile_AttributesAndNote;

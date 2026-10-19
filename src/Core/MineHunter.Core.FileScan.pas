@@ -34,6 +34,8 @@ const
   EV_FILE_MINER_STRINGS = 'FILE_MINER_STRINGS';
   EV_FILE_LOCATION = 'FILE_SUSPICIOUS_LOCATION';
   EV_FILE_NEAR_MINER = 'FILE_NEAR_MINER';
+  EV_FILE_AV_BLOCK = 'FILE_ANTIVIRUS_BLOCK';
+  EV_FILE_POLICY_SCRIPT = 'FILE_APPLOCKER_SCRIPT';
 
   FILE_ATTRIBUTE_HIDDEN_MH = $2;
   FILE_ATTRIBUTE_SYSTEM_MH = $4;
@@ -126,6 +128,14 @@ function MHScanReadLimit(const APath: string; AAttributes: Cardinal; ASize: Int6
 /// Признак майнера в содержимом ('' — нет): адрес пула, параметры, имя алгоритма.
 function MHFindMinerMarker(const AData: TBytes): string;
 
+/// Политика AppLocker, запрещающая запуск антивирусов (правила Deny с издателями
+/// антивирусов): так майнеры не дают себя найти и удалить. '' — нет; иначе — краткое описание
+/// («запретов: 47; Kaspersky, ESET, …»). Текст в ANSI/UTF-8 или UTF-16.
+function MHFindAntivirusBlock(const AData: TBytes): string;
+
+/// Сценарий применяет политику AppLocker (Set-AppLockerPolicy). '' — нет.
+function MHFindPolicyCommand(const AData: TBytes): string;
+
 const
   /// Атрибуты не прочитаны (INVALID_FILE_ATTRIBUTES).
   MH_NO_ATTRIBUTES = Cardinal($FFFFFFFF);
@@ -155,6 +165,16 @@ const
   TEXT_EXTENSIONS: array[0..7] of string = ('.json', '.conf', '.cfg', '.txt', '.ini', '.yaml', '.yml', '.config');
   SCRIPT_EXTENSIONS: array[0..8] of string = ('.bat', '.cmd', '.ps1', '.vbs', '.vbe', '.js', '.jse', '.wsf', '.hta');
   BINARY_EXTENSIONS: array[0..4] of string = ('.exe', '.dll', '.scr', '.com', '.sys');
+  /// Файлы политик и заданий: читаются только скрытые/системные и в подозрительных местах
+  /// (XML на диске много — читать каждый было бы долго).
+  POLICY_EXTENSIONS: array[0..0] of string = ('.xml');
+  /// Издатели антивирусов и средств удаления вредоносных программ (по полю O= сертификата).
+  ANTIVIRUS_PUBLISHERS: array[0..23] of string = ('kaspersky', 'eset', 'malwarebytes', 'doctor web', 'avast',
+    'avg technologies', 'bitdefender', 'mcafee', 'nortonlifelock', 'symantec', 'sophos', 'trend micro',
+    'panda security', 'avira', 'emsisoft', 'comodo', 'webroot', 'ahnlab', 'zemana', 'gridinsoft', 'adlice',
+    'surfright', 'cezurity', 'microworld');
+  /// Нет записи «Microsoft Windows» в этом списке: Защитник запрещают отдельно, а правило на
+  /// подпись Microsoft встречается и в обычных корпоративных политиках.
   /// Признаки майнера в тексте и в бинарных файлах (в нижнем регистре).
   MINER_MARKERS: array[0..9] of string = ('stratum+tcp://', 'stratum+ssl://', 'stratum2+tcp://',
     'stratum1+tcp://', '"donate-level"', '--donate-level', 'xmrig.com', 'cryptonight', '"randomx"',
@@ -232,6 +252,84 @@ begin
   end;
 end;
 
+/// Текст в нижнем регистре: нулевые байты (UTF-16) убираются, непечатные — пробел.
+/// Кириллица и прочие не-ASCII символы заменяются пробелом: ищутся ASCII-слова.
+function LowerAsciiText(const AData: TBytes): string;
+var
+  I, N: Integer;
+  B: Byte;
+begin
+  SetLength(Result, Length(AData));
+  N := 0;
+  for I := 0 to High(AData) do
+  begin
+    B := AData[I];
+    if B = 0 then
+      Continue;
+    if (B >= Ord('A')) and (B <= Ord('Z')) then
+      B := B + 32
+    else if (B < 32) or (B >= 127) then
+      B := 32;
+    Inc(N);
+    Result[N] := Char(B);
+  end;
+  SetLength(Result, N);
+end;
+
+function CountOccurrences(const AText, ASub: string): Integer;
+var
+  P: Integer;
+begin
+  Result := 0;
+  P := Pos(ASub, AText);
+  while P > 0 do
+  begin
+    Inc(Result);
+    P := Pos(ASub, AText, P + Length(ASub));
+  end;
+end;
+
+function MHFindAntivirusBlock(const AData: TBytes): string;
+var
+  LText, LVendor, LVendors: string;
+  LDeny, LFound: Integer;
+begin
+  Result := '';
+  if Length(AData) = 0 then
+    Exit;
+  LText := LowerAsciiText(AData);
+  if Pos('<applockerpolicy', LText) = 0 then
+    Exit;
+  LDeny := CountOccurrences(LText, 'action="deny"');
+  if LDeny = 0 then
+    Exit;
+  LFound := 0;
+  LVendors := '';
+  for LVendor in ANTIVIRUS_PUBLISHERS do
+    if Pos(LVendor, LText) > 0 then
+    begin
+      Inc(LFound);
+      if LFound <= 6 then
+        LVendors := LVendors + IfThen(LVendors <> '', ', ', '') + LVendor;
+    end;
+  // Одно совпадение может быть случайным (обычная политика с одним правилом);
+  // запрет нескольких антивирусов — нет.
+  if LFound < 2 then
+    Exit;
+  if LFound > 6 then
+    LVendors := LVendors + ', …';
+  Result := Format(MHL('запретов: %d; антивирусов в списке: %d (%s)', 'deny rules: %d; antivirus vendors: %d (%s)'),
+    [LDeny, LFound, LVendors]);
+end;
+
+function MHFindPolicyCommand(const AData: TBytes): string;
+begin
+  if (Length(AData) > 0) and (Pos('set-applockerpolicy', LowerAsciiText(AData)) > 0) then
+    Result := 'Set-AppLockerPolicy'
+  else
+    Result := '';
+end;
+
 function IsInsideWindows(const APath, AWindowsDir: string): Boolean;
 var
   LPath, LWin: string;
@@ -254,6 +352,12 @@ begin
   if InList(LExt, TEXT_EXTENSIONS) or InList(LExt, SCRIPT_EXTENSIONS) then
   begin
     if ASize <= MH_SCAN_TEXT_LIMIT then
+      Result := ASize;
+  end
+  else if InList(LExt, POLICY_EXTENSIONS) then
+  begin
+    if (ASize <= MH_SCAN_TEXT_LIMIT) and (MHIsSuspiciousLocation(APath, LReason) or
+       ((AAttributes and (FILE_ATTRIBUTE_HIDDEN_MH or FILE_ATTRIBUTE_SYSTEM_MH)) <> 0)) then
       Result := ASize;
   end
   else if InList(LExt, BINARY_EXTENSIONS) and (ASize <= MH_SCAN_BINARY_LIMIT) and
@@ -299,6 +403,20 @@ begin
 
   if Length(AHead) > 0 then
   begin
+    // Защита от антивирусов: политика запрета и сценарий, который её применяет.
+    LToken := MHFindAntivirusBlock(AHead);
+    if LToken <> '' then
+      LEvidence := LEvidence + [TMHEvidence.Create(EV_FILE_AV_BLOCK,
+        MHL('Политика AppLocker запрещает запуск антивирусов', 'An AppLocker policy blocks antivirus programs'),
+        85, LToken)];
+    if LScript then
+    begin
+      LToken := MHFindPolicyCommand(AHead);
+      if LToken <> '' then
+        LEvidence := LEvidence + [TMHEvidence.Create(EV_FILE_POLICY_SCRIPT,
+          MHL('Сценарий меняет политику запуска программ (AppLocker)',
+            'The script changes the program launch policy (AppLocker)'), 45, LToken)];
+    end;
     LMarker := MHFindMinerMarker(AHead);
     if LMarker <> '' then
     begin
