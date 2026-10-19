@@ -83,10 +83,31 @@ var
   LRowHeight, LHeaderHeight, LColumns, LClientWidth, LBorder, I: Integer;
   LStyle: NativeInt;
 begin
+  // Настоящая высота строки, а не оценка по шрифту: иначе таблица меняла бы высоту,
+  // когда в ней появляются или пропадают строки (и вместе с ней — прокрутка страницы).
+  // Измеренное значение запоминается в Tag; пустую таблицу меряем временной строкой.
   LRowHeight := 0;
+  if AList.HandleAllocated and (AList.Items.Count = 0) and (AList.Tag <= 0) and not AList.OwnerData then
+  begin
+    AList.Items.BeginUpdate;
+    try
+      AList.Items.Add;
+      if ListView_GetItemRect(AList.Handle, 0, LRect, LVIR_BOUNDS) then
+        AList.Tag := LRect.Bottom - LRect.Top;
+      AList.Items.Delete(0);
+    finally
+      AList.Items.EndUpdate;
+    end;
+  end;
   if AList.HandleAllocated and (AList.Items.Count > 0) and
      ListView_GetItemRect(AList.Handle, 0, LRect, LVIR_BOUNDS) then
+  begin
     LRowHeight := LRect.Bottom - LRect.Top;
+    if LRowHeight > 0 then
+      AList.Tag := LRowHeight;
+  end;
+  if (LRowHeight <= 0) and (AList.Tag > 0) then
+    LRowHeight := AList.Tag;
   if LRowHeight <= 0 then
     LRowHeight := DefaultRowHeight(AList);
   LHeaderHeight := 0;

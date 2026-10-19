@@ -156,6 +156,8 @@ const
   HISTORY_POINTS = 300;
   /// Высота графика сети и видеокарт под таблицей.
   CHART_HEIGHT = 320;
+  /// Строк в «Кто больше всего читает и пишет».
+  IO_ROWS = 10;
   TOTAL_KEY = 'total';
   /// Ряд передачи сетевого адаптера (приём — основной ряд).
   TX_SUFFIX = ':tx';
@@ -459,13 +461,18 @@ begin
     Exit;
   FDiskPanel.Height := Max(MIN_DISK_PANEL, MHListFitHeight(FDisks, 2));
   FVolRow.Height := CAPTION_HEIGHT + Max(MHListFitHeight(FVolumes, 2), MHListFitHeight(FAttrs, 2));
-  MHFitListHeight(FIo, 3);
+  // Число программ меняется каждый цикл — место всегда под IO_ROWS строк, иначе высота
+  // вкладки скачет и полоса прокрутки страницы то появляется, то исчезает.
+  MHFitListHeight(FIo, IO_ROWS);
   MHFitListHeight(FHitsView, 3);
   MHFitListHeight(FNet, 2);
   MHFitListHeight(FGpu, 2);
   // График под таблицей — до низа вкладки, но не ниже CHART_HEIGHT.
-  FNetChart.Height := Max(CHART_HEIGHT, FNetScroll.ClientHeight - (FNet.Top + FNet.Height) - 2);
-  FGpuChart.Height := Max(CHART_HEIGHT, FGpuScroll.ClientHeight - (FGpu.Top + FGpu.Height) - 2);
+  // Top внутри прокрученной области отсчитывается от текущей позиции прокрутки.
+  FNetChart.Height := Max(CHART_HEIGHT, FNetScroll.ClientHeight -
+    (FNet.Top + FNetScroll.VertScrollBar.Position + FNet.Height) - 2);
+  FGpuChart.Height := Max(CHART_HEIGHT, FGpuScroll.ClientHeight -
+    (FGpu.Top + FGpuScroll.VertScrollBar.Position + FGpu.Height) - 2);
 end;
 
 destructor TMHDisksPage.Destroy;
@@ -735,7 +742,7 @@ begin
     FIo.Items.BeginUpdate;
     try
       FIo.Items.Clear;
-      for I := 0 to Min(LList.Count, 10) - 1 do
+      for I := 0 to Min(LList.Count, IO_ROWS) - 1 do
       begin
         LItem := FIo.Items.Add;
         LItem.Caption := LList[I].Name;

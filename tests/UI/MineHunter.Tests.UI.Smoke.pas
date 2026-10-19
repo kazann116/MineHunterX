@@ -1467,12 +1467,19 @@ begin
   end;
 end;
 
+function IoProcess(APid: Cardinal; const AName: string): TMHProcessInfo;
+begin
+  Result := TMHProcessInfo.Create(TMHProcessId.Create(APid, APid), AName, Now);
+  Result.IoRead := TMHMetric.Available(mkDiskReadBytesPerSec, 1024 * 1024, Now);
+  Result.IoWrite := TMHMetric.Available(mkDiskWriteBytesPerSec, 0, Now);
+end;
+
 procedure TMainFormSmokeTests.Pages_TablesShownWholeAndWheelScrollsPage;
 var
   LPage: TMHDisksPage;
   LSnapshot: TMHSnapshot;
   LVolumes: TArray<TMHVolumeInfo>;
-  I, LBefore: Integer;
+  I, LBefore, LIoHeight: Integer;
   LHandled: Boolean;
   LPoint: TPoint;
   LMsg: TMsg;
@@ -1500,6 +1507,18 @@ begin
     Assert.AreEqual(14, LPage.VolumesView.Items.Count);
     Assert.IsFalse(MHListCanScroll(LPage.VolumesView), 'Разделы — без своей прокрутки');
     Assert.IsFalse(MHListCanScroll(LPage.IoView));
+    // Высота «Кто читает и пишет» не зависит от числа программ (иначе прыгает полоса прокрутки).
+    LIoHeight := LPage.IoView.Height;
+    LSnapshot := TMHSnapshot.Create(2, FServices.Clock.NowUtc);
+    LSnapshot.Volumes := LVolumes;
+    LSnapshot.Processes := [IoProcess(4001, 'a.exe'), IoProcess(4002, 'b.exe')];
+    LPage.UpdateSnapshot(LSnapshot);
+    Assert.AreEqual(2, LPage.IoView.Items.Count);
+    Assert.AreEqual(LIoHeight, LPage.IoView.Height, 'Две программы — та же высота');
+    LSnapshot := TMHSnapshot.Create(3, FServices.Clock.NowUtc);
+    LSnapshot.Volumes := LVolumes;
+    LPage.UpdateSnapshot(LSnapshot);
+    Assert.AreEqual(LIoHeight, LPage.IoView.Height, 'Ни одной — та же высота');
     Assert.IsTrue(LPage.DiskScroll.VertScrollBar.IsScrollBarVisible, 'Прокручивается вкладка');
     LPage.DiskScroll.VertScrollBar.Position := 0;
     LPoint := LPage.VolumesView.ClientToScreen(Point(20, 40));
