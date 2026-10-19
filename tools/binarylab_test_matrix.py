@@ -100,6 +100,24 @@ def public_api(path):
     return names
 
 
+RESULT_FILES = {'Debug': os.path.join(ROOT, 'build', 'tests-Debug.xml'),
+                'Release': os.path.join(ROOT, 'build', 'tests-Release.xml')}
+
+
+def load_results():
+    """Итоги прогонов DUnitX (NUnit XML): сборка → {тест: пройден}. Нет файла — сборка пропускается."""
+    results = {}
+    for config, path in RESULT_FILES.items():
+        if not os.path.exists(path):
+            continue
+        text = open(path, encoding='utf-8', errors='replace').read()
+        cases = {}
+        for m in re.finditer(r'<test-case name="([^"]+)"[^>]*\bsuccess="(True|False)"', text):
+            cases[m.group(1)] = cases.get(m.group(1), True) and m.group(2) == 'True'
+        results[config] = cases
+    return results
+
+
 HELPERS = []  # (имя, тело) всех вспомогательных подпрограмм тестов, включая перегрузки
 
 
@@ -171,6 +189,7 @@ def assertion_lines(lines, pattern, test):
 
 def main():
     tests = test_procedures()
+    results = load_results()
     rows = []
     missing = []
     used = set()
@@ -204,8 +223,20 @@ def main():
                     checks += assertion_lines(lines, check_pattern, test)
             if case_tests and not checks:
                 missing.append('%s — нет строк Assert, проверяющих функцию' % key)
+            # Тесты случаев должны быть в последнем прогоне каждой сборки и пройти.
+            run = []
+            for config, cases_run in results.items():
+                passed = sum(1 for t in case_tests if cases_run.get(t) is True)
+                for t in case_tests:
+                    if t not in cases_run:
+                        missing.append('%s — тест %s не выполнялся в %s' % (key, t, config))
+                    elif not cases_run[t]:
+                        missing.append('%s — тест %s не пройден в %s' % (key, t, config))
+                run.append('%s %d/%d' % (config, passed, len(case_tests)))
+            run_text = ', '.join(run) or 'не запускались'
+
             used.add(key)
-            rows.append((unit, name, hits, (cases, case_tests), checks))
+            rows.append((unit, name, hits, (cases, case_tests, run_text), checks))
             if not hits:
                 missing.append('%s.%s' % (unit, name))
     out = ['# BinaryLab: матрица «функция → тесты»', '',
@@ -214,22 +245,31 @@ def main():
            'проверяют. Генератор сверяет каждую запись с кодом: тест существует, вызывает функцию и содержит Assert.',
            'Внутренние методы отрисовки и потоков проверяются через публичное поведение страницы и элементов.', '',
            '## Требования ТЗ → тесты', '',
-           '| Требование | Тесты (граничные и ошибочные случаи) |', '|---|---|']
+           'Колонка «Прогон» — итоги последнего запуска всех тестов (`build/tests-Debug.xml`,',
+           '`build/tests-Release.xml`, отчёты NUnit XML DUnitX): сколько тестов случаев выполнено и пройдено.', '',
+           '| Требование | Тесты (граничные и ошибочные случаи) | Прогон |', '|---|---|---|']
     for requirement, names in REQUIREMENTS:
         found = [n for n in names if any(proc == n for _u, _f, proc, _b, _l in tests)]
         if len(found) != len(names):
             missing.append('ТЗ: %s — нет тестов %s' % (requirement, sorted(set(names) - set(found))))
-        out.append('| %s | %s |' % (requirement, ', '.join('`%s`' % n for n in names)))
+        run = []
+        for config, cases_run in results.items():
+            passed = sum(1 for n in names if cases_run.get(n) is True)
+            if passed != len(names):
+                missing.append('ТЗ: %s — в %s пройдено %d из %d' % (requirement, config, passed, len(names)))
+            run.append('%s %d/%d' % (config, passed, len(names)))
+        out.append('| %s | %s | %s |' % (requirement, ', '.join('`%s`' % n for n in names),
+                                         ', '.join(run) or 'не запускались'))
     out += ['', '## Публичные функции → тесты', '',
-            '| Модуль | Функция | Граничные и ошибочные случаи | Тесты этих случаев | Все тесты с вызовом |',
-            '|---|---|---|---|---|']
+            '| Модуль | Функция | Граничные и ошибочные случаи | Тесты этих случаев | Прогон | Все тесты с вызовом |',
+            '|---|---|---|---|---|---|']
     for key in sorted(set(CASES) - used):
         missing.append('%s — запись реестра без функции' % key)
-    for unit, name, hits, (cases, case_tests), _checks in rows:
+    for unit, name, hits, (cases, case_tests, run_text), _checks in rows:
         shown = ', '.join(hits[:4]) + (' и ещё %d' % (len(hits) - 4) if len(hits) > 4 else '')
-        out.append('| `%s` | `%s` | %s | %s | %s |' % (unit.replace('MineHunter.', ''), name, cases or '**нет**',
-                                                       ', '.join('`%s`' % t for t in case_tests) or '**нет**',
-                                                       shown or '**нет**'))
+        out.append('| `%s` | `%s` | %s | %s | %s | %s |' % (unit.replace('MineHunter.', ''), name, cases or '**нет**',
+                                                            ', '.join('`%s`' % t for t in case_tests) or '**нет**',
+                                                            run_text, shown or '**нет**'))
     out += ['', '## Проверки по функциям', '',
             'Строки `Assert`, которые проверяют функцию в тестах её граничных и ошибочных случаев: строка с',
             'вызовом функции или проверка сразу после вызова (файл:строка — текст проверки).', '']
@@ -243,7 +283,10 @@ def main():
         if len(checks) > 12:
             out.append('- … и ещё %d' % (len(checks) - 12))
         out.append('')
-    out += ['Функций: %d, проверок: %d, пропусков: %d.' % (len(rows), total_checks, len(missing))]
+    out += ['Функций: %d, проверок: %d, пропусков: %d. Прогоны: %s.' % (
+        len(rows), total_checks, len(missing),
+        ', '.join('%s — %d тестов, пройдено %d' % (c, len(r), sum(1 for v in r.values() if v))
+                  for c, r in results.items()) or 'нет')]
     target = os.path.join(ROOT, 'docs', 'binarylab-tests.md')
     with open(target, 'w', encoding='utf-8-sig', newline='\n') as f:
         f.write('\n'.join(out) + '\n')
