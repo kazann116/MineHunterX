@@ -70,6 +70,7 @@ type
     [Test] procedure Devices_NetworkAndGpuTabsWithTotalsAndCharts;
     [Test] procedure Disks_AttributesOfSelectedDisk;
     [Test] procedure Pages_TablesShownWholeAndWheelScrollsPage;
+    [Test] procedure Settings_CheckedFindingsAfterAllowedPrograms_DataFolder;
   end;
 
 implementation
@@ -88,7 +89,7 @@ uses
   MineHunter.Tests.Appearance, MineHunter.Tests.Disks, MineHunter.Tests.FileScan,
   MineHunter.Collectors.Disks, MineHunter.Core.FileScan, MineHunter.App.DisksPage,
   Winapi.CommCtrl, Winapi.Messages, Vcl.Forms, Vcl.Controls, System.Types, MineHunter.App.ListViews,
-  MineHunter.Tests.Fakes;
+  MineHunter.Tests.Fakes, MineHunter.Core.DataDir;
 
 var
   // Подмена операций ОС для тестов действий (nil — настоящие операции).
@@ -1372,6 +1373,64 @@ begin
   FForm.LaunchesPage.FilterEdit.Text := 'APP3'; // OnChange перечитывает журнал
   Assert.AreEqual(1, FForm.LaunchesPage.List.Items.Count);
   Assert.AreEqual('app3.exe', FForm.LaunchesPage.List.Items[0].SubItems[0]);
+end;
+
+procedure TMainFormSmokeTests.Settings_CheckedFindingsAfterAllowedPrograms_DataFolder;
+var
+  LRoot, LTarget, LError, LAsked: string;
+  LRestarted: Boolean;
+  LPointer: TMHDataDirPointer;
+begin
+  // «Проверенные находки» — сразу после «Разрешённых программ», затем журнал действий.
+  Assert.IsTrue(FForm.AckBox.Top > FForm.gbExclusions.Top);
+  Assert.IsTrue(FForm.AckBox.Top - (FForm.gbExclusions.Top + FForm.gbExclusions.Height) <= 24,
+    'Сразу под «Разрешёнными программами»');
+  Assert.IsTrue(FForm.gbActionLog.Top > FForm.AckBox.Top + FForm.AckBox.Height, 'Журнал действий — ниже');
+
+  // Папка данных: подтверждение, указатель и перезапуск (в тестовой стандартной папке).
+  LRoot := TPath.Combine(TPath.GetTempPath, 'MineHunterTests\ui-datadir-' +
+    TGUID.NewGuid.ToString.Replace('{', '').Replace('}', ''));
+  try
+    FForm.DataDirRoot := TPath.Combine(LRoot, 'Standard');
+    ForceDirectories(FForm.DataDirRoot);
+    LTarget := TPath.Combine(LRoot, 'Moved');
+    LRestarted := False;
+    FForm.RestartAction :=
+      procedure
+      begin
+        LRestarted := True;
+      end;
+    LAsked := '';
+    FForm.ConfirmAction :=
+      function(const AQuestion: string): Boolean
+      begin
+        LAsked := AQuestion;
+        Result := False;
+      end;
+    Assert.IsFalse(FForm.ChangeDataFolder(LTarget, LError));
+    Assert.IsTrue(LAsked.Contains(LTarget), LAsked);
+    Assert.IsTrue(LAsked.Contains('останется'), 'Старая папка не удаляется: ' + LAsked);
+    Assert.IsFalse(LRestarted, 'Без подтверждения ничего не меняется');
+    Assert.IsFalse(MHReadDataDirPointer(FForm.DataDirRoot, LPointer));
+    FForm.ConfirmAction :=
+      function(const AQuestion: string): Boolean
+      begin
+        Result := True;
+      end;
+    Assert.IsTrue(FForm.ChangeDataFolder(LTarget, LError), LError);
+    Assert.IsTrue(LRestarted, 'Перезапуск для переноса');
+    Assert.IsTrue(MHReadDataDirPointer(FForm.DataDirRoot, LPointer));
+    Assert.AreEqual(LTarget, LPointer.DataDir);
+    Assert.IsTrue(FForm.DefaultDataButton.Enabled, 'Можно вернуть стандартную папку');
+    Assert.IsFalse(FForm.ChangeDataFolder('relative', LError));
+    Assert.IsNotEmpty(LError);
+  finally
+    try
+      TDirectory.Delete(LRoot, True);
+    except
+      // Временный каталог тестов.
+    end;
+  end;
 end;
 
 procedure TMainFormSmokeTests.Pages_TablesShownWholeAndWheelScrollsPage;

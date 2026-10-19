@@ -176,7 +176,7 @@ type
     property RecoveredFrom: string read FRecoveredFrom;
   end;
 
-/// Стандартный путь базы истории: %LOCALAPPDATA%\MineHunterX\history.db.
+/// Путь базы истории: <папка данных>\history.db (по умолчанию %LOCALAPPDATA%\MineHunterX).
 function MHDefaultHistoryPath: string;
 
 /// Время UTC <-> миллисекунды Unix (формат хранения в базе).
@@ -192,7 +192,7 @@ implementation
 uses
   System.Classes, System.Variants, System.Math, System.DateUtils, System.IOUtils,
   System.Generics.Collections, System.Generics.Defaults,
-  Winapi.Windows, Winapi.ShlObj,
+  Winapi.Windows, Winapi.ShlObj, MineHunter.Core.DataDir,
   Data.DB,
   FireDAC.Stan.Intf, FireDAC.Stan.Option, FireDAC.Stan.Error, FireDAC.Stan.Def,
   FireDAC.Stan.Async, FireDAC.Stan.Param, FireDAC.Phys.Intf, FireDAC.Phys,
@@ -335,13 +335,8 @@ const
     '    THEN excluded.json ELSE findings.json END';
 
 function MHDefaultHistoryPath: string;
-var
-  LPath: array[0..MAX_PATH] of Char;
 begin
-  if Succeeded(SHGetFolderPath(0, CSIDL_LOCAL_APPDATA, 0, 0, @LPath[0])) then
-    Result := TPath.Combine(TPath.Combine(string(LPath), 'MineHunterX'), 'history.db')
-  else
-    Result := TPath.Combine(TPath.Combine(TPath.GetTempPath, 'MineHunterX'), 'history.db');
+  Result := TPath.Combine(MHDataDir, 'history.db');
 end;
 
 function MHUtcToUnixMs(AUtc: TDateTime): Int64;

@@ -73,6 +73,7 @@ type
     [Setup] procedure Setup;
     [TearDown] procedure TearDown;
     [Test] procedure File_QuarantineAndRestore_RoundTrip;
+    [Test] procedure File_RestoreAfterDataFolderMove;
     [Test] procedure File_RefusesWindowsSelfInvalidAndMissing;
     [Test] procedure File_Locked_RollsBackAndExplains;
     [Test] procedure File_AccessDenied_SuggestsAdmin;
@@ -388,6 +389,42 @@ begin
   FOps.GetAttributes('C:\ProgramData\WindowsTask\AMD.exe', LAttr);
   Assert.AreEqual(Cardinal($6), LAttr, 'Атрибуты восстановлены');
   Assert.AreEqual(0, Integer(Length(FQuarantine.Items)), 'Запись удалена после восстановления');
+end;
+
+procedure TQuarantineTests.File_RestoreAfterDataFolderMove;
+var
+  LKey: string;
+  LMoved: TMHQuarantine;
+  LItems: TArray<TMHQuarantineItem>;
+  LResult: TMHActionResult;
+begin
+  FOps.AddFile('C:\ProgramData\WindowsTask\AMD.exe', 'miner', 0);
+  Assert.IsTrue(FQuarantine.QuarantineFile('C:\ProgramData\WindowsTask\AMD.exe', 'r').Succeeded);
+  // Папка данных перенесена (C:\Q → D:\Data\Q), старая удалена пользователем.
+  for LKey in FOps.Files.Keys.ToArray do
+    if LKey.StartsWith('c:\q\') then
+    begin
+      FOps.Files.AddOrSetValue('d:\data\q\' + Copy(LKey, 6, MaxInt), FOps.Files[LKey]);
+      FOps.Files.Remove(LKey);
+    end;
+  for LKey in FOps.Dirs.ToArray do
+    if (LKey = 'c:\q') or LKey.StartsWith('c:\q\') then
+    begin
+      FOps.Dirs.Add('d:\data\q' + Copy(LKey, 5, MaxInt));
+      FOps.Dirs.Remove(LKey);
+    end;
+  LMoved := TMHQuarantine.Create(FOpsIntf, FLogIntf, TFakeClock.Create(FAKE_NOW), 'D:\Data\Q');
+  try
+    LItems := LMoved.Items;
+    Assert.AreEqual(1, Integer(Length(LItems)));
+    Assert.IsTrue(LItems[0].StoredPath.ToLower.StartsWith('d:\data\q\'),
+      'Путь файла — в новой папке: ' + LItems[0].StoredPath);
+    LResult := LMoved.Restore(LItems[0].Id);
+    Assert.IsTrue(LResult.Succeeded, LResult.Message);
+    Assert.IsTrue(FOps.FileExists('C:\ProgramData\WindowsTask\AMD.exe'), 'Восстановлен после переноса');
+  finally
+    LMoved.Free;
+  end;
 end;
 
 procedure TQuarantineTests.File_RefusesWindowsSelfInvalidAndMissing;

@@ -76,6 +76,7 @@
             <MainSource>MainSource</MainSource>
         </DelphiCompile>
         <DCCReference Include="..\src\Core\MineHunter.Core.Lang.pas"/>
+        <DCCReference Include="..\src\Core\MineHunter.Core.DataDir.pas"/>
         <DCCReference Include="..\src\Core\MineHunter.Core.Types.pas"/>
         <DCCReference Include="..\src\Core\MineHunter.Core.Interfaces.pas"/>
         <DCCReference Include="..\src\Core\MineHunter.Core.Calc.pas"/>
@@ -109,6 +110,7 @@
         <DCCReference Include="Unit\MineHunter.Tests.Launches.pas"/>
         <DCCReference Include="Unit\MineHunter.Tests.Devices.pas"/>
         <DCCReference Include="Unit\MineHunter.Tests.DiskHealth.pas"/>
+        <DCCReference Include="Unit\MineHunter.Tests.DataDir.pas"/>
         <DCCReference Include="..\src\Core\MineHunter.Core.Updates.pas"/>
         <DCCReference Include="..\src\Core\MineHunter.Core.Updates.WinApi.pas"/>
         <DCCReference Include="..\src\App\MineHunter.App.Lang.pas"/>

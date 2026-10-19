@@ -136,7 +136,7 @@ Composition root — `TMHAppServices.RegisterDefaults`. Тесты собира�
 
 ## Исправление, фон, отчёт, интерфейс
 
-- **Карантин** (`MineHunter.Core.Quarantine`): каждая операция — запись в `<LOCALAPPDATA>\MineHunterX\Quarantine\<id>\manifest.json`
+- **Карантин** (`MineHunter.Core.Quarantine`): каждая операция — запись в `<папка данных>\Quarantine\<id>\manifest.json`
   (атомарно) до изменения системы; при сбое изменения манифест удаляется. План исправления
   (`MHBuildRemediationPlan`) строится из снимка и находки; UI выполняет шаги по одному и
   показывает итог каждого.
@@ -182,7 +182,9 @@ Composition root — `TMHAppServices.RegisterDefaults`. Тесты собира�
 `MineHunter.Storage.SQLite` — `TMHSQLiteRepository` реализует `IMHRepository` и `IMHMetricHistory`.
 
 - FireDAC со статически встроенным SQLite (`FireDAC.Phys.SQLiteWrapper.Stat`): `sqlite3.dll` не нужна.
-- Файл: `%LOCALAPPDATA%\MineHunterX\history.db` (каталог профиля пользователя — доступ только у пользователя).
+- Файл: `<папка данных>\history.db`; папка данных — `MineHunter.Core.DataDir` (по умолчанию
+  `%LOCALAPPDATA%\MineHunterX`, каталог профиля — доступ только у пользователя; другая папка выбирается
+  в настройках, перенос выполняется при следующем запуске до открытия базы).
 - Целостность: WAL, `synchronous=NORMAL`, транзакция на снимок, `PRAGMA quick_check` при открытии. Повреждённый
   файл переименовывается в `history.db.corrupt-<время>` (вместе с `-wal`/`-shm`) и создаётся новая база.
 - Миграции: таблица `schema_version`; база более новой версии не изменяется (ошибка открытия).
@@ -217,7 +219,7 @@ Composition root — `TMHAppServices.RegisterDefaults`. Тесты собира�
   отклонившихся от нормы; кнопка перестроения профиля.
 - «Настройки»: интервал, хранение и приватность, пороги анализа, период обучения, автозапуск
   сканирования, обезличивание отчётов, разрешённые программы, журнал действий. Настройки
-  сохраняются атомарно в `%LOCALAPPDATA%\MineHunterX\settings.json`.
+  сохраняются атомарно в `<папка данных>\settings.json`.
 - `MineHunter.App.Chart` — собственный график без внешних зависимостей: разрывы на «нет данных» и паузах,
   масштабирование по DPI, `SummaryText`/подсказка дублируют график текстом.
 

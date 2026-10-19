@@ -281,6 +281,11 @@ type
     FAckList: TListView;
     FAckRemove: TButton;
     FAckKeys: TArray<string>;
+    FBtnOpenData: TButton;
+    FBtnChangeData: TButton;
+    FBtnDefaultData: TButton;
+    FDataDirRoot: string;
+    FRestartAction: TProc;
     FDisksSheet: TTabSheet;
     FDisksPage: TMHDisksPage;
     FLaunchesPage: TMHLaunchesPage;
@@ -303,6 +308,13 @@ type
     procedure AckRemoveClick(Sender: TObject);
     procedure AckSelect(Sender: TObject; Item: TListItem; Selected: Boolean);
     procedure CreateAcknowledgeControls;
+    procedure CreateDataFolderControls;
+    procedure LayoutSettings;
+    procedure UpdateDataFolderControls;
+    procedure OpenDataFolderClick(Sender: TObject);
+    procedure ChangeDataFolderClick(Sender: TObject);
+    procedure DefaultDataFolderClick(Sender: TObject);
+    procedure RestartForDataMove;
     procedure FormMouseWheel(Sender: TObject; Shift: TShiftState; WheelDelta: Integer;
       MousePos: TPoint; var Handled: Boolean);
     procedure AppearanceChange(Sender: TObject);
@@ -410,6 +422,16 @@ type
     property ConfirmAction: TMHConfirmFunc read FConfirm write FConfirm;
     /// Кнопка «Исправить…» карточки находки и список карантина (для тестов).
     property RemediateButton: TButton read FRemediateButton;
+    /// Перенос данных в ADir ('' — стандартная папка): подтверждение, проверка папки,
+    /// запись указателя и перезапуск. False — отменено или ошибка (AError).
+    function ChangeDataFolder(const ADir: string; out AError: string): Boolean;
+    /// Стандартная папка данных (по умолчанию %LOCALAPPDATA%\MineHunterX). Тесты подменяют.
+    property DataDirRoot: string read FDataDirRoot write FDataDirRoot;
+    /// Перезапуск после выбора новой папки (по умолчанию — запуск программы заново и выход).
+    property RestartAction: TProc read FRestartAction write FRestartAction;
+    property ChangeDataButton: TButton read FBtnChangeData;
+    property DefaultDataButton: TButton read FBtnDefaultData;
+    property AckBox: TGroupBox read FAckBox;
     property QuarantineList: TListView read FQuarantineList;
     /// Строит план исправления выбранной находки, спрашивает подтверждение и выполняет.
     procedure RemediateSelected;
@@ -499,7 +521,7 @@ uses
   MineHunter.Collectors.Processes, MineHunter.Collectors.System, MineHunter.Core.Paths,
   MineHunter.Core.SelfAutostart, MineHunter.Collectors.Processes.WinApi,
   MineHunter.App.Lang, MineHunter.App.Theme, MineHunter.Core.Updates.WinApi, Winapi.ShellAPI,
-  System.IOUtils, MineHunter.Core.Lang, MineHunter.Collectors.NetAdapters;
+  System.IOUtils, MineHunter.Core.Lang, MineHunter.Collectors.NetAdapters, MineHunter.Core.DataDir;
 
 function PercentText(AValue: Double): string; forward;
 
@@ -604,6 +626,8 @@ begin
   CreateCheckAndChangesControls;
   CreateAppearanceControls;
   CreateAcknowledgeControls;
+  CreateDataFolderControls;
+  LayoutSettings;
   cbHistoryPeriod.Items.Clear;
   cbHistoryPeriod.Items.Add(MHTr('1 час'));
   cbHistoryPeriod.Items.Add(MHTr('6 часов'));
@@ -630,8 +654,8 @@ begin
   cbFindingsMinLevel.Items.Add(MHRiskLevelToString(rlHighlySuspicious));
   cbFindingsMinLevel.ItemIndex := 0;
   lblStorageNote.Caption := MHTr('История и настройки хранятся только на этом компьютере ') +
-    MHL('(%LOCALAPPDATA%\MineHunterX) и никуда не передаются.',
-      '(%LOCALAPPDATA%\MineHunterX) and are never sent anywhere.');
+    MHL('(в папке данных — кнопка «Открыть папку») и никуда не передаются.',
+      '(in the data folder — the "Open folder" button) and are never sent anywhere.');
   InitAnalysisSettings;
   RefreshFindingsList;
   if not FServices.SettingsLoadedOk then
@@ -757,6 +781,155 @@ begin
     Exit;
   LBox.VertScrollBar.Position := LBox.VertScrollBar.Position - (WheelDelta * 60) div WHEEL_DELTA; // тачпад присылает доли шага
   Handled := True;
+end;
+
+procedure TMainForm.CreateDataFolderControls;
+
+  function NewButton(ALeft, AWidth: Integer; const ACaption, AHint: string; AClick: TNotifyEvent): TButton;
+  begin
+    Result := TButton.Create(Self);
+    Result.Parent := gbStorage;
+    Result.SetBounds(ALeft, btnClearHistory.Top, AWidth, btnClearHistory.Height);
+    Result.Caption := ACaption;
+    Result.Hint := AHint;
+    Result.ShowHint := True;
+    Result.OnClick := AClick;
+  end;
+
+begin
+  if FDataDirRoot = '' then
+    FDataDirRoot := MHStandardDataDir;
+  FRestartAction := RestartForDataMove;
+  FBtnOpenData := NewButton(btnClearHistory.Left + btnClearHistory.Width + 8, 140,
+    MHL('Открыть папку', 'Open folder'),
+    MHL('Папка с историей наблюдений, настройками и карантином.',
+      'The folder with the monitoring history, settings and quarantine.'), OpenDataFolderClick);
+  FBtnChangeData := NewButton(FBtnOpenData.Left + FBtnOpenData.Width + 8, 160,
+    MHL('Изменить папку…', 'Change folder…'),
+    MHL('Перенести историю, настройки и карантин в другую папку (например, на другой диск). ' +
+      'Программа перезапустится и скопирует данные; старая папка останется.',
+      'Move the history, settings and quarantine to another folder (for example, another disk). ' +
+      'The program restarts and copies the data; the old folder is kept.'), ChangeDataFolderClick);
+  FBtnDefaultData := NewButton(FBtnChangeData.Left + FBtnChangeData.Width + 8, 140,
+    MHL('По умолчанию', 'Default'),
+    MHL('Вернуть данные в стандартную папку (%LOCALAPPDATA%\MineHunterX).',
+      'Move the data back to the standard folder (%LOCALAPPDATA%\MineHunterX).'), DefaultDataFolderClick);
+  UpdateDataFolderControls;
+end;
+
+procedure TMainForm.UpdateDataFolderControls;
+begin
+  if FBtnDefaultData <> nil then
+    FBtnDefaultData.Enabled := not MHSamePath(MHResolveDataDir(FDataDirRoot), FDataDirRoot);
+end;
+
+procedure TMainForm.LayoutSettings;
+var
+  LBoxes: TArray<TControl>;
+  LTop, I: Integer;
+begin
+  // Группы настроек — сверху вниз в этом порядке, с одинаковым отступом.
+  LBoxes := [gbStorage, gbAnalysis, gbExclusions, FAckBox, gbActionLog, FQuarantineBox, FBackgroundBox,
+    FAppearanceBox];
+  LTop := gbStorage.Top;
+  for I := 0 to High(LBoxes) do
+    if LBoxes[I] <> nil then
+    begin
+      LBoxes[I].Top := LTop;
+      LTop := LTop + LBoxes[I].Height + MulDiv(16, CurrentPPI, 96);
+    end;
+end;
+
+procedure TMainForm.OpenDataFolderClick(Sender: TObject);
+var
+  LDir: string;
+begin
+  LDir := MHResolveDataDir(FDataDirRoot);
+  ForceDirectories(LDir);
+  ShellExecute(Handle, 'open', PChar(LDir), nil, nil, SW_SHOWNORMAL);
+end;
+
+function TMainForm.ChangeDataFolder(const ADir: string; out AError: string): Boolean;
+var
+  LCurrent, LTarget: string;
+  LRecord: TMHActionRecord;
+begin
+  AError := '';
+  LCurrent := MHResolveDataDir(FDataDirRoot);
+  LTarget := Trim(ADir);
+  if LTarget = '' then
+    LTarget := FDataDirRoot;
+  if not FConfirm(Format(MHL('Перенести историю наблюдений, настройки и карантин в папку «%s»?' + sLineBreak +
+    sLineBreak + 'MineHunter X перезапустится и скопирует данные при запуске. Прежняя папка «%s» останется — ' +
+    'удалите её вручную, когда убедитесь, что всё на месте.',
+    'Move the monitoring history, settings and quarantine to the folder "%s"?' + sLineBreak + sLineBreak +
+    'MineHunter X restarts and copies the data on startup. The previous folder "%s" is kept — delete it ' +
+    'manually once you are sure everything is in place.'), [LTarget, LCurrent])) then
+  begin
+    AError := MHL('Отменено пользователем', 'Cancelled by the user');
+    Exit(False);
+  end;
+  Result := MHRequestDataDirChange(FDataDirRoot, ADir, AError);
+  if FServices.ActionLog <> nil then
+  begin
+    LRecord := Default(TMHActionRecord);
+    LRecord.TimestampUtc := FServices.Clock.NowUtc;
+    LRecord.Action := 'data-folder';
+    LRecord.Target := LTarget;
+    LRecord.Success := Result;
+    if Result then
+      LRecord.Result := MHL('Перенос при перезапуске из ', 'Move on restart from ') + LCurrent
+    else
+      LRecord.Result := AError;
+    try
+      FServices.ActionLog.LogAction(LRecord);
+    except
+      on E: Exception do
+        FServices.Logger.Log(llWarning, 'actions', E.Message);
+    end;
+  end;
+  if not Result then
+    Exit;
+  UpdateDataFolderControls;
+  if Assigned(FRestartAction) then
+    FRestartAction();
+end;
+
+procedure TMainForm.ChangeDataFolderClick(Sender: TObject);
+var
+  LDialog: TFileOpenDialog;
+  LError: string;
+begin
+  LDialog := TFileOpenDialog.Create(nil);
+  try
+    LDialog.Title := MHL('Папка для данных MineHunter X', 'Folder for MineHunter X data');
+    LDialog.Options := [fdoPickFolders, fdoPathMustExist, fdoForceFileSystem];
+    LDialog.DefaultFolder := MHResolveDataDir(FDataDirRoot);
+    if not LDialog.Execute(Handle) then
+      Exit;
+    if not ChangeDataFolder(LDialog.FileName, LError) and
+       (LError <> MHL('Отменено пользователем', 'Cancelled by the user')) then
+      MessageDlg(MHL('Папка не изменена: ', 'The folder was not changed: ') + LError, mtWarning, [mbOK], 0);
+  finally
+    LDialog.Free;
+  end;
+end;
+
+procedure TMainForm.DefaultDataFolderClick(Sender: TObject);
+var
+  LError: string;
+begin
+  if not ChangeDataFolder('', LError) and (LError <> MHL('Отменено пользователем', 'Cancelled by the user')) then
+    MessageDlg(MHL('Папка не изменена: ', 'The folder was not changed: ') + LError, mtWarning, [mbOK], 0);
+end;
+
+procedure TMainForm.RestartForDataMove;
+begin
+  // Новый экземпляр дождётся завершения этого (база истории закрывается при выходе)
+  // и перенесёт данные до открытия базы.
+  ShellExecute(0, 'open', PChar(ParamStr(0)), PChar('--wait-pid=' + IntToStr(GetCurrentProcessId)), nil,
+    SW_SHOWNORMAL);
+  Quit;
 end;
 
 procedure TMainForm.CreateAcknowledgeControls;

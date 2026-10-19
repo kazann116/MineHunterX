@@ -609,7 +609,13 @@ begin
     for LDir in FOps.ListDirectories(FStoreDir) do
       if FOps.ReadTextFile(IncludeTrailingPathDelimiter(LDir) + MANIFEST_NAME, LText) and
          ItemFromJson(LText, LItem) then
+      begin
+        // Файл лежит рядом с манифестом: после переноса папки данных старый абсолютный
+        // путь недействителен.
+        if LItem.StoredPath <> '' then
+          LItem.StoredPath := IncludeTrailingPathDelimiter(LDir) + ExtractFileName(LItem.StoredPath);
         LList.Add(LItem);
+      end;
     LList.Sort(TComparer<TMHQuarantineItem>.Construct(
       function(const A, B: TMHQuarantineItem): Integer
       begin

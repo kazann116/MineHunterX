@@ -2,7 +2,10 @@
 
 uses
   Vcl.Forms,
+  Winapi.Windows,
+  System.SysUtils,
   MineHunter.Core.Lang in '..\Core\MineHunter.Core.Lang.pas',
+  MineHunter.Core.DataDir in '..\Core\MineHunter.Core.DataDir.pas',
   MineHunter.Core.Types in '..\Core\MineHunter.Core.Types.pas',
   MineHunter.Core.Interfaces in '..\Core\MineHunter.Core.Interfaces.pas',
   MineHunter.Core.Calc in '..\Core\MineHunter.Core.Calc.pas',
@@ -89,10 +92,47 @@ begin
     Result[I - 1] := ParamStr(I);
 end;
 
+/// Перезапуск после смены папки данных: «--wait-pid=N» — дождаться завершения прежнего
+/// экземпляра (он держит базу истории), прежде чем переносить данные.
+procedure WaitForPreviousInstance;
+const
+  WAIT_PREFIX = '--wait-pid=';
+var
+  LParam: string;
+  LPid: Cardinal;
+  LProcess: THandle;
+begin
+  for LParam in LaunchParams do
+    if LParam.StartsWith(WAIT_PREFIX, True) and
+       TryStrToUInt(Copy(LParam, Length(WAIT_PREFIX) + 1, MaxInt), LPid) then
+    begin
+      LProcess := OpenProcess(SYNCHRONIZE, False, LPid);
+      if LProcess <> 0 then
+      try
+        WaitForSingleObject(LProcess, 30000);
+      finally
+        CloseHandle(LProcess);
+      end;
+    end;
+end;
+
+procedure ApplyDataMove;
+var
+  LMoved: Boolean;
+  LError: string;
+begin
+  if not MHApplyPendingDataMove(MHStandardDataDir, LMoved, LError) then
+    MessageBox(0, PChar(MHL('Не удалось перенести данные в новую папку. MineHunter X продолжит работать ' +
+      'с прежней папкой.', 'Could not move the data to the new folder. MineHunter X keeps using the previous ' +
+      'folder.') + sLineBreak + sLineBreak + LError), 'MineHunter X', MB_ICONWARNING or MB_OK);
+end;
+
 begin
   {$IFDEF DEBUG}
   ReportMemoryLeaksOnShutdown := True;
   {$ENDIF}
+  WaitForPreviousInstance;
+  ApplyDataMove;
   Application.Initialize;
   Application.MainFormOnTaskbar := True;
   Application.Title := 'MineHunter X';

@@ -3,7 +3,7 @@
 {
   MineHunter X — настройки приложения и их хранение в JSON (MH-07).
 
-  Файл: %LOCALAPPDATA%\MineHunterX\settings.json, UTF-8 без BOM.
+  Файл: <папка данных>\settings.json (по умолчанию %LOCALAPPDATA%\MineHunterX), UTF-8 без BOM.
   Формат: JSON-объект с полем "version": 1 и стабильными именами полей; неизвестные поля
   игнорируются, отсутствующие или неверного типа заменяются значениями по
   умолчанию. Повреждённый файл не удаляется: он переименовывается
@@ -140,7 +140,7 @@ procedure MHWriteTextFileAtomic(const AFileName, AText: string);
 implementation
 
 uses
-  Winapi.Windows, Winapi.ShlObj, System.Classes, System.IOUtils, System.JSON,
+  Winapi.Windows, Winapi.ShlObj, System.Classes, System.IOUtils, System.JSON, MineHunter.Core.DataDir,
   System.DateUtils, System.Math, System.Generics.Collections,
   MineHunter.Core.Scanner;
 
@@ -150,13 +150,8 @@ const
   MAX_SETTINGS_FILE_BYTES = 4 * 1024 * 1024;
 
 function MHDefaultSettingsPath: string;
-var
-  LPath: array[0..MAX_PATH] of Char;
 begin
-  if Succeeded(SHGetFolderPath(0, CSIDL_LOCAL_APPDATA, 0, 0, @LPath[0])) then
-    Result := TPath.Combine(TPath.Combine(string(LPath), 'MineHunterX'), 'settings.json')
-  else
-    Result := TPath.Combine(TPath.Combine(TPath.GetTempPath, 'MineHunterX'), 'settings.json');
+  Result := TPath.Combine(MHDataDir, 'settings.json');
 end;
 
 function IsHexSha256(const AValue: string): Boolean;

@@ -76,6 +76,7 @@
             <MainSource>MainSource</MainSource>
         </DelphiCompile>
         <DCCReference Include="..\Core\MineHunter.Core.Lang.pas"/>
+        <DCCReference Include="..\Core\MineHunter.Core.DataDir.pas"/>
         <DCCReference Include="..\Core\MineHunter.Core.Types.pas"/>
         <DCCReference Include="..\Core\MineHunter.Core.Interfaces.pas"/>
         <DCCReference Include="..\Core\MineHunter.Core.Calc.pas"/>

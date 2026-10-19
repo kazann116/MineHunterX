@@ -122,6 +122,8 @@ end;
 ## Хранилище, настройки, отчёты, действия
 
 - `TMHSQLiteRepository` (`MineHunter.Storage.SQLite`) — все интерфейсы истории; `TMHStorageOptions`.
+- `MHDataDir`, `MHRequestDataDirChange`, `MHApplyPendingDataMove` (`MineHunter.Core.DataDir`) — папка данных
+  (история, настройки, карантин) и её перенос при следующем запуске.
 - `TMHSettingsStore`, `TMHAppSettings` (`MineHunter.Core.Settings`) — атомарное сохранение JSON.
 - `TMHReportBuilder` (`MineHunter.Core.Reports`) — отчёт и карточка находки в JSON/HTML, обезличивание.
 - `TMHSafeActions` (`MineHunter.Core.Actions`) — открыть расположение, проверка Microsoft Defender
