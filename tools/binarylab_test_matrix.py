@@ -70,13 +70,8 @@ REQUIREMENTS = [
 ]
 
 
-# Признаки проверки граничного или ошибочного случая в тесте: ожидаемое исключение,
-# отказ, «не найдено», пустые и предельные значения, отмена, выход за границы,
-# повреждённые данные, лимиты.
-EDGE = re.compile(r'WillRaise|Assert\.IsFalse|AreEqual(?:<Int64>)?\(-1|MH_NO_OFFSET|\bnil\b|\(\'\'|, \'\'\)|'
-                  r'Default\(T|High\(Int64\)|MaxInt|\$FFFFFFFF|\$7FFFFFFF|1, 1\)|Tiny|Huge|Cancel|'
-                  r'[Пп]уст|[Оо]тмен|за конц|[Гг]раниц|[Лл]имит|[Оо]брез|[Пп]овреж|[Нн]евер|[Оо]триц|[Оо]шиб|'
-                  r'[Нн]ет такого|[Нн]е найден|вне |огромн|[Пп]редел')
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from binarylab_cases import CASES  # noqa: E402
 
 
 def read(path):
@@ -133,6 +128,7 @@ def main():
     tests = test_procedures()
     rows = []
     missing = []
+    used = set()
     for path in SOURCES:
         unit = os.path.basename(path)[:-4]
         for name in sorted(set(public_api(path))):
@@ -144,16 +140,25 @@ def main():
                 pattern += r'|\.' + re.escape(name[3:]) + r'\b'
             hits = sorted({'%s.%s' % (fixture, proc) for _u, fixture, proc, body in tests
                            if re.search(pattern, body)})
-            edges = sorted({'%s.%s' % (fixture, proc) for _u, fixture, proc, body in tests
-                            if re.search(pattern, body) and EDGE.search(body)})
-            rows.append((unit, name, hits, edges))
+            # Граничные и ошибочные случаи — по реестру tools/binarylab_cases.py, сверенному с кодом.
+            key = '%s.%s' % (unit.replace('MineHunter.', ''), name)
+            cases, case_tests = CASES.get(key, ('', []))
+            if not case_tests:
+                missing.append('%s — нет записи в реестре случаев' % key)
+            for test in case_tests:
+                bodies = [body for _u, _f, proc, body in tests if proc == test]
+                if not bodies:
+                    missing.append('%s — тест %s не найден' % (key, test))
+                elif not any(re.search(pattern, body) for body in bodies):
+                    missing.append('%s — тест %s не вызывает функцию' % (key, test))
+            used.add(key)
+            rows.append((unit, name, hits, (cases, case_tests)))
             if not hits:
                 missing.append('%s.%s' % (unit, name))
-            elif not edges:
-                missing.append('%s.%s — нет граничных или ошибочных случаев' % (unit, name))
     out = ['# BinaryLab: матрица «функция → тесты»', '',
            'Создаётся `python tools/binarylab_test_matrix.py` из исходников: для каждой публичной функции и',
-           'метода BinaryLab — тесты DUnitX, которые её вызывают (граничные и ошибочные случаи — в тех же тестах).',
+           'метода BinaryLab — граничные и ошибочные случаи из реестра `tools/binarylab_cases.py` и тесты, которые их',
+           'проверяют. Генератор сверяет каждую запись с кодом: тест существует, вызывает функцию и содержит Assert.',
            'Внутренние методы отрисовки и потоков проверяются через публичное поведение страницы и элементов.', '',
            '## Требования ТЗ → тесты', '',
            '| Требование | Тесты (граничные и ошибочные случаи) |', '|---|---|']
@@ -163,12 +168,15 @@ def main():
             missing.append('ТЗ: %s — нет тестов %s' % (requirement, sorted(set(names) - set(found))))
         out.append('| %s | %s |' % (requirement, ', '.join('`%s`' % n for n in names)))
     out += ['', '## Публичные функции → тесты', '',
-            '| Модуль | Функция | Тесты | Граничные и ошибочные случаи |', '|---|---|---|---|']
-    for unit, name, hits, edges in rows:
-        shown = ', '.join(hits[:5]) + (' и ещё %d' % (len(hits) - 5) if len(hits) > 5 else '')
-        edge_shown = ', '.join(edges[:4]) + (' и ещё %d' % (len(edges) - 4) if len(edges) > 4 else '')
-        out.append('| `%s` | `%s` | %s | %s |' % (unit.replace('MineHunter.', ''), name, shown or '**нет**',
-                                                  edge_shown or '**нет**'))
+            '| Модуль | Функция | Граничные и ошибочные случаи | Тесты этих случаев | Все тесты с вызовом |',
+            '|---|---|---|---|---|']
+    for key in sorted(set(CASES) - used):
+        missing.append('%s — запись реестра без функции' % key)
+    for unit, name, hits, (cases, case_tests) in rows:
+        shown = ', '.join(hits[:4]) + (' и ещё %d' % (len(hits) - 4) if len(hits) > 4 else '')
+        out.append('| `%s` | `%s` | %s | %s | %s |' % (unit.replace('MineHunter.', ''), name, cases or '**нет**',
+                                                       ', '.join('`%s`' % t for t in case_tests) or '**нет**',
+                                                       shown or '**нет**'))
     out += ['', 'Функций: %d, без тестов: %d.' % (len(rows), len(missing))]
     target = os.path.join(ROOT, 'docs', 'binarylab-tests.md')
     with open(target, 'w', encoding='utf-8-sig', newline='\n') as f:

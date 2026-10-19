@@ -35,6 +35,7 @@ type
     [Test] procedure Options_NormalizedLimitsBothSides;
     [Test] procedure Histogram_BarFractionEdges;
     [Test] procedure HexView_OffsetDigitsAtFourGigabytes;
+    [Test] procedure EntropyMap_BlockCountEmptyAndData;
   end;
 
 implementation
@@ -512,6 +513,34 @@ begin
     Assert.AreEqual(8, LHex.OffsetDigits, 'Источник снят');
   finally
     LHex.Free;
+  end;
+end;
+
+procedure TBinaryLabApiTests.EntropyMap_BlockCountEmptyAndData;
+var
+  LMap: TMHEntropyMap;
+  LBlocks: TArray<TMHEntropyBlock>;
+  I: Integer;
+begin
+  LMap := TMHEntropyMap.Create(nil);
+  try
+    Assert.AreEqual(0, LMap.BlockCount, 'До данных');
+    LMap.SetData(nil, 0);
+    Assert.AreEqual(0, LMap.BlockCount, 'Пустые данные');
+    SetLength(LBlocks, 3);
+    for I := 0 to High(LBlocks) do
+    begin
+      LBlocks[I].Offset := I * 256;
+      LBlocks[I].Size := 256;
+      LBlocks[I].Entropy := I;
+    end;
+    LMap.SetData(LBlocks, 768);
+    Assert.AreEqual(3, LMap.BlockCount);
+    Assert.AreEqual<Int64>(768, LMap.FileSize);
+    LMap.SetData(nil, 0);
+    Assert.AreEqual(0, LMap.BlockCount, 'Данные сброшены');
+  finally
+    LMap.Free;
   end;
 end;
 

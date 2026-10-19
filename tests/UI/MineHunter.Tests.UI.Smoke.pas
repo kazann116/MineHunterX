@@ -79,6 +79,7 @@ type
     [Test] procedure BinaryLab_AnalyzeNavigateFindExportCompare;
     [Test] procedure BinaryLab_ErrorsCancelAndCloseWhileBusy;
     [Test] procedure BinaryLab_ButtonsDialogsAndDoubleClicks;
+    [Test] procedure BinaryLab_PageMethods_WithoutDataAreSafe;
   end;
 
 implementation
@@ -553,6 +554,56 @@ begin
   LCaret := (Integer(MHBlendColor($00FF00, $000000, 0.5)) shr 8) and $FF;
   Assert.IsTrue((LCaret >= $7E) and (LCaret <= $81), IntToStr(LCaret));
   Assert.AreEqual(0, Integer(MHBlendColor($00FF00, $000000, 0.5)) and $FF00FF);
+end;
+
+procedure TMainFormSmokeTests.BinaryLab_PageMethods_WithoutDataAreSafe;
+var
+  LPage: TMHBinaryLabPage;
+  LPath: string;
+begin
+  LPage := FForm.BinaryLabPage;
+  // Без отчёта и источника: ничего не запускается, исключений нет, файлов не создаётся.
+  Assert.IsFalse(LPage.Busy);
+  LPage.Cancel;
+  Assert.IsFalse(LPage.Busy, 'Отмена в простое');
+  LPage.OpenFile('');
+  LPage.OpenFile('   ');
+  Assert.IsFalse(LPage.Busy, 'Пустой путь не открывается');
+  LPage.CompareWith(TPath.Combine(FTempDir, 'x.exe'));
+  Assert.IsFalse(LPage.Busy, 'Сравнивать не с чем');
+  Assert.IsFalse(LPage.HasDiff);
+  LPage.FindPattern(TestAscii('MZ'), False);
+  Assert.IsFalse(LPage.Busy, 'Поиск без файла');
+  LPage.ShowOffset(100, 4);
+  Assert.AreEqual(TMHBinaryLabPage.TabOverview, LPage.Tabs.ActivePageIndex, 'Без файла Hex не открывается');
+  LPath := TPath.Combine(FTempDir, 'none.html');
+  LPage.ExportReport(LPath);
+  LPage.ExportDiff(TPath.Combine(FTempDir, 'none-diff.html'));
+  Assert.IsFalse(TFile.Exists(LPath), 'Нет отчёта — нет файла');
+  Assert.IsFalse(TFile.Exists(TPath.Combine(FTempDir, 'none-diff.html')));
+  // С отчётом: пустой путь сравнения, пустой шаблон поиска, отрицательное смещение — без действий.
+  LPage.OpenFile(WriteSample('edge.exe', False));
+  Assert.IsTrue(WaitForBinaryLab(30000));
+  Assert.IsTrue(LPage.HasReport);
+  LPage.CompareWith('');
+  Assert.IsFalse(LPage.Busy, 'Пустой путь сравнения');
+  LPage.FindPattern(nil, False);
+  Assert.IsFalse(LPage.Busy, 'Пустой шаблон');
+  LPage.ShowOffset(-1, 4);
+  Assert.AreEqual(TMHBinaryLabPage.TabOverview, LPage.Tabs.ActivePageIndex, 'Отрицательное смещение');
+  LPage.ShowOffset(0, -5);
+  Assert.AreEqual<Int64>(1, LPage.HexView.SelLength, 'Длина выделения не меньше 1');
+  // Сравнение с отсутствующим файлом — ошибка показана, отчёт первого файла сохранён.
+  LPage.CompareWith(TPath.Combine(FTempDir, 'нет файла.exe'));
+  Assert.IsTrue(WaitForBinaryLab(30000));
+  Assert.IsTrue(LPage.LastError <> '');
+  Assert.IsFalse(LPage.HasDiff);
+  Assert.IsTrue(LPage.HasReport);
+  // Повторное открытие во время работы отменяет прежнюю работу и выполняет новую.
+  LPage.OpenFile(WriteSample('edge2.exe', True));
+  LPage.OpenFile(WriteSample('edge3.exe', False));
+  Assert.IsTrue(WaitForBinaryLab(30000));
+  Assert.IsTrue(LPage.Report.Path.EndsWith('edge3.exe'), LPage.Report.Path);
 end;
 
 procedure TMainFormSmokeTests.BinaryLab_ErrorsCancelAndCloseWhileBusy;
