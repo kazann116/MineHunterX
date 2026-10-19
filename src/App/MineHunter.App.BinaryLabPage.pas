@@ -63,8 +63,10 @@ type
     FOptions: TMHBinaryLabOptions;
     FChooseFile: TMHChooseFileFunc;
     // Панель действий и итог.
-    FOpenButton, FCompareButton, FCancelButton, FExportButton: TButton;
-    FPathLabel, FStageLabel, FVerdictLabel, FVerdictNote: TLabel;
+    FOpenButton, FCompareButton, FCancelButton, FExportButton, FCheckButton: TButton;
+    /// Путь проверяемого файла: виден целиком, копируется, в него можно вставить свой путь.
+    FPathEdit: TEdit;
+    FStageLabel, FVerdictLabel, FVerdictNote: TLabel;
     FLevelShape: TShape;
     FProgress: TProgressBar;
     FTabs: TPageControl;
@@ -150,6 +152,8 @@ type
     procedure SetDetailColumns(const ACaptions: array of string; const AWidths: array of Integer);
     procedure AddDetail(const AValues: array of string; AOffset: Int64 = MH_NO_OFFSET; ASize: Int64 = 0);
     procedure OpenClick(Sender: TObject);
+    procedure CheckClick(Sender: TObject);
+    procedure PathEditKeyPress(Sender: TObject; var Key: Char);
     procedure CompareClick(Sender: TObject);
     procedure CancelClick(Sender: TObject);
     procedure ExportClick(Sender: TObject);
@@ -217,6 +221,10 @@ type
     property VerdictNote: TLabel read FVerdictNote;
     property StageLabel: TLabel read FStageLabel;
     property OpenButton: TButton read FOpenButton;
+    property CheckButton: TButton read FCheckButton;
+    property PathEdit: TEdit read FPathEdit;
+    /// Путь из поля: без пробелов по краям и кавычек («Копировать как путь» в Проводнике).
+    class function CleanPath(const AText: string): string; static;
     property CompareButton: TButton read FCompareButton;
     property CancelButton: TButton read FCancelButton;
     property ExportButton: TButton read FExportButton;
@@ -391,7 +399,7 @@ procedure TMHBinaryLabPage.BuildToolbar(ASheet: TWinControl);
 var
   LTop: TPanel;
 begin
-  LTop := NewPanel(ASheet, alTop, 92);
+  LTop := NewPanel(ASheet, alTop, 100);
   FOpenButton := NewButton(LTop, MHL('Открыть файл…', 'Open file…'), 8, 8, 130, OpenClick);
   FCompareButton := NewButton(LTop, MHL('Сравнить с…', 'Compare with…'), 144, 8, 120, CompareClick);
   FCancelButton := NewButton(LTop, MHL('Отмена', 'Cancel'), 270, 8, 90, CancelClick);
@@ -401,16 +409,27 @@ begin
   FProgress.SetBounds(508, 12, 180, 17);
   FProgress.Max := 100;
   FStageLabel := NewLabel(LTop, 698, 12, 600);
-  FPathLabel := NewLabel(LTop, 8, 40, 1200, MHL('Файл не выбран. BinaryLab разбирает файл без запуска: структура, ' +
-    'энтропия, строки, вложения, аномалии.', 'No file selected. BinaryLab analyses a file without running it: ' +
-    'structure, entropy, strings, embedded objects, anomalies.'));
+  FPathEdit := TEdit.Create(Self);
+  FPathEdit.Parent := LTop;
+  FPathEdit.SetBounds(8, 38, Max(200, LTop.Width - 8 - 130 - 16), 23);
+  FPathEdit.Anchors := [akLeft, akTop, akRight];
+  FPathEdit.TextHint := MHL('Путь к файлу (можно вставить) — «Проверить». BinaryLab разбирает файл без запуска: ' +
+    'структура, энтропия, строки, вложения, аномалии.', 'File path (you can paste one) — “Check”. BinaryLab ' +
+    'analyses a file without running it: structure, entropy, strings, embedded objects, anomalies.');
+  FPathEdit.OnKeyPress := PathEditKeyPress;
+  FCheckButton := NewButton(LTop, MHL('Проверить', 'Check'), FPathEdit.Left + FPathEdit.Width + 8, 36, 130,
+    CheckClick);
+  FCheckButton.Anchors := [akTop, akRight];
+  FCheckButton.Hint := MHL('Проверить файл из поля (пустое поле — выбрать файл; тот же файл — проверить заново).',
+    'Check the file in the field (empty field — choose a file; the same file — check it again).');
+  FCheckButton.ShowHint := True;
   FLevelShape := TShape.Create(Self);
   FLevelShape.Parent := LTop;
-  FLevelShape.SetBounds(8, 62, 6, 22);
+  FLevelShape.SetBounds(8, 68, 6, 22);
   FLevelShape.Pen.Style := psClear;
-  FVerdictLabel := NewLabel(LTop, 20, 60, 1200);
+  FVerdictLabel := NewLabel(LTop, 20, 66, 1200);
   FVerdictLabel.Font.Style := [fsBold];
-  FVerdictNote := NewLabel(LTop, 20, 76, 1200);
+  FVerdictNote := NewLabel(LTop, 20, 82, 1200);
   FVerdictNote.Font.Color := clGrayText;
 end;
 
@@ -592,6 +611,7 @@ end;
 procedure TMHBinaryLabPage.UpdateButtons;
 begin
   FOpenButton.Enabled := not FBusy;
+  FCheckButton.Enabled := not FBusy;
   FCompareButton.Enabled := not FBusy and FHasReport;
   FDiffButton.Enabled := FCompareButton.Enabled;
   FCancelButton.Enabled := FBusy;
@@ -798,7 +818,7 @@ procedure TMHBinaryLabPage.OpenFile(const APath: string);
 begin
   if Trim(APath) = '' then
     Exit;
-  FPathLabel.Caption := APath;
+  FPathEdit.Text := APath;
   StartWorker(jkAnalyze, APath);
 end;
 
@@ -854,7 +874,7 @@ begin
     on E: Exception do
       FHexStatus.Caption := E.Message;
   end;
-  FPathLabel.Caption := FReport.Path;
+  FPathEdit.Text := FReport.Path;
   FLevelShape.Brush.Color := LEVEL_COLORS[FReport.Level];
   FLevelShape.Visible := True;
   FVerdictLabel.Caption := FReport.Verdict;
@@ -1436,6 +1456,43 @@ begin
     MHL('Все файлы (*.*)|*.*|Программы и библиотеки|*.exe;*.dll;*.sys;*.scr;*.ocx;*.cpl',
       'All files (*.*)|*.*|Programs and libraries|*.exe;*.dll;*.sys;*.scr;*.ocx;*.cpl'), '', False, LFile) then
     OpenFile(LFile);
+end;
+
+class function TMHBinaryLabPage.CleanPath(const AText: string): string;
+begin
+  Result := Trim(AText);
+  if (Length(Result) >= 2) and (Result[1] = '"') and (Result[Length(Result)] = '"') then
+    Result := Trim(Copy(Result, 2, Length(Result) - 2));
+end;
+
+procedure TMHBinaryLabPage.CheckClick(Sender: TObject);
+var
+  LPath: string;
+begin
+  if FBusy then
+    Exit;
+  LPath := CleanPath(FPathEdit.Text);
+  if LPath = '' then
+  begin
+    OpenClick(Sender);
+    Exit;
+  end;
+  if not FileExists(LPath) then
+  begin
+    FLastError := MHL('Файл не найден: ', 'File not found: ') + LPath;
+    SetStage(FLastError, 0);
+    Exit;
+  end;
+  OpenFile(LPath);
+end;
+
+procedure TMHBinaryLabPage.PathEditKeyPress(Sender: TObject; var Key: Char);
+begin
+  if Key = #13 then
+  begin
+    Key := #0;
+    CheckClick(Sender);
+  end;
 end;
 
 procedure TMHBinaryLabPage.CompareClick(Sender: TObject);

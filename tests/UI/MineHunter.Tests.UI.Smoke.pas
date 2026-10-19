@@ -81,6 +81,9 @@ type
     [Test] procedure BinaryLab_ButtonsDialogsAndDoubleClicks;
     [Test] procedure BinaryLab_PageMethods_WithoutDataAreSafe;
     [Test] procedure BinaryLab_DoubleClickEdgeCases;
+    [Test] procedure BinaryLab_CheckButtonAndPathField;
+    [Test] procedure Tables_DoubleBufferedAgainstFlicker;
+    [Test] procedure Tables_CopyRowsAndFileMenus;
   end;
 
 implementation
@@ -102,7 +105,7 @@ uses
   MineHunter.Tests.Fakes, MineHunter.Core.DataDir, MineHunter.App.FileActions, Vcl.StdCtrls,
   Vcl.ComCtrls, MineHunter.App.BinaryLabPage, MineHunter.BinaryLab.Types, MineHunter.BinaryLab.Source,
   MineHunter.BinaryLab.Anomalies, MineHunter.Tests.PeBuilder, MineHunter.App.BinaryLab.Controls,
-  MineHunter.Core.Lang, MineHunter.App.Chart;
+  MineHunter.Core.Lang, MineHunter.App.Chart, Vcl.Menus;
 
 var
   // Подмена операций ОС для тестов действий (nil — настоящие операции).
@@ -730,6 +733,206 @@ begin
   LPage.AnomalyList.OnDblClick(LPage.AnomalyList);
   Assert.AreEqual(TMHBinaryLabPage.TabHex, LPage.Tabs.ActivePageIndex);
   Assert.AreEqual<Int64>(0, LPage.HexView.SelStart);
+end;
+
+procedure TMainFormSmokeTests.BinaryLab_CheckButtonAndPathField;
+var
+  LPage: TMHBinaryLabPage;
+  LPath, LChosen: string;
+  LCalls: Integer;
+  LKey: Char;
+begin
+  LPage := FForm.BinaryLabPage;
+  LCalls := 0;
+  LChosen := '';
+  LPage.ChooseFile :=
+    function(const ATitle, AFilter, ADefaultName: string; ASave: Boolean; out AFileName: string): Boolean
+    begin
+      Inc(LCalls);
+      AFileName := LChosen;
+      Result := LChosen <> '';
+    end;
+  Assert.IsTrue(LPage.CheckButton.Enabled);
+  Assert.AreEqual(MHL('Проверить', 'Check'), string(LPage.CheckButton.Caption));
+  Assert.IsTrue(LPage.PathEdit.TextHint <> '', 'Подсказка в пустом поле');
+  // Очистка пути: пробелы и кавычки «Копировать как путь».
+  Assert.AreEqual('C:\a b\c.exe', TMHBinaryLabPage.CleanPath('  "C:\a b\c.exe"  '));
+  Assert.AreEqual('C:\x.dll', TMHBinaryLabPage.CleanPath('C:\x.dll'));
+  Assert.AreEqual('', TMHBinaryLabPage.CleanPath('   '));
+  Assert.AreEqual('', TMHBinaryLabPage.CleanPath('""'));
+  Assert.AreEqual('"', TMHBinaryLabPage.CleanPath('"'), 'Одна кавычка — не пара');
+  // Пустое поле — выбор файла (отказ — ничего не происходит).
+  LPage.CheckButton.Click;
+  Assert.AreEqual(1, LCalls);
+  Assert.IsFalse(LPage.Busy);
+  // Несуществующий файл — сообщение, анализ не запускается.
+  LPage.PathEdit.Text := TPath.Combine(FTempDir, 'нет такого.exe');
+  LPage.CheckButton.Click;
+  Assert.IsFalse(LPage.Busy);
+  Assert.IsTrue(LPage.LastError.Contains('нет такого.exe'), LPage.LastError);
+  Assert.IsTrue(string(LPage.StageLabel.Caption).Contains('нет такого.exe'));
+  Assert.AreEqual(1, LCalls, 'Диалог не открывается, если путь задан');
+  // Вставленный путь в кавычках — проверка; поле показывает путь проверенного файла.
+  LPath := WriteSample('check.exe', False);
+  LPage.PathEdit.Text := '"' + LPath + '"';
+  LPage.CheckButton.Click;
+  Assert.IsTrue(LPage.Busy);
+  Assert.IsFalse(LPage.CheckButton.Enabled, 'Во время анализа кнопка недоступна');
+  LPage.CheckButton.Click; // повторное нажатие во время работы ничего не делает
+  Assert.IsTrue(WaitForBinaryLab(30000));
+  Assert.AreEqual('', LPage.LastError);
+  Assert.AreEqual(LPath, LPage.Report.Path);
+  Assert.AreEqual(LPath, LPage.PathEdit.Text);
+  Assert.IsTrue(LPage.CheckButton.Enabled);
+  // Тот же файл — проверка заново (Enter в поле — как кнопка).
+  LKey := #13;
+  LPage.PathEdit.OnKeyPress(LPage.PathEdit, LKey);
+  Assert.AreEqual(#0, LKey, 'Enter не печатается в поле');
+  Assert.IsTrue(LPage.Busy);
+  Assert.IsTrue(WaitForBinaryLab(30000));
+  Assert.AreEqual(LPath, LPage.Report.Path);
+  // Файл из диалога «Открыть файл…» тоже попадает в поле.
+  LChosen := WriteSample('check2.exe', True);
+  LPage.OpenButton.Click;
+  Assert.AreEqual(LChosen, LPage.PathEdit.Text);
+  Assert.IsTrue(WaitForBinaryLab(30000));
+  Assert.AreEqual(LChosen, LPage.Report.Path);
+end;
+
+procedure TMainFormSmokeTests.Tables_DoubleBufferedAgainstFlicker;
+var
+  LLists: TArray<TCustomListView>;
+  LList: TCustomListView;
+  LForm: TForm;
+  LOwn: TListView;
+
+  procedure Collect(ARoot: TComponent);
+  var
+    I: Integer;
+  begin
+    if ARoot is TCustomListView then
+      LLists := LLists + [TCustomListView(ARoot)];
+    for I := 0 to ARoot.ComponentCount - 1 do
+      Collect(ARoot.Components[I]);
+  end;
+
+begin
+  Collect(FForm);
+  // Обзор, процессы, находки, история, настройки, устройства, запуски, BinaryLab.
+  Assert.IsTrue(Length(LLists) >= 20, IntToStr(Length(LLists)));
+  for LList in LLists do
+  begin
+    LList.HandleNeeded;
+    Assert.IsTrue(MHListIsBuffered(LList), LList.Name + ' ' + LList.ClassName);
+  end;
+  // VCL перезаписывает расширенные стили (RowSelect) и пересоздаёт окно (смена темы) — флаг остаётся.
+  FForm.lvProcesses.RowSelect := not FForm.lvProcesses.RowSelect;
+  Assert.IsTrue(MHListIsBuffered(FForm.lvProcesses), 'После смены RowSelect');
+  FForm.lvProcesses.RowSelect := not FForm.lvProcesses.RowSelect;
+  FForm.lvProcesses.Perform(CM_RECREATEWND, 0, 0);
+  FForm.lvProcesses.HandleNeeded;
+  Assert.IsTrue(MHListIsBuffered(FForm.lvProcesses), 'После пересоздания окна');
+  // Повторное включение не добавляет второй перехватчик; таблица освобождается без ошибок.
+  LForm := TForm.CreateNew(nil);
+  try
+    LOwn := TListView.Create(LForm);
+    LOwn.Parent := LForm;
+    LOwn.HandleNeeded;
+    Assert.IsFalse(MHListIsBuffered(LOwn));
+    MHEnhanceLists(LForm);
+    MHEnhanceLists(LForm);
+    Assert.IsTrue(MHListIsBuffered(LOwn), 'Окно уже было создано');
+    Assert.AreEqual(1, LOwn.ComponentCount);
+    LOwn.Free;
+  finally
+    LForm.Free;
+  end;
+end;
+
+procedure TMainFormSmokeTests.Tables_CopyRowsAndFileMenus;
+var
+  LOld: TMHSetClipboardText;
+  LCopied: string;
+  LCopies: Integer;
+  LForm: TForm;
+  LList: TListView;
+  LHook: TMHListHook;
+  LTarget: TMHFileTarget;
+begin
+  LOld := GMHSetClipboardText;
+  LCopies := 0;
+  GMHSetClipboardText :=
+    procedure(const AText: string)
+    begin
+      LCopied := AText;
+      Inc(LCopies);
+    end;
+  LForm := TForm.CreateNew(nil);
+  try
+    LList := TListView.Create(LForm);
+    LList.Parent := LForm;
+    LList.ViewStyle := vsReport;
+    LList.MultiSelect := True;
+    LList.Columns.Add.Caption := 'Программа';
+    LList.Columns.Add.Caption := 'PID';
+    LList.Columns.Add.Caption := 'Путь';
+    MHEnhanceLists(LForm);
+    LHook := MHListHook(LList);
+    Assert.IsNotNull(LHook);
+    Assert.AreSame(LList.PopupMenu, LHook.CopyRowItem.GetParentMenu, 'Своё меню у таблицы без меню');
+    Assert.AreEqual<TShortCut>(ShortCut(Ord('C'), [ssCtrl]), LHook.CopyRowItem.ShortCut);
+    // Пустая таблица — копировать нечего.
+    LHook.CopyRowItem.Click;
+    LHook.CopyAllItem.Click;
+    Assert.AreEqual(0, LCopies);
+    with LList.Items.Add do
+    begin
+      Caption := 'miner.exe';
+      SubItems.Add('42');
+      SubItems.Add('C:\Temp\miner.exe');
+    end;
+    with LList.Items.Add do
+    begin
+      Caption := 'svchost.exe';
+      SubItems.Add('7'); // путь неизвестен — столбец пустой
+    end;
+    LHook.CopyRowItem.Click;
+    Assert.AreEqual(0, LCopies, 'Нет выделенной строки');
+    LList.Items[0].Selected := True;
+    LHook.CopyRowItem.Click;
+    Assert.AreEqual('miner.exe'#9'42'#9'C:\Temp\miner.exe', LCopied);
+    LList.Items[1].Selected := True;
+    LHook.CopyRowItem.Click;
+    Assert.AreEqual('miner.exe'#9'42'#9'C:\Temp\miner.exe'#13#10'svchost.exe'#9'7'#9, LCopied,
+      'Несколько строк; недостающие столбцы — пустые');
+    LHook.CopyAllItem.Click;
+    Assert.IsTrue(LCopied.StartsWith('Программа'#9'PID'#9'Путь'#13#10'miner.exe'), LCopied);
+  finally
+    LForm.Free;
+    GMHSetClipboardText := LOld;
+  end;
+  // Таблицы формы: копирование добавлено и в меню действий с файлом.
+  Assert.AreSame(FForm.ProcessActions.Menu, MHListHook(FForm.lvProcesses).CopyRowItem.GetParentMenu);
+  // Меню действий с файлом — в «Находках» и в «Кто больше всего читает и пишет».
+  Assert.IsNotNull(FForm.FindingActions);
+  Assert.AreSame(FForm.FindingActions.Menu, FForm.lvFindings.PopupMenu);
+  Assert.IsNotNull(FForm.IoActions);
+  Assert.AreSame(FForm.IoActions.Menu, FForm.DisksPage.IoView.PopupMenu);
+  Assert.IsTrue(Assigned(FForm.FindingActions.OnBinaryLab) and Assigned(FForm.IoActions.OnBinaryLab));
+  Assert.IsFalse(FForm.FindingTarget(LTarget), 'Нет выделенной находки');
+  Assert.IsFalse(FForm.IoTarget(LTarget), 'Нет выделенной строки');
+  with FForm.DisksPage.IoView.Items.Add do
+  begin
+    Caption := 'info.exe';
+    SubItems.Add('14792');
+    SubItems.Add('0 КБ/с');
+    SubItems.Add('16 КБ/с');
+    SubItems.Add('D:\TPs\Finam\Quik\info.exe');
+    Selected := True;
+  end;
+  Assert.IsTrue(FForm.IoTarget(LTarget));
+  Assert.AreEqual('D:\TPs\Finam\Quik\info.exe', LTarget.Path);
+  Assert.AreEqual('info.exe', LTarget.Title);
 end;
 
 procedure TMainFormSmokeTests.BinaryLab_ErrorsCancelAndCloseWhileBusy;

@@ -17,7 +17,7 @@
 interface
 
 uses
-  System.SysUtils, Vcl.Controls, Vcl.ComCtrls;
+  System.SysUtils, System.Classes, Winapi.Messages, Vcl.Controls, Vcl.ComCtrls, Vcl.Menus;
 
 type
   /// Ключ строки: одна и та же запись до и после пересборки даёт один ключ.
@@ -31,6 +31,50 @@ type
     SelectedKey: string;
     HasSelection: Boolean;
   end;
+
+  /// Общие улучшения таблицы; принадлежит таблице и освобождается вместе с ней.
+  ///  - Системная двойная буферизация (LVS_EX_DOUBLEBUFFER): строки рисуются в памяти и
+  ///    выводятся разом — таблица не мерцает при обновлении. VCL перезаписывает расширенные
+  ///    стили целиком (создание окна, смена RowSelect, GridLines, темы), поэтому флаг
+  ///    добавляется к каждой их установке.
+  ///  - Копирование: «Копировать строку» (Ctrl+C) и «Копировать всю таблицу» — в меню
+  ///    таблицы (своё меню, если его не было).
+  TMHListHook = class(TComponent)
+  private
+    FList: TCustomListView;
+    FOldProc: TWndMethod;
+    FMenu: TPopupMenu;
+    FOldPopup: TNotifyEvent;
+    FItemCopyRow, FItemCopyAll: TMenuItem;
+    procedure WndProc(var Message: TMessage);
+    procedure MenuPopup(Sender: TObject);
+    procedure CopyRowClick(Sender: TObject);
+    procedure CopyAllClick(Sender: TObject);
+  public
+    constructor Create(AList: TCustomListView); reintroduce;
+    destructor Destroy; override;
+    property CopyRowItem: TMenuItem read FItemCopyRow;
+    property CopyAllItem: TMenuItem read FItemCopyAll;
+  end;
+
+  TMHSetClipboardText = reference to procedure(const AText: string);
+
+var
+  /// Запись в буфер обмена (тесты подменяют, чтобы не трогать буфер пользователя).
+  GMHSetClipboardText: TMHSetClipboardText;
+
+/// Двойная буферизация и копирование у всех таблиц в дереве компонентов ARoot
+/// (повторный вызов безопасен).
+procedure MHEnhanceLists(ARoot: TComponent);
+/// Улучшения таблицы (nil — не подключены).
+function MHListHook(AList: TCustomListView): TMHListHook;
+/// True — у таблицы включена системная двойная буферизация.
+function MHListIsBuffered(AList: TCustomListView): Boolean;
+/// Текст строк таблицы: столбцы через табуляцию, строки через перевод строки.
+/// ASelectedOnly — только выделенные строки (без заголовка), иначе заголовок и все строки.
+function MHListRowsText(AList: TCustomListView; ASelectedOnly: Boolean): string;
+/// Копирует строки в буфер обмена; False — копировать нечего.
+function MHCopyListRows(AList: TCustomListView; ASelectedOnly: Boolean): Boolean;
 
 /// Выполняет AUpdate и восстанавливает вертикальную прокрутку AList.
 procedure MHUpdatePreservingScroll(AList: TListView; const AUpdate: TProc);
@@ -68,7 +112,7 @@ procedure MHSetItemIndexQuiet(AList: TListView; AIndex: Integer);
 implementation
 
 uses
-  Winapi.Windows, Winapi.CommCtrl, System.Math, System.Classes, Vcl.Graphics;
+  Winapi.Windows, Winapi.CommCtrl, System.Math, Vcl.Graphics, Vcl.Clipbrd, MineHunter.Core.Lang;
 
 /// Высота строки, если строк ещё нет: по шрифту, как у элемента Windows.
 function DefaultRowHeight(AList: TListView): Integer;
@@ -272,10 +316,189 @@ begin
   MHRestoreListState(AList, LState, LKeyOf);
 end;
 
+type
+  TListViewAccess = class(TCustomListView);
+
+{ TMHListHook }
+
+constructor TMHListHook.Create(AList: TCustomListView);
+var
+  LItem: TMenuItem;
+begin
+  inherited Create(AList);
+  FList := AList;
+  FOldProc := AList.WindowProc;
+  AList.WindowProc := WndProc;
+  if AList.HandleAllocated then
+    ListView_SetExtendedListViewStyleEx(AList.Handle, LVS_EX_DOUBLEBUFFER, LVS_EX_DOUBLEBUFFER);
+
+  FMenu := TListViewAccess(AList).PopupMenu;
+  if FMenu = nil then
+  begin
+    FMenu := TPopupMenu.Create(Self);
+    TListViewAccess(AList).PopupMenu := FMenu;
+  end
+  else
+  begin
+    LItem := TMenuItem.Create(Self);
+    LItem.Caption := '-';
+    FMenu.Items.Add(LItem);
+  end;
+  FOldPopup := FMenu.OnPopup;
+  FMenu.OnPopup := MenuPopup;
+  FItemCopyRow := TMenuItem.Create(Self);
+  FItemCopyRow.Caption := MHL('Копировать строку', 'Copy row');
+  // Сочетание обрабатывается меню таблицы, пока таблица в фокусе.
+  FItemCopyRow.ShortCut := ShortCut(Ord('C'), [ssCtrl]);
+  FItemCopyRow.OnClick := CopyRowClick;
+  FMenu.Items.Add(FItemCopyRow);
+  FItemCopyAll := TMenuItem.Create(Self);
+  FItemCopyAll.Caption := MHL('Копировать всю таблицу', 'Copy the whole table');
+  FItemCopyAll.OnClick := CopyAllClick;
+  FMenu.Items.Add(FItemCopyAll);
+end;
+
+procedure TMHListHook.MenuPopup(Sender: TObject);
+begin
+  if Assigned(FOldPopup) then
+    FOldPopup(Sender);
+  FItemCopyRow.Enabled := FList.SelCount > 0;
+  FItemCopyAll.Enabled := FList.Items.Count > 0;
+end;
+
+procedure TMHListHook.CopyRowClick(Sender: TObject);
+begin
+  MHCopyListRows(FList, True);
+end;
+
+procedure TMHListHook.CopyAllClick(Sender: TObject);
+begin
+  MHCopyListRows(FList, False);
+end;
+
+destructor TMHListHook.Destroy;
+begin
+  // Таблица освобождается раньше своих компонентов — обработчик возвращается, если она ещё жива.
+  if (FList <> nil) and not (csDestroying in FList.ComponentState) and
+     (TMethod(FList.WindowProc).Data = Self) then
+    FList.WindowProc := FOldProc;
+  inherited Destroy;
+end;
+
+procedure TMHListHook.WndProc(var Message: TMessage);
+begin
+  if Message.Msg = LVM_SETEXTENDEDLISTVIEWSTYLE then
+  begin
+    // WParam — маска изменяемых флагов (0 — все): двойная буферизация остаётся включённой.
+    if (Message.WParam = 0) or (Message.WParam and LVS_EX_DOUBLEBUFFER <> 0) then
+      Message.LParam := Message.LParam or LVS_EX_DOUBLEBUFFER;
+  end;
+  FOldProc(Message);
+end;
+
+function MHListHook(AList: TCustomListView): TMHListHook;
+var
+  I: Integer;
+begin
+  for I := 0 to AList.ComponentCount - 1 do
+    if AList.Components[I] is TMHListHook then
+      Exit(TMHListHook(AList.Components[I]));
+  Result := nil;
+end;
+
+procedure MHEnhanceLists(ARoot: TComponent);
+var
+  I: Integer;
+begin
+  if ARoot = nil then
+    Exit;
+  if (ARoot is TCustomListView) and (MHListHook(TCustomListView(ARoot)) = nil) then
+    TMHListHook.Create(TCustomListView(ARoot));
+  for I := 0 to ARoot.ComponentCount - 1 do
+    if not (ARoot.Components[I] is TMHListHook) then
+      MHEnhanceLists(ARoot.Components[I]);
+end;
+
+function RowText(AItem: TListItem; AColumns: Integer): string;
+var
+  I: Integer;
+begin
+  Result := AItem.Caption;
+  // Столько столбцов, сколько у таблицы (у строки подстрок может быть меньше).
+  for I := 0 to AColumns - 2 do
+    if I < AItem.SubItems.Count then
+      Result := Result + #9 + AItem.SubItems[I]
+    else
+      Result := Result + #9;
+end;
+
+function MHListRowsText(AList: TCustomListView; ASelectedOnly: Boolean): string;
+var
+  LList: TListViewAccess;
+  LLines: TStringList;
+  LColumns, I: Integer;
+  LHeader: string;
+begin
+  LList := TListViewAccess(AList);
+  LColumns := Max(1, LList.Columns.Count);
+  LLines := TStringList.Create;
+  try
+    if not ASelectedOnly and (LList.Columns.Count > 0) then
+    begin
+      LHeader := LList.Columns[0].Caption;
+      for I := 1 to LList.Columns.Count - 1 do
+        LHeader := LHeader + #9 + LList.Columns[I].Caption;
+      LLines.Add(LHeader);
+    end;
+    for I := 0 to LList.Items.Count - 1 do
+      // Виртуальные таблицы: строка заполняется по запросу (OnData).
+      if not ASelectedOnly or LList.Items[I].Selected then
+        LLines.Add(RowText(LList.Items[I], LColumns));
+    if ASelectedOnly and (LLines.Count = 0) then
+      Exit('');
+    if not ASelectedOnly and (LList.Items.Count = 0) then
+      Exit('');
+    // Пустой последний столбец сохраняется (табуляция в конце), лишнего перевода строки нет.
+    LLines.TrailingLineBreak := False;
+    Result := LLines.Text;
+  finally
+    LLines.Free;
+  end;
+end;
+
+function MHCopyListRows(AList: TCustomListView; ASelectedOnly: Boolean): Boolean;
+var
+  LText: string;
+begin
+  LText := MHListRowsText(AList, ASelectedOnly);
+  Result := LText <> '';
+  if Result and Assigned(GMHSetClipboardText) then
+    GMHSetClipboardText(LText);
+end;
+
+function MHListIsBuffered(AList: TCustomListView): Boolean;
+begin
+  Result := AList.HandleAllocated and
+    (ListView_GetExtendedListViewStyle(AList.Handle) and LVS_EX_DOUBLEBUFFER <> 0);
+end;
+
 procedure MHSetItemIndexQuiet(AList: TListView; AIndex: Integer);
 begin
   if AList.ItemIndex <> AIndex then
     AList.ItemIndex := AIndex;
 end;
+
+initialization
+  GMHSetClipboardText :=
+    procedure(const AText: string)
+    begin
+      // Буфер может быть занят другой программой — копирование не роняет окно.
+      try
+        Clipboard.AsText := AText;
+      except
+        on E: Exception do
+          ;
+      end;
+    end;
 
 end.

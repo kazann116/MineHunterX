@@ -293,6 +293,8 @@ CASES = {
     'App.BinaryLabPage.FindPattern': ('без файла; пустой шаблон; не найдено → -1',
                                       ['BinaryLab_PageMethods_WithoutDataAreSafe',
                                        'BinaryLab_AnalyzeNavigateFindExportCompare']),
+    'App.BinaryLabPage.CleanPath': ('пробелы и кавычки по краям; пустая строка; пустые кавычки; одна кавычка',
+                                    ['BinaryLab_CheckButtonAndPathField']),
     'App.BinaryLabPage.OpenFile': ('пустой путь; отсутствующий файл; повторное открытие во время работы',
                                    ['BinaryLab_PageMethods_WithoutDataAreSafe', 'BinaryLab_ErrorsCancelAndCloseWhileBusy']),
     'App.BinaryLabPage.ParseOffset': ('пусто; посторонние символы; hex и десятичная запись',

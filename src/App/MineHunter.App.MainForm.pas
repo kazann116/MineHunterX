@@ -291,6 +291,8 @@ type
     FAppEvents: TApplicationEvents;
     FProcessActions: TMHFileActions;
     FChangesActions: TMHFileActions;
+    FIoActions: TMHFileActions;
+    FFindingActions: TMHFileActions;
     FBtnOpenData: TButton;
     FBtnChangeData: TButton;
     FBtnDefaultData: TButton;
@@ -458,11 +460,15 @@ type
     property ChangeDataButton: TButton read FBtnChangeData;
     /// Сведения выбранной строки «Процессов» и «Что изменилось» для действий с файлом.
     function ProcessTarget(out ATarget: TMHFileTarget): Boolean;
+    function IoTarget(out ATarget: TMHFileTarget): Boolean;
+    function FindingTarget(out ATarget: TMHFileTarget): Boolean;
     function ChangeTarget(out ATarget: TMHFileTarget): Boolean;
     property ProcessActions: TMHFileActions read FProcessActions;
     /// Колесо мыши на уровне приложения (для тестов).
     procedure HandleAppMessage(var AMsg: TMsg; var AHandled: Boolean);
     property ChangesActions: TMHFileActions read FChangesActions;
+    property IoActions: TMHFileActions read FIoActions;
+    property FindingActions: TMHFileActions read FFindingActions;
     property DefaultDataButton: TButton read FBtnDefaultData;
     property AckBox: TGroupBox read FAckBox;
     property RefreshBox: TGroupBox read FRefreshBox;
@@ -724,6 +730,8 @@ begin
     end;
 
   MHTranslateTree(Self);
+  // Все таблицы (и созданные страницами в коде): без мерцания при обновлении, копирование строк.
+  MHEnhanceLists(Self);
   NavigateTo(pgDashboard);
   UpdateScanState;
   UpdateEvents;
@@ -884,6 +892,9 @@ begin
     end;
   FProcessActions := TMHFileActions.Create(Self, lvProcesses, ProcessTarget, LConfirm);
   FChangesActions := TMHFileActions.Create(Self, FChangesList, ChangeTarget, LConfirm);
+  FFindingActions := TMHFileActions.Create(Self, lvFindings, FindingTarget, LConfirm);
+  if FDisksPage <> nil then
+    FIoActions := TMHFileActions.Create(Self, FDisksPage.IoView, IoTarget, LConfirm);
   if FLaunchesPage <> nil then
     FLaunchesPage.Confirm := LConfirm;
   // «Открыть в BinaryLab» — для файла любого процесса, запуска или изменения.
@@ -894,6 +905,9 @@ begin
     end;
   FProcessActions.OnBinaryLab := LOpenInLab;
   FChangesActions.OnBinaryLab := LOpenInLab;
+  FFindingActions.OnBinaryLab := LOpenInLab;
+  if FIoActions <> nil then
+    FIoActions.OnBinaryLab := LOpenInLab;
   if (FLaunchesPage <> nil) and (FLaunchesPage.Actions <> nil) then
     FLaunchesPage.Actions.OnBinaryLab := LOpenInLab;
 end;
@@ -924,6 +938,36 @@ begin
     ATarget.CommandLine := MHReadProcessCommandLine(LInfo.Id.Pid, LInfo.Id.CreateTime);
   ATarget.Details := ['PID: ' + IntToStr(LInfo.Id.Pid),
     MHL('Подпись: ', 'Signature: ') + MHSignatureToString(LInfo.Signature)];
+end;
+
+function TMainForm.IoTarget(out ATarget: TMHFileTarget): Boolean;
+var
+  LItem: TListItem;
+begin
+  LItem := FDisksPage.IoView.Selected;
+  Result := (LItem <> nil) and (LItem.SubItems.Count >= 4);
+  if not Result then
+    Exit;
+  ATarget := Default(TMHFileTarget);
+  ATarget.Title := LItem.Caption;
+  ATarget.Path := LItem.SubItems[3];
+  ATarget.Details := ['PID: ' + LItem.SubItems[0], MHL('Чтение: ', 'Read: ') + LItem.SubItems[1],
+    MHL('Запись: ', 'Write: ') + LItem.SubItems[2]];
+end;
+
+function TMainForm.FindingTarget(out ATarget: TMHFileTarget): Boolean;
+var
+  LFinding: TMHFinding;
+begin
+  Result := (lvFindings.ItemIndex >= 0) and (lvFindings.ItemIndex < FFindingsModel.Count);
+  if not Result then
+    Exit;
+  LFinding := FFindingsModel[lvFindings.ItemIndex].Finding;
+  ATarget := Default(TMHFileTarget);
+  ATarget.Title := LFinding.ProcessName;
+  ATarget.Path := LFinding.ImagePath;
+  ATarget.Details := [MHL('Находка: ', 'Finding: ') + LFinding.Title, 'PID: ' + IntToStr(LFinding.Process.Pid),
+    Format(MHL('Оценка: %d из 100', 'Score: %d of 100'), [LFinding.Score])];
 end;
 
 function TMainForm.ChangeTarget(out ATarget: TMHFileTarget): Boolean;

@@ -113,7 +113,7 @@ UI_PARTS = [
                        'OffsetAtPoint', 'PointOfOffset', 'VisibleRows', 'RowCount', 'OffsetDigits', 'ContentWidth',
                        'ScrollRows', 'InvalidateData')] + [_P + 'ShowOffset', _P + 'ParseOffset', _P + 'FindPattern']),
     ('Асинхронный анализ (фон, отмена, закрытие во время работы)',
-     [_P + n for n in ('OpenFile', 'Cancel', 'Busy', 'ExportReport')]),
+     [_P + n for n in ('OpenFile', 'CleanPath', 'Cancel', 'Busy', 'ExportReport')]),
     ('Сравнение файлов (BinaryDiff в интерфейсе)',
      [_P + 'CompareWith', _P + 'ExportDiff', _C + 'SetRanges', _C + 'OffsetAtX', _C + 'RangeAtX']),
 ]

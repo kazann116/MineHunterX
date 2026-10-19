@@ -87,8 +87,8 @@ implementation
 
 uses
   Winapi.Windows, Winapi.ShellAPI, System.Hash, System.UITypes,
-  Vcl.Forms, Vcl.StdCtrls, Vcl.ExtCtrls, Vcl.Dialogs, Vcl.Clipbrd,
-  MineHunter.Core.Lang, MineHunter.Core.Launches;
+  Vcl.Forms, Vcl.StdCtrls, Vcl.ExtCtrls, Vcl.Dialogs,
+  MineHunter.Core.Lang, MineHunter.Core.Launches, MineHunter.App.ListViews;
 
 var
   GVirusTotalAgreed: Boolean;
@@ -316,7 +316,8 @@ end;
 
 procedure TMHFileActions.CopyToClipboard(const ATarget: TMHFileTarget);
 begin
-  Clipboard.AsText := MHFileTargetText(ATarget);
+  if Assigned(GMHSetClipboardText) then
+    GMHSetClipboardText(MHFileTargetText(ATarget));
 end;
 
 procedure TMHFileActions.ShowDetails(const ATarget: TMHFileTarget);
