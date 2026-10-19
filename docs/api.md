@@ -85,7 +85,7 @@ end;
 | `sensors` | `TMHSensorCollector` | `IMHSensorApi` |
 | `tamper` | `TMHTamperCollector` | `IMHTamperApi` |
 | `netadapters` | `TMHNetAdapterCollector` | `IMHNetAdapterApi` (`GetIfTable2`; скорость — по разнице счётчиков) |
-| `disks` | `TMHDiskCollector` | `IMHDiskApi` (WMI Storage, PDH PhysicalDisk, разделы) |
+| `disks` | `TMHDiskCollector` | `IMHDiskApi` (WMI Storage, PDH PhysicalDisk, разделы; `ReadHealth` — журнал NVMe и SMART SATA) |
 | `self` | `TMHSelfMonitorCollector` | — |
 
 Порядок регистрации важен: `files` после `processes`, `autostart` и `tamper`, `context` и
@@ -111,7 +111,13 @@ end;
   «Проверено, не беспокоить»: отпечаток содержимого находки (`TMHAcknowledgement`); анализатор
   (`TMHThreatAnalyzer.Acknowledged`) скрывает отмеченные, пока отпечаток совпадает и риск не вырос.
 - По устройствам: `TMHSnapshot.GpuAdapters` (`TMHGpuAdapterInfo` — по адаптеру LUID) и
-  `TMHSnapshot.NetAdapters` (`TMHNetAdapterInfo`).
+  `TMHSnapshot.NetAdapters` (`TMHNetAdapterInfo`); скорость сети для показа — `MHFormatBitRate`
+  (биты в секунду, как в диспетчере задач).
+- `MHParseNvmeHealthLog`, `MHParseAtaSmart` (`MineHunter.Collectors.DiskHealth`) — разбор журнала здоровья
+  NVMe и SMART SATA в `TMHDiskAttribute` (`TMHDiskInfo.Attributes`, `AttributesSource`) и поля диска
+  (включения, аварийные отключения, объём чтения и записи, переназначенные, нестабильные и неисправимые
+  секторы, критическое предупреждение NVMe); названия и значения для показа — `MHDiskAttributeName`,
+  `MHDiskAttributeText`, `MHDiskAttributeRawHex`.
 
 ## Хранилище, настройки, отчёты, действия
 

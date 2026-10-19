@@ -24,7 +24,8 @@ function MHFormatFileTimeLocal(AFileTime: UInt64): string;
 implementation
 
 uses
-  MineHunter.App.Lang, MineHunter.Core.Lang, Winapi.Windows, System.SysUtils, System.DateUtils;
+  MineHunter.App.Lang, MineHunter.Core.Lang, Winapi.Windows, System.SysUtils, System.DateUtils,
+  MineHunter.Collectors.NetAdapters;
 
 function MHFormatBytes(ABytes: Double): string;
 const
@@ -55,8 +56,10 @@ begin
     mkWorkingSetBytes, mkPrivateBytes, mkMemoryUsedBytes, mkMemoryTotalBytes, mkGpuMemoryBytes,
     mkPrivateWorkingSetBytes:
       Result := MHFormatBytes(AMetric.Value);
-    mkDiskBytesPerSec, mkNetworkBytesPerSec, mkDiskReadBytesPerSec, mkDiskWriteBytesPerSec:
+    mkDiskBytesPerSec, mkDiskReadBytesPerSec, mkDiskWriteBytesPerSec:
       Result := MHFormatBytes(AMetric.Value) + MHL('/с', '/s');
+    mkNetworkBytesPerSec:
+      Result := MHFormatBitRate(AMetric.Value);
     mkTemperatureCelsius, mkGpuTemperatureCelsius, mkCpuTemperatureCelsius, mkDiskTemperatureCelsius:
       Result := FormatFloat('0', AMetric.Value) + ' °C';
     mkGpuPowerWatts:

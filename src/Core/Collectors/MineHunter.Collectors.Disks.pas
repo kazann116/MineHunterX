@@ -7,6 +7,10 @@
       редко меняется, перечитывается раз в DiskRefreshSeconds;
     - счётчики надёжности (износ SSD, ошибки, наработка, температура) — тоже
       редко; без прав администратора Windows их может не отдавать;
+    - атрибуты здоровья, как в CrystalDiskInfo: журнал NVMe — раз в минуту и
+      без прав администратора, SMART SATA — раз в DiskRefreshSeconds (не будит
+      лишний раз спящие диски) и только с правами администратора; заполняют
+      то, чего нет в счётчиках надёжности;
     - разделы со свободным местом — раз в VolumeRefreshSeconds;
     - нагрузку каждого диска (счётчики PhysicalDisk) — на каждом цикле.
   Температура берётся из счётчиков надёжности, а если их нет — из показаний
@@ -17,7 +21,7 @@ interface
 
 uses
   System.SysUtils, System.Generics.Collections,
-  MineHunter.Core.Types, MineHunter.Core.Interfaces;
+  MineHunter.Core.Types, MineHunter.Core.Interfaces, MineHunter.Collectors.DiskHealth;
 
 type
   TMHRawDisk = record
@@ -60,6 +64,10 @@ type
     function ReadVolumes(out AVolumes: TArray<TMHVolumeInfo>; out AError: string): Boolean;
     /// Нагрузка по дискам; доступна со второго вызова (счётчики считают разницу).
     function ReadCounters(out ACounters: TArray<TMHRawDiskCounter>; out AError: string): Boolean;
+    /// Атрибуты здоровья диска (журнал NVMe или SMART SATA). False с пустой AError —
+    /// для этой шины сведения не запрашиваются (USB, RAID); AAccessDenied — нужны права администратора.
+    function ReadHealth(ANumber: Integer; const ABus: string; out AData: TMHDiskHealthData;
+      out AError: string; out AAccessDenied: Boolean): Boolean;
   end;
 
   TMHDiskCollector = class(TInterfacedObject, IMHCollector, IMHCacheInvalidation)
@@ -67,6 +75,7 @@ type
     SourceIdValue = 'disks';
     DiskRefreshSeconds = 600;
     VolumeRefreshSeconds = 30;
+    NvmeHealthRefreshSeconds = 60;
   private
     FApi: IMHDiskApi;
     FClock: IMHClock;
@@ -81,10 +90,16 @@ type
     FVolumesUtc: TDateTime;
     FVolumesError: string;
     FReadCount: Integer;
+    FHealth: TDictionary<Integer, TMHDiskHealthData>;
+    FNvmeHealthUtc: TDateTime;
+    FSmartUtc: TDateTime;
+    FSmartDenied: Boolean;
     function Expired(AUtc, ANow: TDateTime; ASeconds: Integer): Boolean;
     procedure RefreshCaches(ANow: TDateTime);
+    procedure RefreshHealth(ANvme: Boolean);
   public
     constructor Create(const AApi: IMHDiskApi; const AClock: IMHClock);
+    destructor Destroy; override;
     function GetSourceId: string;
     function GetDisplayName: string;
     function Collect(const ASnapshot: TMHSnapshot): TMHCollectionResult;
@@ -144,6 +159,43 @@ begin
   end;
 end;
 
+/// Атрибуты здоровья диска: сохраняются целиком и заполняют то, чего нет в счётчиках
+/// надёжности Windows (они — основной источник износа, ошибок и наработки).
+procedure ApplyHealth(var AInfo: TMHDiskInfo; const AData: TMHDiskHealthData);
+begin
+  AInfo.AttributesSource := AData.Source;
+  AInfo.Attributes := AData.Attributes;
+  if not AInfo.HasTemperature and AData.HasTemperature then
+  begin
+    AInfo.HasTemperature := True;
+    AInfo.TemperatureCelsius := AData.TemperatureCelsius;
+  end;
+  if not AInfo.HasWear and AData.HasWear then
+  begin
+    AInfo.HasWear := True;
+    AInfo.WearPercent := AData.WearPercent;
+  end;
+  // NVMe: неисправленные ошибки целостности носителя — это ошибки чтения данных.
+  if not AInfo.HasErrors and (AData.MediaErrors >= 0) then
+  begin
+    AInfo.HasErrors := True;
+    AInfo.ReadErrors := AData.MediaErrors;
+    AInfo.WriteErrors := 0;
+  end;
+  if (AInfo.PowerOnHours < 0) and (AData.PowerOnHours >= 0) then
+    AInfo.PowerOnHours := AData.PowerOnHours;
+  AInfo.PowerCycles := AData.PowerCycles;
+  AInfo.UnsafeShutdowns := AData.UnsafeShutdowns;
+  AInfo.TotalReadBytes := AData.TotalReadBytes;
+  AInfo.TotalWrittenBytes := AData.TotalWrittenBytes;
+  AInfo.ReallocatedSectors := AData.ReallocatedSectors;
+  AInfo.PendingSectors := AData.PendingSectors;
+  AInfo.UncorrectableSectors := AData.UncorrectableSectors;
+  AInfo.CriticalWarning := AData.CriticalWarning;
+  AInfo.AvailableSparePercent := AData.AvailableSparePercent;
+  AInfo.SpareThresholdPercent := AData.SpareThresholdPercent;
+end;
+
 { TMHDiskCollector }
 
 constructor TMHDiskCollector.Create(const AApi: IMHDiskApi; const AClock: IMHClock);
@@ -155,6 +207,13 @@ begin
     raise EArgumentNilException.Create('AClock');
   FApi := AApi;
   FClock := AClock;
+  FHealth := TDictionary<Integer, TMHDiskHealthData>.Create;
+end;
+
+destructor TMHDiskCollector.Destroy;
+begin
+  FHealth.Free;
+  inherited;
 end;
 
 function TMHDiskCollector.GetSourceId: string;
@@ -172,6 +231,32 @@ begin
   FDisksUtc := 0;
   FReliabilityUtc := 0;
   FVolumesUtc := 0;
+  FNvmeHealthUtc := 0;
+  FSmartUtc := 0;
+end;
+
+procedure TMHDiskCollector.RefreshHealth(ANvme: Boolean);
+var
+  LRaw: TMHRawDisk;
+  LData: TMHDiskHealthData;
+  LError: string;
+  LDenied: Boolean;
+begin
+  if not ANvme then
+    FSmartDenied := False;
+  for LRaw in FDisks do
+  begin
+    if SameText(LRaw.Bus, 'NVMe') <> ANvme then
+      Continue;
+    if FApi.ReadHealth(LRaw.Number, LRaw.Bus, LData, LError, LDenied) then
+      FHealth.AddOrSetValue(LRaw.Number, LData)
+    else
+    begin
+      FHealth.Remove(LRaw.Number);
+      if LDenied then
+        FSmartDenied := True;
+    end;
+  end;
 end;
 
 function TMHDiskCollector.Expired(AUtc, ANow: TDateTime; ASeconds: Integer): Boolean;
@@ -214,6 +299,16 @@ begin
       FReliabilityDenied := LDenied;
     end;
   end;
+  if Expired(FNvmeHealthUtc, ANow, NvmeHealthRefreshSeconds) then
+  begin
+    FNvmeHealthUtc := ANow;
+    RefreshHealth(True);
+  end;
+  if Expired(FSmartUtc, ANow, DiskRefreshSeconds) then
+  begin
+    FSmartUtc := ANow;
+    RefreshHealth(False);
+  end;
   if Expired(FVolumesUtc, ANow, VolumeRefreshSeconds) then
   begin
     FVolumesUtc := ANow;
@@ -245,6 +340,7 @@ var
   LNumber, I, J: Integer;
   LKnown: TDictionary<Integer, Boolean>;
   LState: TMHSourceState;
+  LHealth: TMHDiskHealthData;
 begin
   LNow := ASnapshot.TimestampUtc;
   if LNow = 0 then
@@ -322,6 +418,8 @@ begin
           if LRel.PowerOnHours >= 0 then
             LInfo.PowerOnHours := LRel.PowerOnHours;
         end;
+      if FHealth.TryGetValue(LInfo.Number, LHealth) then
+        ApplyHealth(LInfo, LHealth);
       // Температура и порог из коллектора датчиков (по модели) — если счётчики надёжности молчат.
       for LReading in ASnapshot.Sensors do
         if (LReading.Kind = skDisk) and SameText(Trim(LReading.Device), Trim(LInfo.Model)) then
@@ -359,10 +457,17 @@ begin
     begin
       LState := ssPartial;
       if FReliabilityDenied then
-        LNotes := LNotes + MHL('Износ и ошибки дисков доступны с правами администратора. ',
-          'Disk wear and errors are available with administrator rights. ')
+        LNotes := LNotes + MHL('Износ, ошибки и SMART дисков доступны с правами администратора ' +
+          '(журнал здоровья NVMe читается и без них). ', 'Disk wear, errors and SMART are available with ' +
+          'administrator rights (the NVMe health log is read without them). ')
       else
         LNotes := LNotes + MHL('Износ и ошибки дисков: ', 'Disk wear and errors: ') + FReliabilityError + '. ';
+    end;
+    if FSmartDenied and not FReliabilityDenied then
+    begin
+      LState := ssPartial;
+      LNotes := LNotes + MHL('SMART дисков SATA доступен с правами администратора. ',
+        'SMART of SATA disks is available with administrator rights. ');
     end;
     if FVolumesError <> '' then
     begin
@@ -377,7 +482,7 @@ begin
     if (LDisks.Count = 0) and (Length(LVolumes) = 0) then
       LState := ssUnavailable;
     Result := TMHCollectionResult.Create(TMHSourceStatus.Create(SourceIdValue, LState, Trim(LNotes), LNow));
-    Result.Status.RequiresElevation := FReliabilityDenied;
+    Result.Status.RequiresElevation := FReliabilityDenied or FSmartDenied;
     Result.Status.ItemCount := LDisks.Count;
     Result.Disks := LDisks.ToArray;
     Result.Volumes := LVolumes;

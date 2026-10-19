@@ -49,6 +49,7 @@ uses
   MineHunter.Tests.Acknowledge in 'Unit\MineHunter.Tests.Acknowledge.pas',
   MineHunter.Tests.Launches in 'Unit\MineHunter.Tests.Launches.pas',
   MineHunter.Tests.Devices in 'Unit\MineHunter.Tests.Devices.pas',
+  MineHunter.Tests.DiskHealth in 'Unit\MineHunter.Tests.DiskHealth.pas',
   MineHunter.Core.Updates in '..\src\Core\MineHunter.Core.Updates.pas',
   MineHunter.Core.Updates.WinApi in '..\src\Core\MineHunter.Core.Updates.WinApi.pas',
   MineHunter.App.Lang in '..\src\App\MineHunter.App.Lang.pas',
@@ -58,6 +59,7 @@ uses
   MineHunter.Collectors.ProcessEvents in '..\src\Core\Collectors\MineHunter.Collectors.ProcessEvents.pas',
   MineHunter.Collectors.Disks in '..\src\Core\Collectors\MineHunter.Collectors.Disks.pas',
   MineHunter.Collectors.NetAdapters in '..\src\Core\Collectors\MineHunter.Collectors.NetAdapters.pas',
+  MineHunter.Collectors.DiskHealth in '..\src\Core\Collectors\MineHunter.Collectors.DiskHealth.pas',
   MineHunter.Collectors.NetAdapters.WinApi in '..\src\Core\Collectors\MineHunter.Collectors.NetAdapters.WinApi.pas',
   MineHunter.Collectors.Disks.WinApi in '..\src\Core\Collectors\MineHunter.Collectors.Disks.WinApi.pas',
   MineHunter.Tests.Disks in 'Unit\MineHunter.Tests.Disks.pas',
@@ -136,7 +138,8 @@ uses
   MineHunter.Tests.Storage in 'Unit\MineHunter.Tests.Storage.pas',
   MineHunter.Tests.Chart in 'Unit\MineHunter.Tests.Chart.pas',
   MineHunter.Tests.Collectors in 'Integration\MineHunter.Tests.Collectors.pas',
-  MineHunter.Tests.UI.Smoke in 'UI\MineHunter.Tests.UI.Smoke.pas';
+  MineHunter.Tests.UI.Smoke in 'UI\MineHunter.Tests.UI.Smoke.pas',
+  MineHunter.Tests.UI.ListViews in 'UI\MineHunter.Tests.UI.ListViews.pas';
 
 var
   LRunner: ITestRunner;

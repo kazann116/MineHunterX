@@ -14,13 +14,18 @@
   - Разделы: GetLogicalDriveStrings, GetDriveType (локальные и съёмные),
     GetVolumeInformation, GetDiskFreeSpaceEx, IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS.
     Диалоги «вставьте диск» подавляются (SEM_FAILCRITICALERRORS).
+  - Здоровье: NVMe — журнал Log Page 02h через IOCTL_STORAGE_QUERY_PROPERTY
+    (StorageDeviceProtocolSpecificProperty; диск открывается без доступа к данным,
+    права администратора не нужны); SATA — SMART_RCV_DRIVE_DATA (READ DATA и READ
+    THRESHOLDS; диск открывается на чтение и запись — только администратор).
   WMI-запросы выполняются в потоке сканера с CoInitializeEx на время вызова.
 }
 
 interface
 
 uses
-  System.SysUtils, MineHunter.Core.Types, MineHunter.Collectors.Disks, MineHunter.Collectors.Pdh;
+  System.SysUtils, MineHunter.Core.Types, MineHunter.Collectors.Disks, MineHunter.Collectors.Pdh,
+  MineHunter.Collectors.DiskHealth;
 
 type
   TMHWinDiskApi = class(TInterfacedObject, IMHDiskApi)
@@ -36,6 +41,8 @@ type
       out AAccessDenied: Boolean): Boolean;
     function ReadVolumes(out AVolumes: TArray<TMHVolumeInfo>; out AError: string): Boolean;
     function ReadCounters(out ACounters: TArray<TMHRawDiskCounter>; out AError: string): Boolean;
+    function ReadHealth(ANumber: Integer; const ABus: string; out AData: TMHDiskHealthData;
+      out AError: string; out AAccessDenied: Boolean): Boolean;
   end;
 
 /// Шина по коду BusType из MSFT_PhysicalDisk.
@@ -53,6 +60,20 @@ const
   STORAGE_NAMESPACE = 'root\Microsoft\Windows\Storage';
   IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS = $00560000;
   MAX_EXTENTS = 32;
+  IOCTL_STORAGE_QUERY_PROPERTY = $002D1400;
+  SMART_RCV_DRIVE_DATA = $0007C088;
+  STORAGE_DEVICE_PROTOCOL_SPECIFIC_PROPERTY = 50;
+  PROTOCOL_TYPE_NVME = 3;
+  NVME_DATA_TYPE_LOG_PAGE = 2;
+  NVME_LOG_PAGE_HEALTH_INFO = 2;
+  /// STORAGE_PROPERTY_QUERY до AdditionalParameters и размер STORAGE_PROTOCOL_SPECIFIC_DATA.
+  PROPERTY_QUERY_HEADER = 8;
+  PROTOCOL_SPECIFIC_DATA_SIZE = 40;
+  SMART_READ_ATTRIBUTES = $D0;
+  SMART_READ_THRESHOLDS = $D1;
+  /// SENDCMDINPARAMS (упаковка 1 байт) и заголовок SENDCMDOUTPARAMS до bBuffer.
+  SENDCMD_IN_SIZE = 33;
+  SENDCMD_OUT_HEADER = 16;
 
 type
   TDiskExtent = record
@@ -65,6 +86,75 @@ type
     NumberOfDiskExtents: DWORD;
     Extents: array[0..MAX_EXTENTS - 1] of TDiskExtent;
   end;
+
+function OpenPhysicalDrive(ANumber: Integer; AAccess: DWORD): THandle;
+begin
+  Result := CreateFile(PChar(Format('\\.\PhysicalDrive%d', [ANumber])), AAccess,
+    FILE_SHARE_READ or FILE_SHARE_WRITE, nil, OPEN_EXISTING, 0, 0);
+end;
+
+/// Журнал здоровья NVMe: запрос — STORAGE_PROPERTY_QUERY с STORAGE_PROTOCOL_SPECIFIC_DATA,
+/// ответ — STORAGE_PROTOCOL_DATA_DESCRIPTOR (Version, Size, та же структура и данные журнала).
+function ReadNvmeHealthLog(AHandle: THandle; out ALog: TBytes; out AError: string): Boolean;
+var
+  LBuffer: TBytes;
+  LReturned, LOffset, LLength: DWORD;
+begin
+  ALog := nil;
+  SetLength(LBuffer, PROPERTY_QUERY_HEADER + PROTOCOL_SPECIFIC_DATA_SIZE + MH_HEALTH_LOG_SIZE);
+  FillChar(LBuffer[0], Length(LBuffer), 0);
+  PDWORD(@LBuffer[0])^ := STORAGE_DEVICE_PROTOCOL_SPECIFIC_PROPERTY; // PropertyId
+  PDWORD(@LBuffer[4])^ := 0;                                         // PropertyStandardQuery
+  PDWORD(@LBuffer[8])^ := PROTOCOL_TYPE_NVME;                        // ProtocolType
+  PDWORD(@LBuffer[12])^ := NVME_DATA_TYPE_LOG_PAGE;                  // DataType
+  PDWORD(@LBuffer[16])^ := NVME_LOG_PAGE_HEALTH_INFO;                // ProtocolDataRequestValue
+  PDWORD(@LBuffer[24])^ := PROTOCOL_SPECIFIC_DATA_SIZE;              // ProtocolDataOffset
+  PDWORD(@LBuffer[28])^ := MH_HEALTH_LOG_SIZE;                       // ProtocolDataLength
+  LReturned := 0;
+  if not DeviceIoControl(AHandle, IOCTL_STORAGE_QUERY_PROPERTY, @LBuffer[0], Length(LBuffer),
+    @LBuffer[0], Length(LBuffer), LReturned, nil) then
+  begin
+    AError := SysErrorMessage(GetLastError);
+    Exit(False);
+  end;
+  LOffset := PDWORD(@LBuffer[PROPERTY_QUERY_HEADER + 16])^;
+  LLength := PDWORD(@LBuffer[PROPERTY_QUERY_HEADER + 20])^;
+  if (LLength < MH_HEALTH_LOG_SIZE) or
+     (UInt64(PROPERTY_QUERY_HEADER) + LOffset + MH_HEALTH_LOG_SIZE > UInt64(Length(LBuffer))) or
+     (UInt64(LReturned) < UInt64(PROPERTY_QUERY_HEADER) + LOffset + MH_HEALTH_LOG_SIZE) then
+  begin
+    AError := MHL('диск вернул неполный журнал здоровья', 'the disk returned an incomplete health log');
+    Exit(False);
+  end;
+  ALog := Copy(LBuffer, PROPERTY_QUERY_HEADER + Integer(LOffset), MH_HEALTH_LOG_SIZE);
+  Result := True;
+end;
+
+/// Команда SMART (READ DATA или READ THRESHOLDS): 512 байт данных.
+function SmartCommand(AHandle: THandle; AFeature: Byte; out AData: TBytes): Boolean;
+var
+  LIn: array[0..SENDCMD_IN_SIZE - 1] of Byte;
+  LOut: TBytes;
+  LReturned: DWORD;
+begin
+  AData := nil;
+  FillChar(LIn, SizeOf(LIn), 0);
+  PDWORD(@LIn[0])^ := MH_HEALTH_LOG_SIZE; // cBufferSize
+  LIn[4] := AFeature;                     // bFeaturesReg
+  LIn[5] := 1;                            // bSectorCountReg
+  LIn[6] := 1;                            // bSectorNumberReg
+  LIn[7] := $4F;                          // bCylLowReg — сигнатура SMART
+  LIn[8] := $C2;                          // bCylHighReg
+  LIn[9] := $A0;                          // bDriveHeadReg
+  LIn[10] := $B0;                         // bCommandReg — SMART
+  SetLength(LOut, SENDCMD_OUT_HEADER + MH_HEALTH_LOG_SIZE);
+  FillChar(LOut[0], Length(LOut), 0);
+  LReturned := 0;
+  Result := DeviceIoControl(AHandle, SMART_RCV_DRIVE_DATA, @LIn[0], SizeOf(LIn), @LOut[0], Length(LOut),
+    LReturned, nil) and (LReturned > SENDCMD_OUT_HEADER);
+  if Result then
+    AData := Copy(LOut, SENDCMD_OUT_HEADER, MH_HEALTH_LOG_SIZE);
+end;
 
 function MHBusTypeName(ACode: Integer): string;
 begin
@@ -178,6 +268,60 @@ begin
 end;
 
 { TMHWinDiskApi }
+
+function TMHWinDiskApi.ReadHealth(ANumber: Integer; const ABus: string; out AData: TMHDiskHealthData;
+  out AError: string; out AAccessDenied: Boolean): Boolean;
+var
+  LHandle: THandle;
+  LLog, LValues, LThresholds: TBytes;
+  LCode: DWORD;
+begin
+  AError := '';
+  AAccessDenied := False;
+  AData := TMHDiskHealthData.Create('');
+  if SameText(ABus, 'NVMe') then
+  begin
+    // Запрос свойства устройства: доступ к данным диска не нужен.
+    LHandle := OpenPhysicalDrive(ANumber, 0);
+    if LHandle = INVALID_HANDLE_VALUE then
+    begin
+      AError := SysErrorMessage(GetLastError);
+      Exit(False);
+    end;
+    try
+      Result := ReadNvmeHealthLog(LHandle, LLog, AError) and MHParseNvmeHealthLog(LLog, AData);
+    finally
+      CloseHandle(LHandle);
+    end;
+  end
+  else if SameText(ABus, 'SATA') or SameText(ABus, 'ATA') then
+  begin
+    // Команды SMART требуют открыть диск на чтение и запись — только с правами администратора.
+    LHandle := OpenPhysicalDrive(ANumber, GENERIC_READ or GENERIC_WRITE);
+    if LHandle = INVALID_HANDLE_VALUE then
+    begin
+      LCode := GetLastError;
+      AAccessDenied := LCode = ERROR_ACCESS_DENIED;
+      AError := SysErrorMessage(LCode);
+      Exit(False);
+    end;
+    try
+      if not SmartCommand(LHandle, SMART_READ_ATTRIBUTES, LValues) then
+      begin
+        AError := SysErrorMessage(GetLastError);
+        Exit(False);
+      end;
+      if not SmartCommand(LHandle, SMART_READ_THRESHOLDS, LThresholds) then
+        LThresholds := nil;
+      Result := MHParseAtaSmart(LValues, LThresholds, AData);
+    finally
+      CloseHandle(LHandle);
+    end;
+  end
+  else
+    // USB, RAID и другие шины: команды через мост не отправляются.
+    Result := False;
+end;
 
 constructor TMHWinDiskApi.Create;
 begin

@@ -2,7 +2,8 @@
 
 {
   Страница «Диски»: каждый физический диск (нагрузка, температура, состояние,
-  износ, ошибки, наработка), разделы со свободным местом, программы с
+  износ, ошибки, наработка), атрибуты здоровья выбранного диска (журнал NVMe
+  или SMART, как в CrystalDiskInfo), разделы со свободным местом, программы с
   наибольшим чтением и записью и проверка файлов на всех дисках (фоновый
   поток с низким приоритетом ввода-вывода, прогресс, отмена, действия:
   открыть расположение, в карантин, «это мой файл»).
@@ -61,12 +62,18 @@ type
     FHistory: TObjectDictionary<string, TMHSeriesBuffer>;
     FDiskKeys, FNetKeys, FGpuKeys: TArray<string>;
     FLastSnapshot: TMHSnapshot;
+    FAttrs: TListView;
+    FAttrCaption: TLabel;
     procedure AddPoint(const AKey: string; AKind: TMHMetricKind; AValue: Double; ATime: TDateTime);
     procedure ShowChart(AChart: TMHLineChart; AList: TListView; const AKeys: TArray<string>;
       const ATitle: string);
     procedure DeviceSelect(Sender: TObject; Item: TListItem; Selected: Boolean);
+    function DiskKey(AItem: TListItem): string;
+    function NetKey(AItem: TListItem): string;
+    function GpuKey(AItem: TListItem): string;
     procedure UpdateNetwork(const ASnapshot: TMHSnapshot);
     procedure UpdateGpus(const ASnapshot: TMHSnapshot);
+    procedure UpdateAttributes;
     function NewList(AParent: TWinControl; AAlign: TAlign; AHeight: Integer;
       const AColumns: array of string; const AWidths: array of Integer): TListView;
     function NewCaption(AParent: TWinControl; const AText: string): TLabel;
@@ -111,6 +118,8 @@ type
     property ScanFs: IMHFileScanFs read FScanFs write FScanFs;
     property ScanRoots: TArray<string> read FScanRoots write FScanRoots;
     property DisksView: TListView read FDisks;
+    property AttributesView: TListView read FAttrs;
+    property AttributesCaption: TLabel read FAttrCaption;
     property VolumesView: TListView read FVolumes;
     property IoView: TListView read FIo;
     property HitsView: TListView read FHitsView;
@@ -130,7 +139,8 @@ uses
   Vcl.Graphics,
   MineHunter.Core.Lang, MineHunter.Core.Settings, MineHunter.Core.Actions, MineHunter.Core.Interfaces,
   MineHunter.Core.FileScan.WinApi, MineHunter.Collectors.Disks, MineHunter.Analysis.Disks,
-  MineHunter.App.Display, MineHunter.App.ListViews, MineHunter.Collectors.NetAdapters;
+  MineHunter.App.Display, MineHunter.App.ListViews, MineHunter.Collectors.NetAdapters,
+  MineHunter.Collectors.DiskHealth;
 
 const
   /// Точек истории на устройство: 10 минут при опросе раз в 2 с.
@@ -146,7 +156,7 @@ const
 constructor TMHDisksPage.Create(AOwner: TComponent; ASheet: TWinControl; AServices: TMHAppServices;
   const AConfirm: TMHConfirmQuestion; const ANotice: TMHNotice);
 var
-  LTop, LScanPanel, LButtons, LDiskPanel, LNetPanel, LGpuPanel: TPanel;
+  LTop, LScanPanel, LButtons, LDiskPanel, LNetPanel, LGpuPanel, LVolRow, LVolPanel, LAttrPanel: TPanel;
   LHost: TWinControl;
 begin
   inherited Create(AOwner);
@@ -209,8 +219,32 @@ begin
      MHL('Температура', 'Temperature'), MHL('Состояние', 'Health'), MHL('Износ', 'Wear'),
      MHL('Ошибки', 'Errors'), MHL('Наработка', 'Power-on')],
     [55, 170, 175, 70, 70, 50, 75, 75, 135, 120, 55, 60, 75]);
-  NewCaption(LHost, MHL('Разделы', 'Volumes'));
-  FVolumes := NewList(LHost, alTop, 160,
+  // Разделы слева, атрибуты здоровья выбранного диска справа — в одной строке.
+  LVolRow := TPanel.Create(Self);
+  LVolRow.Parent := LHost;
+  LVolRow.Top := 10000;
+  LVolRow.Align := alTop;
+  LVolRow.Height := 210;
+  LVolRow.BevelOuter := bvNone;
+  LAttrPanel := TPanel.Create(Self);
+  LAttrPanel.Parent := LVolRow;
+  LAttrPanel.Align := alRight;
+  LAttrPanel.Width := 640;
+  LAttrPanel.BevelOuter := bvNone;
+  FAttrCaption := NewCaption(LAttrPanel, MHL('Здоровье диска', 'Disk health'));
+  FAttrs := NewList(LAttrPanel, alClient, 0,
+    ['ID', MHL('Атрибут', 'Attribute'), MHL('Значение', 'Value'), MHL('Текущее', 'Current'),
+     MHL('Худшее', 'Worst'), MHL('Порог', 'Threshold'), 'Raw'],
+    [34, 205, 75, 58, 55, 48, 118]);
+  FAttrs.Hint := MHL('Те же атрибуты, что показывает CrystalDiskInfo: журнал здоровья NVMe или SMART диска SATA.',
+    'The same attributes CrystalDiskInfo shows: the NVMe health log or the SMART of a SATA disk.');
+  FAttrs.ShowHint := True;
+  LVolPanel := TPanel.Create(Self);
+  LVolPanel.Parent := LVolRow;
+  LVolPanel.Align := alClient;
+  LVolPanel.BevelOuter := bvNone;
+  NewCaption(LVolPanel, MHL('Разделы', 'Volumes'));
+  FVolumes := NewList(LVolPanel, alClient, 0,
     [MHL('Раздел', 'Volume'), MHL('Метка', 'Label'), MHL('ФС', 'FS'), MHL('Всего', 'Total'),
      MHL('Свободно', 'Free'), MHL('Свободно, %', 'Free, %'), MHL('Диск', 'Disk'), MHL('Состояние', 'State')],
     [60, 160, 55, 80, 80, 80, 50, 260]);
@@ -299,8 +333,10 @@ begin
     Parent := LNetPanel;
     SetBounds(8, 8, 1000, 15);
     ShowAccelChar := False;
-    Caption := MHL('Каждый сетевой адаптер отдельно и «Всего». Выберите адаптер — график приёма и передачи за 10 минут.',
-      'Each network adapter separately and "Total". Select an adapter to see receive and send over 10 minutes.');
+    Caption := MHL('Каждый сетевой адаптер отдельно и «Всего». Скорость — в битах в секунду, как в диспетчере задач. ' +
+      'Выберите адаптер — график приёма и передачи за 10 минут.',
+      'Each network adapter separately and "Total". Speed is in bits per second, as in Task Manager. ' +
+      'Select an adapter to see receive and send over 10 minutes.');
   end;
   FNet := NewList(FNetTab, alTop, 300,
     [MHL('Адаптер', 'Adapter'), MHL('Тип', 'Type'), MHL('Состояние', 'State'), MHL('Скорость канала', 'Link speed'),
@@ -313,7 +349,7 @@ begin
   FNetChart.Formatter :=
     function(AValue: Double): string
     begin
-      Result := MHFormatRate(AValue);
+      Result := MHFormatBitRate(AValue);
     end;
 
   // Вкладка «Видеокарты».
@@ -407,6 +443,29 @@ begin
     Result := Format(MHL('%d ч', '%d h'), [AHours]);
 end;
 
+function KeyAt(const AKeys: TArray<string>; AIndex: Integer): string;
+begin
+  if (AIndex >= 0) and (AIndex <= High(AKeys)) then
+    Result := AKeys[AIndex]
+  else
+    Result := '';
+end;
+
+function TMHDisksPage.DiskKey(AItem: TListItem): string;
+begin
+  Result := KeyAt(FDiskKeys, AItem.Index);
+end;
+
+function TMHDisksPage.NetKey(AItem: TListItem): string;
+begin
+  Result := KeyAt(FNetKeys, AItem.Index);
+end;
+
+function TMHDisksPage.GpuKey(AItem: TListItem): string;
+begin
+  Result := KeyAt(FGpuKeys, AItem.Index);
+end;
+
 procedure TMHDisksPage.UpdateSnapshot(const ASnapshot: TMHSnapshot);
 var
   LDisk: TMHDiskInfo;
@@ -417,7 +476,9 @@ var
   LNumber: Integer;
   LList: TList<TMHProcessInfo>;
   LInfo: TMHProcessInfo;
-  I, LTop: Integer;
+  I: Integer;
+  LState: TMHListState;
+  LKeyOf: TMHListItemKey;
   LTotalSize: Int64;
   LTotalRead, LTotalWrite, LBusiest: Double;
 
@@ -432,8 +493,9 @@ var
 
 begin
   FLastSnapshot := ASnapshot;
+  LKeyOf := DiskKey;
+  LState := MHSaveListState(FDisks, LKeyOf);
   FDiskKeys := nil;
-  LTop := MHListTopIndex(FDisks);
   FDisks.Items.BeginUpdate;
   try
     FDisks.Items.Clear;
@@ -517,9 +579,14 @@ begin
   finally
     FDisks.Items.EndUpdate;
   end;
-  MHRestoreListTop(FDisks, LTop);
+  MHRestoreListState(FDisks, LState, LKeyOf);
 
-  LTop := MHListTopIndex(FVolumes);
+  LKeyOf :=
+    function(AItem: TListItem): string
+    begin
+      Result := AItem.Caption;
+    end;
+  LState := MHSaveListState(FVolumes, LKeyOf);
   FVolumes.Items.BeginUpdate;
   try
     FVolumes.Items.Clear;
@@ -549,7 +616,7 @@ begin
   finally
     FVolumes.Items.EndUpdate;
   end;
-  MHRestoreListTop(FVolumes, LTop);
+  MHRestoreListState(FVolumes, LState, LKeyOf);
 
   LList := TList<TMHProcessInfo>.Create;
   try
@@ -573,7 +640,13 @@ begin
           LB := LB + B.IoWrite.Value;
         Result := CompareValue(LB, LA);
       end));
-    LTop := MHListTopIndex(FIo);
+    // Имя может повторяться (несколько msedge.exe) — ключ с PID.
+    LKeyOf :=
+      function(AItem: TListItem): string
+      begin
+        Result := MHItemTextKey(AItem, [0]);
+      end;
+    LState := MHSaveListState(FIo, LKeyOf);
     FIo.Items.BeginUpdate;
     try
       FIo.Items.Clear;
@@ -592,10 +665,11 @@ begin
     finally
       FIo.Items.EndUpdate;
     end;
-    MHRestoreListTop(FIo, LTop);
+    MHRestoreListState(FIo, LState, LKeyOf);
   finally
     LList.Free;
   end;
+  UpdateAttributes;
   UpdateNetwork(ASnapshot);
   UpdateGpus(ASnapshot);
   ShowChart(FDiskChart, FDisks, FDiskKeys, MHL('Занятость диска (10 мин)', 'Disk busy (10 min)'));
@@ -663,7 +737,7 @@ end;
 procedure TMHDisksPage.ShowChart(AChart: TMHLineChart; AList: TListView; const AKeys: TArray<string>;
   const ATitle: string);
 var
-  LKey: string;
+  LKey, LName: string;
   LBuffer: TMHSeriesBuffer;
   LIndex: Integer;
 begin
@@ -684,29 +758,127 @@ begin
     AChart.SetPoints(LBuffer.ToArray)
   else
     AChart.SetPoints(nil);
-  AChart.Title := ATitle + ': ' + AList.Items[LIndex].Caption;
+  LName := AList.Items[LIndex].Caption;
+  // У диска в первом столбце только номер — добавляем модель.
+  if (AList = FDisks) and (LKey <> 'disk:' + TOTAL_KEY) and (AList.Items[LIndex].SubItems.Count > 0) then
+    LName := Format(MHL('диск %s — %s', 'disk %s — %s'), [LName, AList.Items[LIndex].SubItems[0]]);
+  AChart.Title := ATitle + ': ' + LName;
 end;
 
 procedure TMHDisksPage.DeviceSelect(Sender: TObject; Item: TListItem; Selected: Boolean);
 begin
-  if Selected then
+  // Только график своей таблицы: при пересборке других списков их ключи ещё не готовы.
+  if not Selected then
+    Exit;
+  if Sender = FDisks then
   begin
     ShowChart(FDiskChart, FDisks, FDiskKeys, MHL('Занятость диска (10 мин)', 'Disk busy (10 min)'));
-    ShowChart(FNetChart, FNet, FNetKeys, MHL('Приём + передача (10 мин)', 'Receive + send (10 min)'));
+    UpdateAttributes;
+  end
+  else if Sender = FNet then
+    ShowChart(FNetChart, FNet, FNetKeys, MHL('Приём + передача (10 мин)', 'Receive + send (10 min)'))
+  else if Sender = FGpu then
     ShowChart(FGpuChart, FGpu, FGpuKeys, MHL('Загрузка видеокарты (10 мин)', 'GPU load (10 min)'));
+end;
+
+procedure TMHDisksPage.UpdateAttributes;
+var
+  LDisks: TArray<TMHDiskInfo>;
+  LDisk: TMHDiskInfo;
+  LAttribute: TMHDiskAttribute;
+  LItem: TListItem;
+  LIndex, LNumber, I: Integer;
+  LKey, LReason: string;
+  LState: TMHListState;
+  LKeyOf: TMHListItemKey;
+
+  function Number(AValue: Integer): string;
+  begin
+    if AValue < 0 then
+      Result := ''
+    else
+      Result := IntToStr(AValue);
   end;
+
+begin
+  LDisks := FLastSnapshot.Disks;
+  // Выбранный диск; без выбора или для строки «Всего» — первый диск с атрибутами.
+  LIndex := -1;
+  LKey := '';
+  if FDisks.Selected <> nil then
+    LKey := DiskKey(FDisks.Selected);
+  if LKey.StartsWith('disk:') and TryStrToInt(LKey.Substring(5), LNumber) then
+    for I := 0 to High(LDisks) do
+      if LDisks[I].Number = LNumber then
+        LIndex := I;
+  if LIndex < 0 then
+    for I := High(LDisks) downto 0 do
+      if Length(LDisks[I].Attributes) > 0 then
+        LIndex := I;
+  if (LIndex < 0) and (Length(LDisks) > 0) then
+    LIndex := 0;
+
+  LKeyOf :=
+    function(AItem: TListItem): string
+    begin
+      Result := AItem.Caption;
+    end;
+  LState := MHSaveListState(FAttrs, LKeyOf);
+  FAttrs.Items.BeginUpdate;
+  try
+    FAttrs.Items.Clear;
+    if LIndex < 0 then
+      FAttrCaption.Caption := MHL('Здоровье диска', 'Disk health')
+    else
+    begin
+      LDisk := LDisks[LIndex];
+      FAttrCaption.Caption := Format(MHL('Здоровье диска %d — %s', 'Disk %d health — %s'), [LDisk.Number, LDisk.Model]);
+      if LDisk.AttributesSource = MH_HEALTH_SOURCE_NVME then
+        FAttrCaption.Caption := FAttrCaption.Caption + MHL(' (журнал NVMe)', ' (NVMe log)')
+      else if LDisk.AttributesSource = MH_HEALTH_SOURCE_SMART then
+        FAttrCaption.Caption := FAttrCaption.Caption + ' (SMART)';
+      for LAttribute in LDisk.Attributes do
+      begin
+        LItem := FAttrs.Items.Add;
+        LItem.Caption := IntToHex(LAttribute.Id, 2);
+        LItem.SubItems.Add(MHDiskAttributeName(LDisk.AttributesSource, LAttribute.Id));
+        LItem.SubItems.Add(MHDiskAttributeText(LDisk.AttributesSource, LAttribute));
+        LItem.SubItems.Add(Number(LAttribute.Current));
+        LItem.SubItems.Add(Number(LAttribute.Worst));
+        LItem.SubItems.Add(Number(LAttribute.Threshold));
+        LItem.SubItems.Add(MHDiskAttributeRawHex(LDisk.AttributesSource, LAttribute));
+      end;
+      if Length(LDisk.Attributes) = 0 then
+      begin
+        if SameText(LDisk.Bus, 'USB') then
+          LReason := MHL('Диск подключён через USB: атрибуты через USB-мост не запрашиваются.',
+            'The disk is connected via USB: attributes are not requested through the USB bridge.')
+        else if SameText(LDisk.Bus, 'SATA') or SameText(LDisk.Bus, 'ATA') then
+          LReason := MHL('SMART дисков SATA доступен с правами администратора.',
+            'SMART of SATA disks is available with administrator rights.')
+        else
+          LReason := MHL('Диск не сообщает атрибуты здоровья.', 'The disk does not report health attributes.');
+        LItem := FAttrs.Items.Add;
+        LItem.Caption := '';
+        LItem.SubItems.Add(LReason);
+      end;
+    end;
+  finally
+    FAttrs.Items.EndUpdate;
+  end;
+  MHRestoreListState(FAttrs, LState, LKeyOf);
 end;
 
 procedure TMHDisksPage.UpdateNetwork(const ASnapshot: TMHSnapshot);
 var
   LNet: TMHNetAdapterInfo;
   LItem: TListItem;
-  LTop: Integer;
+  LState: TMHListState;
   LRx, LTx: Double;
   LConnected: Integer;
 begin
+  LState := MHSaveListState(FNet, NetKey);
   FNetKeys := nil;
-  LTop := MHListTopIndex(FNet);
   FNet.Items.BeginUpdate;
   try
     FNet.Items.Clear;
@@ -728,8 +900,8 @@ begin
       LItem.SubItems.Add(MHFormatLinkSpeed(LNet.LinkSpeedBps));
       if LNet.HasRate then
       begin
-        LItem.SubItems.Add(MHFormatRate(LNet.ReceiveBytesPerSec));
-        LItem.SubItems.Add(MHFormatRate(LNet.SendBytesPerSec));
+        LItem.SubItems.Add(MHFormatBitRate(LNet.ReceiveBytesPerSec));
+        LItem.SubItems.Add(MHFormatBitRate(LNet.SendBytesPerSec));
         LRx := LRx + LNet.ReceiveBytesPerSec;
         LTx := LTx + LNet.SendBytesPerSec;
       end
@@ -748,14 +920,14 @@ begin
       LItem.SubItems.Add(Format(MHL('адаптеров: %d', 'adapters: %d'), [Length(ASnapshot.NetAdapters)]));
       LItem.SubItems.Add(Format(MHL('подключено: %d', 'connected: %d'), [LConnected]));
       LItem.SubItems.Add('');
-      LItem.SubItems.Add(MHFormatRate(LRx));
-      LItem.SubItems.Add(MHFormatRate(LTx));
+      LItem.SubItems.Add(MHFormatBitRate(LRx));
+      LItem.SubItems.Add(MHFormatBitRate(LTx));
       FNetKeys := FNetKeys + ['net:' + TOTAL_KEY];
     end;
   finally
     FNet.Items.EndUpdate;
   end;
-  MHRestoreListTop(FNet, LTop);
+  MHRestoreListState(FNet, LState, NetKey);
 end;
 
 procedure TMHDisksPage.UpdateGpus(const ASnapshot: TMHSnapshot);
@@ -764,7 +936,9 @@ var
   LItem: TListItem;
   LMaxLoad, LMaxCompute, LMemory, LPower: Double;
   LHasPower: Boolean;
+  LState: TMHListState;
 begin
+  LState := MHSaveListState(FGpu, GpuKey);
   FGpuKeys := nil;
   FGpu.Items.BeginUpdate;
   try
@@ -827,6 +1001,7 @@ begin
   finally
     FGpu.Items.EndUpdate;
   end;
+  MHRestoreListState(FGpu, LState, GpuKey);
 end;
 
 procedure TMHDisksPage.UpdateButtons;

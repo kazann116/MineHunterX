@@ -28,7 +28,7 @@ uses
   MineHunter.Core.Types, MineHunter.Core.Interfaces, MineHunter.Analysis.Indicators;
 
 const
-  MH_RULESET_VERSION = 'MH-2026.10.4';
+  MH_RULESET_VERSION = 'MH-2026.10.5';
 
   // Коды признаков (стабильны: используются в отчётах и регрессионных тестах).
   EV_LOAD_SUSTAINED = 'LOAD_SUSTAINED';

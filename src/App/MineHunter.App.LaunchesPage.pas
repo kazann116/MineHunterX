@@ -239,9 +239,16 @@ var
   LRecord: TMHLaunchRecord;
   LItem: TListItem;
   LDuration, LParent: string;
-  LTop: Integer;
+  LState: TMHListState;
+  LKeyOf: TMHListItemKey;
 begin
-  LTop := MHListTopIndex(FList);
+  // Запись — время запуска и PID: новые запуски сверху не сдвигают просматриваемую часть.
+  LKeyOf :=
+    function(AItem: TListItem): string
+    begin
+      Result := MHItemTextKey(AItem, [1]);
+    end;
+  LState := MHSaveListState(FList, LKeyOf);
   FList.Items.BeginUpdate;
   try
     FList.Items.Clear;
@@ -268,7 +275,7 @@ begin
   finally
     FList.Items.EndUpdate;
   end;
-  MHRestoreListTop(FList, LTop);
+  MHRestoreListState(FList, LState, LKeyOf);
   if FEtw then
     FInfo.Caption := Format(MHL('Записей: %d. Журнал видит каждый запуск (события Windows).',
       'Records: %d. The journal sees every launch (Windows events).'), [Length(FRows)])

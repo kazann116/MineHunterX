@@ -108,6 +108,7 @@
         <DCCReference Include="Unit\MineHunter.Tests.Acknowledge.pas"/>
         <DCCReference Include="Unit\MineHunter.Tests.Launches.pas"/>
         <DCCReference Include="Unit\MineHunter.Tests.Devices.pas"/>
+        <DCCReference Include="Unit\MineHunter.Tests.DiskHealth.pas"/>
         <DCCReference Include="..\src\Core\MineHunter.Core.Updates.pas"/>
         <DCCReference Include="..\src\Core\MineHunter.Core.Updates.WinApi.pas"/>
         <DCCReference Include="..\src\App\MineHunter.App.Lang.pas"/>
@@ -117,6 +118,7 @@
         <DCCReference Include="..\src\Core\Collectors\MineHunter.Collectors.ProcessEvents.pas"/>
         <DCCReference Include="..\src\Core\Collectors\MineHunter.Collectors.Disks.pas"/>
         <DCCReference Include="..\src\Core\Collectors\MineHunter.Collectors.NetAdapters.pas"/>
+        <DCCReference Include="..\src\Core\Collectors\MineHunter.Collectors.DiskHealth.pas"/>
         <DCCReference Include="..\src\Core\Collectors\MineHunter.Collectors.NetAdapters.WinApi.pas"/>
         <DCCReference Include="..\src\Core\Collectors\MineHunter.Collectors.Disks.WinApi.pas"/>
         <DCCReference Include="Unit\MineHunter.Tests.Disks.pas"/>
@@ -199,6 +201,7 @@
         <DCCReference Include="Unit\MineHunter.Tests.Chart.pas"/>
         <DCCReference Include="Integration\MineHunter.Tests.Collectors.pas"/>
         <DCCReference Include="UI\MineHunter.Tests.UI.Smoke.pas"/>
+        <DCCReference Include="UI\MineHunter.Tests.UI.ListViews.pas"/>
         <RcCompile Include="..\src\App\MineHunter.App.Styles.rc">
             <Form>..\src\App\MineHunter.App.Styles.res</Form>
         </RcCompile>

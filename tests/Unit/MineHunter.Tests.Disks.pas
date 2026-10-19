@@ -12,7 +12,7 @@ uses
   System.SysUtils,
   DUnitX.TestFramework,
   MineHunter.Core.Types, MineHunter.Core.Interfaces, MineHunter.Collectors.Disks,
-  MineHunter.Tests.Fakes;
+  MineHunter.Collectors.DiskHealth, MineHunter.Tests.Fakes;
 
 type
   TFakeDiskApi = class(TInterfacedObject, IMHDiskApi)
@@ -27,12 +27,19 @@ type
     Counters: TArray<TMHRawDiskCounter>;
     CountersOk: Boolean;
     DiskReads: Integer;
+    /// Атрибуты здоровья по номеру диска; номер в HealthDenied — нет прав.
+    Health: TArray<TMHDiskHealthData>;
+    HealthNumbers: TArray<Integer>;
+    HealthDenied: TArray<Integer>;
+    HealthReads: Integer;
     constructor Create;
     function ReadDisks(out ADisks: TArray<TMHRawDisk>; out AError: string): Boolean;
     function ReadReliability(out AItems: TArray<TMHRawReliability>; out AError: string;
       out AAccessDenied: Boolean): Boolean;
     function ReadVolumes(out AVolumes: TArray<TMHVolumeInfo>; out AError: string): Boolean;
     function ReadCounters(out ACounters: TArray<TMHRawDiskCounter>; out AError: string): Boolean;
+    function ReadHealth(ANumber: Integer; const ABus: string; out AData: TMHDiskHealthData;
+      out AError: string; out AAccessDenied: Boolean): Boolean;
   end;
 
   [TestFixture]
@@ -45,6 +52,8 @@ type
     [Test] procedure Cache_DisksReadRarely_InvalidateForcesReread;
     [Test] procedure WmiFailure_KeepsPreviousAndUsesCounters;
     [Test] procedure ReliabilityDenied_RequiresElevation;
+    [Test] procedure Health_FillsGapsKeepsReliabilityAndRefreshes;
+    [Test] procedure Health_SmartDenied_Note;
     [Test] procedure NothingAvailable_Unavailable;
     [Test] procedure VolumeFreePercent;
   end;
@@ -57,6 +66,7 @@ type
     [Test] procedure LowSpace_Findings;
     [Test] procedure Health_WearErrors_Findings;
     [Test] procedure HealthyDisk_NoFinding;
+    [Test] procedure Health_BadSectorsAndNvmeCritical_Findings;
     [Test] procedure ExplainLoad_BusiestDiskTopIoAndSpace;
     [Test] procedure ProcessIo_RateFromCounters;
     [Test] procedure TopIo_OrderAndThreshold;
@@ -171,6 +181,31 @@ begin
   AVolumes := Volumes;
   AError := 'ошибка разделов';
   Result := VolumesOk;
+end;
+
+function TFakeDiskApi.ReadHealth(ANumber: Integer; const ABus: string; out AData: TMHDiskHealthData;
+  out AError: string; out AAccessDenied: Boolean): Boolean;
+var
+  I: Integer;
+begin
+  Inc(HealthReads);
+  AError := '';
+  AAccessDenied := False;
+  AData := TMHDiskHealthData.Create('');
+  for I in HealthDenied do
+    if I = ANumber then
+    begin
+      AAccessDenied := True;
+      AError := 'Отказано в доступе';
+      Exit(False);
+    end;
+  for I := 0 to High(HealthNumbers) do
+    if HealthNumbers[I] = ANumber then
+    begin
+      AData := Health[I];
+      Exit(True);
+    end;
+  Result := False;
 end;
 
 function TFakeDiskApi.ReadCounters(out ACounters: TArray<TMHRawDiskCounter>; out AError: string): Boolean;
@@ -289,6 +324,97 @@ begin
   (LIntf as IMHCacheInvalidation).Invalidate;
   LIntf.Collect(TMHSnapshot.Create(5, IncMinute(FAKE_NOW, 12)));
   Assert.AreEqual(3, LApi.DiskReads, '«Проверить сейчас» перечитывает сразу');
+end;
+
+function NvmeHealth(AHours, ACycles: Int64; AMediaErrors: Int64 = 0): TMHDiskHealthData;
+begin
+  Result := TMHDiskHealthData.Create(MH_HEALTH_SOURCE_NVME);
+  Result.Attributes := [Default(TMHDiskAttribute)];
+  Result.Attributes[0].Id := 12;
+  Result.Attributes[0].Raw := AHours;
+  Result.PowerOnHours := AHours;
+  Result.PowerCycles := ACycles;
+  Result.UnsafeShutdowns := 3;
+  Result.MediaErrors := AMediaErrors;
+  Result.HasTemperature := True;
+  Result.TemperatureCelsius := 33;
+  Result.HasWear := True;
+  Result.WearPercent := 4;
+  Result.TotalWrittenBytes := 1E12;
+  Result.CriticalWarning := 0;
+end;
+
+function SmartHealth: TMHDiskHealthData;
+begin
+  Result := TMHDiskHealthData.Create(MH_HEALTH_SOURCE_SMART);
+  Result.Attributes := [Default(TMHDiskAttribute)];
+  Result.Attributes[0].Id := $C5;
+  Result.Attributes[0].Raw := 8;
+  Result.PowerOnHours := 25005;
+  Result.PendingSectors := 8;
+  Result.UncorrectableSectors := 8;
+  Result.ReallocatedSectors := 0;
+end;
+
+procedure TDiskCollectorTests.Health_FillsGapsKeepsReliabilityAndRefreshes;
+var
+  LApi: TFakeDiskApi;
+  LIntf: IMHCollector;
+  LResult: TMHCollectionResult;
+begin
+  LApi := FakeDiskSet;
+  // Диск 0 (SATA) — без счётчиков надёжности, SMART заполняет; диск 1 (NVMe) — счётчики есть.
+  LApi.HealthNumbers := [0, 1];
+  LApi.Health := [SmartHealth, NvmeHealth(1748, 266)];
+  LIntf := TMHDiskCollector.Create(LApi, TFakeClock.Create(FAKE_NOW));
+  LResult := LIntf.Collect(TMHSnapshot.Create(1, FAKE_NOW));
+  Assert.AreEqual(2, LApi.HealthReads, 'Опрошены оба диска');
+  Assert.AreEqual(MH_HEALTH_SOURCE_SMART, LResult.Disks[0].AttributesSource);
+  Assert.AreEqual<Int64>(25005, LResult.Disks[0].PowerOnHours, 'Наработка из SMART, когда счётчиков нет');
+  Assert.AreEqual<Int64>(8, LResult.Disks[0].PendingSectors);
+  Assert.AreEqual(MH_HEALTH_SOURCE_NVME, LResult.Disks[1].AttributesSource);
+  Assert.AreEqual(1, Integer(Length(LResult.Disks[1].Attributes)));
+  Assert.AreEqual<Int64>(1200, LResult.Disks[1].PowerOnHours, 'Счётчики надёжности Windows — основной источник');
+  Assert.AreEqual(48.0, LResult.Disks[1].TemperatureCelsius, 0.01);
+  Assert.AreEqual(7.0, LResult.Disks[1].WearPercent, 0.01);
+  Assert.AreEqual<Int64>(266, LResult.Disks[1].PowerCycles);
+  Assert.AreEqual<Int64>(3, LResult.Disks[1].UnsafeShutdowns);
+  Assert.AreEqual(Ord(ssSuccess), Ord(LResult.Status.State));
+
+  // Без счётчиков надёжности ошибки носителя NVMe становятся ошибками чтения.
+  LApi.Reliability := nil;
+  LApi.Health := [SmartHealth, NvmeHealth(1749, 266, 5)];
+  LResult := LIntf.Collect(TMHSnapshot.Create(2, IncSecond(FAKE_NOW, 30)));
+  Assert.AreEqual(2, LApi.HealthReads, 'Через 30 с журнал не перечитывается');
+  LResult := LIntf.Collect(TMHSnapshot.Create(3, IncSecond(FAKE_NOW, 61)));
+  Assert.AreEqual(3, LApi.HealthReads, 'NVMe — раз в минуту, SMART SATA — реже');
+  LResult := LIntf.Collect(TMHSnapshot.Create(4, IncMinute(FAKE_NOW, 11)));
+  Assert.AreEqual(5, LApi.HealthReads, 'Через 10 минут перечитаны оба');
+  Assert.AreEqual<Int64>(1749, LResult.Disks[1].PowerOnHours);
+  Assert.IsTrue(LResult.Disks[1].HasErrors);
+  Assert.AreEqual<Int64>(5, LResult.Disks[1].ReadErrors);
+  Assert.AreEqual(33.0, LResult.Disks[1].TemperatureCelsius, 0.01);
+
+  // Диск перестал отвечать — старые атрибуты не показываются.
+  LApi.HealthNumbers := [0];
+  LApi.Health := [SmartHealth];
+  (LIntf as IMHCacheInvalidation).Invalidate;
+  LResult := LIntf.Collect(TMHSnapshot.Create(5, IncMinute(FAKE_NOW, 12)));
+  Assert.AreEqual('', LResult.Disks[1].AttributesSource);
+  Assert.AreEqual(0, Integer(Length(LResult.Disks[1].Attributes)));
+end;
+
+procedure TDiskCollectorTests.Health_SmartDenied_Note;
+var
+  LApi: TFakeDiskApi;
+  LResult: TMHCollectionResult;
+begin
+  LApi := FakeDiskSet;
+  LApi.HealthDenied := [0];
+  LResult := TMHDiskCollector.Create(LApi, TFakeClock.Create(FAKE_NOW)).Collect(TMHSnapshot.Create(1, FAKE_NOW));
+  Assert.AreEqual(Ord(ssPartial), Ord(LResult.Status.State));
+  Assert.IsTrue(LResult.Status.RequiresElevation);
+  Assert.IsTrue(LResult.Status.Message.Contains('SMART'), LResult.Status.Message);
 end;
 
 procedure TDiskCollectorTests.WmiFailure_KeepsPreviousAndUsesCounters;
@@ -458,6 +584,42 @@ begin
   LSnapshot := TMHSnapshot.Create(1, FAKE_NOW);
   LSnapshot.Disks := [DiskWith(0, dhHealthy, 3, 0), DiskWith(1, dhUnknown, -1, -1)];
   Assert.AreEqual(0, Integer(Length(MHAnalyzeDisks(LSnapshot, TMHRiskThresholds.Default, 'test'))));
+end;
+
+procedure TDiskAnalysisTests.Health_BadSectorsAndNvmeCritical_Findings;
+var
+  LSnapshot: TMHSnapshot;
+  LFindings: TMHFindings;
+  LFinding: TMHFinding;
+begin
+  LSnapshot := TMHSnapshot.Create(1, FAKE_NOW);
+  LSnapshot.Disks := [DiskWith(0, dhHealthy, -1, -1), DiskWith(1, dhHealthy, -1, -1), DiskWith(2, dhHealthy, -1, -1),
+    DiskWith(3, dhHealthy, -1, -1)];
+  // Диск 0 — нестабильные и неисправимые секторы (как ST500DM002 клиента).
+  LSnapshot.Disks[0].PendingSectors := 8;
+  LSnapshot.Disks[0].UncorrectableSectors := 8;
+  LSnapshot.Disks[0].ReallocatedSectors := 0;
+  // Диск 1 — только несколько переназначенных: на заметку.
+  LSnapshot.Disks[1].ReallocatedSectors := 4;
+  // Диск 2 — NVMe с критическим предупреждением.
+  LSnapshot.Disks[2].CriticalWarning := 1;
+  // Диск 3 — всё по нулям.
+  LSnapshot.Disks[3].ReallocatedSectors := 0;
+  LSnapshot.Disks[3].PendingSectors := 0;
+  LSnapshot.Disks[3].CriticalWarning := 0;
+  LFindings := MHAnalyzeDisks(LSnapshot, TMHRiskThresholds.Default, 'test');
+  Assert.IsTrue(FindByKey(LFindings, 'disk:health:0:model0', LFinding));
+  Assert.AreEqual(EV_DISK_SECTORS, LFinding.Evidence[0].Code);
+  Assert.IsTrue(LFinding.Evidence[0].Observed.Contains('нестабильных: 8'), LFinding.Evidence[0].Observed);
+  Assert.IsTrue(LFinding.Level >= rlLow);
+  Assert.IsTrue(LFinding.Recommendations[High(LFinding.Recommendations)].Contains('подвисать'),
+    'Объясняет, почему компьютер подтормаживает');
+  Assert.IsTrue(FindByKey(LFindings, 'disk:health:1:model1', LFinding));
+  Assert.IsTrue(LFinding.Score < 25, 'Немного переназначенных — слабый признак: ' + IntToStr(LFinding.Score));
+  Assert.IsTrue(FindByKey(LFindings, 'disk:health:2:model2', LFinding));
+  Assert.AreEqual(EV_DISK_NVME_CRITICAL, LFinding.Evidence[0].Code);
+  Assert.IsTrue(LFinding.Evidence[0].Observed.Contains('запас ниже порога'));
+  Assert.IsFalse(FindByKey(LFindings, 'disk:health:3:model3', LFinding), 'Нули — не признак');
 end;
 
 function ProcessWithIo(APid: Cardinal; const AName: string; ARead, AWrite: Double): TMHProcessInfo;

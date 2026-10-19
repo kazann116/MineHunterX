@@ -64,9 +64,11 @@ type
     [Test] procedure Appearance_SettingsExportImportAndUpdates;
     [Test] procedure Disks_PageTablesScanAndActions;
     [Test] procedure Scroll_ListKeepsPositionAndWheelScrollsPage;
+    [Test] procedure Scroll_SelectedBelowThenScrolledUp_StaysUp;
     [Test] procedure Findings_AcknowledgeAndRemoveMark;
     [Test] procedure Launches_PageShowsJournalWithFilter;
     [Test] procedure Devices_NetworkAndGpuTabsWithTotalsAndCharts;
+    [Test] procedure Disks_AttributesOfSelectedDisk;
   end;
 
 implementation
@@ -84,7 +86,7 @@ uses
   MineHunter.Core.SelfAutostart, MineHunter.Core.CheckReport, MineHunter.Core.Updates,
   MineHunter.Tests.Appearance, MineHunter.Tests.Disks, MineHunter.Tests.FileScan,
   MineHunter.Collectors.Disks, MineHunter.Core.FileScan, MineHunter.App.DisksPage,
-  Winapi.CommCtrl, Vcl.Forms, Vcl.Controls, System.Types, MineHunter.App.ListViews,
+  Winapi.CommCtrl, Winapi.Messages, Vcl.Forms, Vcl.Controls, System.Types, MineHunter.App.ListViews,
   MineHunter.Tests.Fakes;
 
 var
@@ -1255,6 +1257,51 @@ begin
   end;
 end;
 
+procedure TMainFormSmokeTests.Scroll_SelectedBelowThenScrolledUp_StaysUp;
+var
+  I, LRow: Integer;
+  LRect: TRect;
+  LSelectedName: string;
+begin
+  // Сценарий из отзыва: прокрутил вниз, выделил строку, вернулся наверх —
+  // обновление не должно уводить таблицу обратно к выделенной строке, даже если
+  // порядок строк изменился.
+  FForm.SetBounds(0, 0, 1200, 800);
+  FForm.Show;
+  try
+    for I := 1 to 150 do
+      FProcApi.Add(1000 + I, 4, Format('proc%.3d.exe', [I]), FAKE_BASE_TIME + UInt64(I));
+    FServices.Scanner.ScanOnce;
+    FForm.NavigateTo(pgProcesses);
+    Application.ProcessMessages;
+    Assert.IsTrue(ListView_GetItemRect(FForm.lvProcesses.Handle, 0, LRect, LVIR_BOUNDS));
+    ListView_Scroll(FForm.lvProcesses.Handle, 0, (LRect.Bottom - LRect.Top) * 110);
+    LRow := MHListTopIndex(FForm.lvProcesses) + 3;
+    FForm.lvProcesses.Items[LRow].Selected := True;
+    FForm.lvProcesses.Items[LRow].Focused := True;
+    Application.ProcessMessages;
+    LSelectedName := FForm.lvProcesses.Items[LRow].Caption;
+    // Пользователь вернулся наверх.
+    FForm.lvProcesses.Perform(WM_VSCROLL, SB_TOP, 0);
+    Application.ProcessMessages;
+    Assert.AreEqual(0, MHListTopIndex(FForm.lvProcesses));
+    // Порядок строк меняется: новые процессы и нагрузка.
+    for I := 1 to 5 do
+      FProcApi.Add(2000 + I, 4, Format('aaa%.3d.exe', [I]), FAKE_BASE_TIME + UInt64(500 + I));
+    FProcApi.SetCpu(1000 + 140, 50000000);
+    for I := 1 to 3 do
+    begin
+      FServices.Scanner.ScanOnce;
+      Application.ProcessMessages;
+      Assert.AreEqual(0, MHListTopIndex(FForm.lvProcesses), 'Цикл ' + IntToStr(I) + ': таблица вернулась к выделенной строке');
+    end;
+    Assert.IsNotNull(FForm.lvProcesses.Selected, 'Выделение сохранено');
+    Assert.AreEqual(LSelectedName, FForm.lvProcesses.Selected.Caption);
+  finally
+    FForm.Hide;
+  end;
+end;
+
 procedure TMainFormSmokeTests.Findings_AcknowledgeAndRemoveMark;
 var
   LAsked: string;
@@ -1326,6 +1373,53 @@ begin
   Assert.AreEqual('app3.exe', FForm.LaunchesPage.List.Items[0].SubItems[0]);
 end;
 
+procedure TMainFormSmokeTests.Disks_AttributesOfSelectedDisk;
+var
+  LPage: TMHDisksPage;
+  LSnapshot: TMHSnapshot;
+  LDisk: TMHDiskInfo;
+  LAttribute: TMHDiskAttribute;
+begin
+  LPage := FForm.DisksPage;
+  LSnapshot := TMHSnapshot.Create(1, FServices.Clock.NowUtc);
+  LDisk := TMHDiskInfo.Create(0, 'WDC WD10JUCT');
+  LDisk.Bus := 'SATA';
+  LSnapshot.Disks := [LDisk];
+  LDisk := TMHDiskInfo.Create(1, 'WD Blue SN570');
+  LDisk.Bus := 'NVMe';
+  LDisk.AttributesSource := 'NVMe';
+  LAttribute := Default(TMHDiskAttribute);
+  LAttribute.Id := 12;
+  LAttribute.Current := -1;
+  LAttribute.Worst := -1;
+  LAttribute.Threshold := -1;
+  LAttribute.Raw := 1748;
+  LDisk.Attributes := [LAttribute];
+  LAttribute.Id := 2;
+  LAttribute.Raw := 305;
+  LDisk.Attributes := LDisk.Attributes + [LAttribute];
+  LSnapshot.Disks := LSnapshot.Disks + [LDisk];
+  LPage.UpdateSnapshot(LSnapshot);
+  // Без выбора — первый диск с атрибутами.
+  Assert.IsTrue(string(LPage.AttributesCaption.Caption).Contains('SN570'), LPage.AttributesCaption.Caption);
+  Assert.AreEqual(2, LPage.AttributesView.Items.Count);
+  Assert.AreEqual('0C', LPage.AttributesView.Items[0].Caption);
+  Assert.AreEqual('Часы работы', LPage.AttributesView.Items[0].SubItems[0]);
+  Assert.AreEqual('1748 ч', LPage.AttributesView.Items[0].SubItems[1]);
+  Assert.AreEqual('32 °C', LPage.AttributesView.Items[1].SubItems[1]);
+  // Выбран SATA-диск без SMART — понятная причина.
+  LPage.DisksView.Items[0].Selected := True;
+  Assert.IsTrue(string(LPage.AttributesCaption.Caption).Contains('WD10JUCT'), LPage.AttributesCaption.Caption);
+  Assert.AreEqual(1, LPage.AttributesView.Items.Count);
+  Assert.IsTrue(LPage.AttributesView.Items[0].SubItems[0].Contains('правами администратора'), LPage.AttributesView.Items[0].SubItems[0]);
+  // Обновление сохраняет выбранный диск.
+  LPage.UpdateSnapshot(LSnapshot);
+  Assert.IsTrue(string(LPage.AttributesCaption.Caption).Contains('WD10JUCT'));
+  // NVMe-диск: наработка и прочие поля пришли в таблицу дисков.
+  LPage.DisksView.Items[1].Selected := True;
+  Assert.AreEqual(2, LPage.AttributesView.Items.Count);
+end;
+
 procedure TMainFormSmokeTests.Devices_NetworkAndGpuTabsWithTotalsAndCharts;
 var
   LPage: TMHDisksPage;
@@ -1373,6 +1467,7 @@ begin
   Assert.AreEqual(3, LPage.NetView.Items.Count, 'Два адаптера и «Всего»');
   Assert.AreEqual('Всего', LPage.NetView.Items[2].Caption);
   Assert.AreEqual('проводная (Ethernet)', LPage.NetView.Items[0].SubItems[0]);
+  Assert.AreEqual('40 кбит/с', LPage.NetView.Items[0].SubItems[3], 'Приём — в битах, как в диспетчере задач');
   Assert.AreEqual(3, LPage.GpuView.Items.Count, 'Две видеокарты и «Всего»');
   Assert.AreEqual('50 %', LPage.GpuView.Items[2].SubItems[0], 'Всего — самая загруженная');
   Assert.AreEqual('100 Вт', LPage.GpuView.Items[2].SubItems[4], 'Мощность суммируется');
@@ -1382,6 +1477,17 @@ begin
   LPage.GpuView.Items[1].Selected := True;
   Assert.IsTrue(LPage.GpuChart.Title.Contains('GPU B'), LPage.GpuChart.Title);
   Assert.AreEqual(5.0, LPage.GpuChart.Points[0].Value, 0.01);
+  // Следующий цикл пересобирает таблицы — выбранная видеокарта и её график остаются.
+  LPage.RecordHistory(LSnapshot);
+  LPage.UpdateSnapshot(LSnapshot);
+  Assert.IsNotNull(LPage.GpuView.Selected, 'Выделение пережило обновление');
+  Assert.AreEqual('GPU B', LPage.GpuView.Selected.Caption);
+  Assert.IsTrue(LPage.GpuChart.Title.Contains('GPU B'), LPage.GpuChart.Title);
+  LPage.NetView.Items[0].Selected := True;
+  LPage.UpdateSnapshot(LSnapshot);
+  Assert.AreEqual('Ethernet', LPage.NetView.Selected.Caption);
+  Assert.IsTrue(LPage.NetChart.Title.Contains('Ethernet'), LPage.NetChart.Title);
+  Assert.IsTrue(LPage.GpuChart.Title.Contains('GPU B'), 'Выбор в другой таблице не сбрасывает график видеокарты');
 end;
 
 initialization

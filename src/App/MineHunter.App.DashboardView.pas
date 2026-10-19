@@ -49,7 +49,7 @@ implementation
 
 uses
   System.SysUtils, System.Math, System.StrUtils,
-  MineHunter.App.Display, MineHunter.Core.Lang;
+  MineHunter.App.Display, MineHunter.Core.Lang, MineHunter.Collectors.NetAdapters;
 
 function MHStateByThresholds(AValue, AWarning, AAlert: Double): TMHTileState;
 begin
@@ -140,7 +140,8 @@ begin
   Result := Tile(tkNetwork, MHL('Сеть', 'Network'));
   if not (ASnapshot.FindMetric(mkNetworkBytesPerSec, LNetwork) and LNetwork.HasValue) then
     Exit;
-  Result.Value := MHFormatBytes(LNetwork.Value) + MHL('/с', '/s');
+  // В битах в секунду — как в диспетчере задач.
+  Result.Value := MHFormatBitRate(LNetwork.Value);
   Result.Detail := MHL('принято и отправлено', 'received and sent');
   Result.State := tsInfo;
 end;

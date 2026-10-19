@@ -96,7 +96,8 @@ implementation
 uses
   Winapi.Windows, Winapi.ShlObj, System.Classes, System.JSON, System.DateUtils,
   System.Math, System.Character, System.Generics.Collections, System.Generics.Defaults,
-  MineHunter.Core.Serialization, MineHunter.Core.Settings, MineHunter.Core.Lang;
+  MineHunter.Core.Serialization, MineHunter.Core.Settings, MineHunter.Core.Lang,
+  MineHunter.Collectors.NetAdapters;
 
 const
   MH_REPORT_DISCLAIMER_EN = 'The absence of findings does not guarantee the absence of threats. ' +
@@ -184,8 +185,10 @@ begin
     mkWorkingSetBytes, mkPrivateBytes, mkMemoryUsedBytes, mkMemoryTotalBytes, mkGpuMemoryBytes,
     mkPrivateWorkingSetBytes:
       Result := FormatBytes(AMetric.Value);
-    mkDiskBytesPerSec, mkNetworkBytesPerSec, mkDiskReadBytesPerSec, mkDiskWriteBytesPerSec:
+    mkDiskBytesPerSec, mkDiskReadBytesPerSec, mkDiskWriteBytesPerSec:
       Result := FormatBytes(AMetric.Value) + MHL('/с', '/s');
+    mkNetworkBytesPerSec:
+      Result := MHFormatBitRate(AMetric.Value);
     mkTemperatureCelsius, mkGpuTemperatureCelsius, mkCpuTemperatureCelsius, mkDiskTemperatureCelsius:
       Result := FormatNumber(AMetric.Value, '0') + ' °C';
     mkGpuPowerWatts:

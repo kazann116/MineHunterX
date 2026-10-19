@@ -38,6 +38,7 @@ uses
   MineHunter.Collectors.ProcessEvents in '..\Core\Collectors\MineHunter.Collectors.ProcessEvents.pas',
   MineHunter.Collectors.Disks in '..\Core\Collectors\MineHunter.Collectors.Disks.pas',
   MineHunter.Collectors.NetAdapters in '..\Core\Collectors\MineHunter.Collectors.NetAdapters.pas',
+  MineHunter.Collectors.DiskHealth in '..\Core\Collectors\MineHunter.Collectors.DiskHealth.pas',
   MineHunter.Collectors.NetAdapters.WinApi in '..\Core\Collectors\MineHunter.Collectors.NetAdapters.WinApi.pas',
   MineHunter.Collectors.Disks.WinApi in '..\Core\Collectors\MineHunter.Collectors.Disks.WinApi.pas',
   MineHunter.Collectors.ProcessEvents.WinApi in '..\Core\Collectors\MineHunter.Collectors.ProcessEvents.WinApi.pas',

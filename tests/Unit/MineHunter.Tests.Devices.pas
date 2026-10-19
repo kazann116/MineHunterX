@@ -154,6 +154,16 @@ begin
   Assert.AreEqual('1 Гбит/с', MHFormatLinkSpeed(1000000000));
   Assert.AreEqual('100 Мбит/с', MHFormatLinkSpeed(100000000));
   Assert.AreEqual('', MHFormatLinkSpeed(0));
+  // Скорость сети — в битах в секунду с десятичными приставками, как в диспетчере задач:
+  // 19 КБ/с = 156 кбит/с (на снимке клиента: 20 КБ/с у нас и 152 кбит/с в диспетчере).
+  Assert.AreEqual('156 кбит/с', MHFormatBitRate(19 * 1024));
+  Assert.AreEqual('8' + FormatSettings.DecimalSeparator + '0 кбит/с', MHFormatBitRate(1000));
+  Assert.AreEqual('0 кбит/с', MHFormatBitRate(0), 'Как в диспетчере задач');
+  Assert.AreEqual('0 кбит/с', MHFormatBitRate(-5), 'Отрицательное — ноль');
+  Assert.AreEqual('0' + FormatSettings.DecimalSeparator + '1 кбит/с', MHFormatBitRate(12));
+  Assert.AreEqual('10 кбит/с', MHFormatBitRate(1250));
+  Assert.AreEqual('1' + FormatSettings.DecimalSeparator + '2 Мбит/с', MHFormatBitRate(150000));
+  Assert.AreEqual('1' + FormatSettings.DecimalSeparator + '60 Гбит/с', MHFormatBitRate(200E6));
   Assert.AreEqual(Ord(nkMobile), Ord(MHNetAdapterKindOf(243, True)));
   Assert.AreEqual(Ord(nkOther), Ord(MHNetAdapterKindOf(1, True)));
 end;

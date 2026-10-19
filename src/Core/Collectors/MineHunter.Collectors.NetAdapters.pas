@@ -61,6 +61,9 @@ function MHNetAdapterKindOf(AIfType: Cardinal; AHardware: Boolean): TMHNetAdapte
 function MHNetAdapterKindToString(AKind: TMHNetAdapterKind): string;
 /// «1 Гбит/с», «100 Мбит/с».
 function MHFormatLinkSpeed(ABitsPerSec: UInt64): string;
+/// Скорость сети в битах в секунду (десятичные приставки), как в диспетчере задач
+/// и как скорость канала: «8,0 кбит/с», «152 кбит/с», «1,2 Мбит/с».
+function MHFormatBitRate(ABytesPerSec: Double): string;
 
 implementation
 
@@ -108,6 +111,23 @@ begin
     Result := FormatFloat('0.#', ABitsPerSec / 1000000000) + MHL(' Гбит/с', ' Gbit/s')
   else
     Result := FormatFloat('0', ABitsPerSec / 1000000) + MHL(' Мбит/с', ' Mbit/s');
+end;
+
+function MHFormatBitRate(ABytesPerSec: Double): string;
+var
+  LBits: Double;
+begin
+  LBits := Max(0.0, ABytesPerSec) * 8;
+  if LBits = 0 then
+    Result := MHL('0 кбит/с', '0 Kbps')
+  else if LBits >= 1E9 then
+    Result := FormatFloat('0.00', LBits / 1E9) + MHL(' Гбит/с', ' Gbps')
+  else if LBits >= 1E6 then
+    Result := FormatFloat('0.0', LBits / 1E6) + MHL(' Мбит/с', ' Mbps')
+  else if LBits >= 1E4 then
+    Result := FormatFloat('0', LBits / 1E3) + MHL(' кбит/с', ' Kbps')
+  else
+    Result := FormatFloat('0.0', LBits / 1E3) + MHL(' кбит/с', ' Kbps');
 end;
 
 { TMHNetAdapterCollector }

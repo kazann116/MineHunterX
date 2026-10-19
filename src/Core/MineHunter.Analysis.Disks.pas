@@ -19,6 +19,8 @@ const
   EV_DISK_HEALTH = 'DISK_HEALTH';
   EV_DISK_WEAR = 'DISK_WEAR';
   EV_DISK_ERRORS = 'DISK_ERRORS';
+  EV_DISK_SECTORS = 'DISK_BAD_SECTORS';
+  EV_DISK_NVME_CRITICAL = 'DISK_NVME_CRITICAL';
 
 type
   TMHSpaceLevel = (slOk, slLow, slCritical);
@@ -46,7 +48,7 @@ implementation
 
 uses
   Winapi.Windows, System.Math, System.Hash, System.Generics.Collections, System.Generics.Defaults,
-  MineHunter.Core.Lang;
+  MineHunter.Core.Lang, MineHunter.Collectors.DiskHealth;
 
 const
   GB = 1024.0 * 1024 * 1024;
@@ -240,8 +242,11 @@ function HealthFinding(const ASnapshot: TMHSnapshot; const ADisk: TMHDiskInfo;
 var
   LEvidence: TArray<TMHEvidence>;
   LTitle, LText: string;
-  LErrors: Int64;
+  LErrors, LUnstable, LReallocated: Int64;
+  LWeight: Integer;
+  LSlowdown: Boolean;
 begin
+  LSlowdown := False;
   LEvidence := nil;
   LTitle := '';
   case ADisk.Health of
@@ -283,6 +288,36 @@ begin
           [ADisk.ReadErrors, ADisk.WriteErrors]))];
     end;
   end;
+  // SMART: нестабильные и неисправимые секторы диск читает с многократными повторами —
+  // компьютер подвисает при обращении к ним; переназначенные — уже заменённые резервом.
+  LUnstable := Max(0, ADisk.PendingSectors) + Max(0, ADisk.UncorrectableSectors);
+  LReallocated := Max(0, ADisk.ReallocatedSectors);
+  if (LUnstable > 0) or (LReallocated > 0) then
+  begin
+    if LUnstable > 0 then
+    begin
+      LWeight := IfThen(LUnstable >= 50, 50, 35);
+      LSlowdown := True;
+    end
+    else
+      LWeight := IfThen(LReallocated >= 100, 30, 15);
+    if LTitle = '' then
+      LTitle := MHL('На диске есть повреждённые секторы', 'The disk has damaged sectors');
+    LEvidence := LEvidence + [TMHEvidence.Create(EV_DISK_SECTORS,
+      MHL('SMART диска сообщает о повреждённых секторах', 'The disk SMART reports damaged sectors'), LWeight,
+      Format(MHL('переназначено: %d, нестабильных: %d, неисправимых: %d',
+        'reallocated: %d, pending: %d, uncorrectable: %d'),
+        [LReallocated, Max(0, ADisk.PendingSectors), Max(0, ADisk.UncorrectableSectors)]))];
+  end;
+  // NVMe: критическое предупреждение контроллера (запас ниже порога, перегрев, деградация).
+  if ADisk.CriticalWarning > 0 then
+  begin
+    if LTitle = '' then
+      LTitle := MHL('Диск NVMe сообщает о критическом состоянии', 'The NVMe disk reports a critical condition');
+    LEvidence := LEvidence + [TMHEvidence.Create(EV_DISK_NVME_CRITICAL,
+      MHL('Контроллер NVMe выставил критическое предупреждение', 'The NVMe controller raised a critical warning'),
+      50, MHNvmeCriticalWarningText(ADisk.CriticalWarning))];
+  end;
   Result := Length(LEvidence) > 0;
   if not Result then
     Exit;
@@ -293,6 +328,11 @@ begin
      MHL('Проверьте диск программой производителя или командой «chkdsk»; если число ошибок растёт ' +
      'или состояние ухудшается — замените диск.', 'Check the disk with the manufacturer''s tool or ' +
      '"chkdsk"; if the number of errors grows or the state gets worse, replace the disk.')]);
+  if LSlowdown then
+    AFinding.Recommendations := AFinding.Recommendations + [MHL('Нестабильные секторы диск перечитывает ' +
+      'много раз — из-за этого программы и Windows могут подвисать на несколько секунд при обращении к файлам ' +
+      'на этом диске.', 'The disk re-reads unstable sectors many times, so programs and Windows may freeze ' +
+      'for seconds when accessing files on this disk.')];
   AFinding.ProcessName := MHDiskLabel(ADisk);
   // Неисправный диск — повод действовать сразу, даже при умеренной сумме признаков.
   if (ADisk.Health = dhUnhealthy) and (AFinding.Level < rlSuspicious) then

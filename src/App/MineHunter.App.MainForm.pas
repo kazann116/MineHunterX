@@ -490,7 +490,7 @@ uses
   MineHunter.Collectors.Processes, MineHunter.Collectors.System, MineHunter.Core.Paths,
   MineHunter.Core.SelfAutostart, MineHunter.Collectors.Processes.WinApi,
   MineHunter.App.Lang, MineHunter.App.Theme, MineHunter.Core.Updates.WinApi, Winapi.ShellAPI,
-  System.IOUtils, MineHunter.Core.Lang;
+  System.IOUtils, MineHunter.Core.Lang, MineHunter.Collectors.NetAdapters;
 
 function PercentText(AValue: Double): string; forward;
 
@@ -1029,9 +1029,15 @@ var
   LItem: TListItem;
   LStatus: TMHSourceStatus;
   LMessage: string;
-  LTop: Integer;
+  LState: TMHListState;
+  LKeyOf: TMHListItemKey;
 begin
-  LTop := MHListTopIndex(lvSources);
+  LKeyOf :=
+    function(AItem: TListItem): string
+    begin
+      Result := AItem.Caption;
+    end;
+  LState := MHSaveListState(lvSources, LKeyOf);
   lvSources.Items.BeginUpdate;
   try
     lvSources.Items.Clear;
@@ -1049,7 +1055,7 @@ begin
   finally
     lvSources.Items.EndUpdate;
   end;
-  MHRestoreListTop(lvSources, LTop);
+  MHRestoreListState(lvSources, LState, LKeyOf);
 end;
 
 procedure TMainForm.UpdateEvents;
@@ -1057,14 +1063,21 @@ var
   LVersion: UInt64;
   LEntries: TArray<TMHLogEntry>;
   LItem: TListItem;
-  I, LTop: Integer;
+  I: Integer;
+  LState: TMHListState;
+  LKeyOf: TMHListItemKey;
 begin
   LVersion := FServices.LogReader.Version;
   if LVersion = FLastLogVersion then
     Exit;
   FLastLogVersion := LVersion;
   LEntries := FServices.LogReader.Entries;
-  LTop := MHListTopIndex(lvEvents);
+  LKeyOf :=
+    function(AItem: TListItem): string
+    begin
+      Result := MHItemTextKey(AItem, [0, 1, 2]);
+    end;
+  LState := MHSaveListState(lvEvents, LKeyOf);
   lvEvents.Items.BeginUpdate;
   try
     lvEvents.Items.Clear;
@@ -1080,9 +1093,9 @@ begin
   finally
     lvEvents.Items.EndUpdate;
   end;
-  // Новые события добавляются сверху; если пользователь читает старые — не сбрасываем прокрутку.
-  if LTop > 0 then
-    MHRestoreListTop(lvEvents, LTop);
+  // Новые события добавляются сверху: в начале списка они видны, а если пользователь
+  // читает старые — та же запись остаётся первой видимой.
+  MHRestoreListState(lvEvents, LState, LKeyOf);
 end;
 
 procedure TMainForm.UpdateProcesses(const ASnapshot: TMHSnapshot);
@@ -1311,6 +1324,11 @@ begin
   Result := FormatFloat('0', AValue) + ' °C';
 end;
 
+function NetworkRateText(AValue: Double): string;
+begin
+  Result := MHFormatBitRate(AValue);
+end;
+
 /// График для вида метрики: проценты и температура — шкала 0..100, скорости — автоматическая.
 function NewChart(AOwner: TComponent; AParent: TWinControl; const ATitle: string;
   AKind: TMHMetricKind): TMHLineChart;
@@ -1330,6 +1348,8 @@ begin
         Result.SetFixedRange(0, 100);
         Result.Formatter := TemperatureText;
       end;
+    mkNetworkBytesPerSec:
+      Result.Formatter := NetworkRateText;
   else
     Result.Formatter := RateText;
   end;

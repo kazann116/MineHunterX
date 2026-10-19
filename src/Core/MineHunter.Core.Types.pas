@@ -377,6 +377,19 @@ type
   TMHDiskHealth = (dhUnknown, dhHealthy, dhWarning, dhUnhealthy);
 
   /// Физический диск.
+  /// Атрибут здоровья диска — строка таблицы CrystalDiskInfo: поле журнала здоровья
+  /// NVMe (номер 1–15) или атрибут SMART SATA. Название и понятное значение строятся
+  /// при показе (MineHunter.Collectors.DiskHealth).
+  TMHDiskAttribute = record
+    Id: Integer;
+    /// Нормализованное значение, худшее и порог (только SMART); -1 — не применимо.
+    Current: Integer;
+    Worst: Integer;
+    Threshold: Integer;
+    /// «Сырое» значение.
+    Raw: UInt64;
+  end;
+
   TMHDiskInfo = record
   public
     /// Номер диска (\\.\PhysicalDriveN, «Управление дисками»).
@@ -409,6 +422,24 @@ type
     WriteErrors: Int64;
     /// Наработка, часов (-1 — неизвестна).
     PowerOnHours: Int64;
+    /// Откуда атрибуты: «NVMe» — журнал здоровья NVMe, «SMART» — SMART SATA, пусто — недоступны.
+    AttributesSource: string;
+    Attributes: TArray<TMHDiskAttribute>;
+    /// Включения и небезопасные (аварийные) отключения (-1 — неизвестно).
+    PowerCycles: Int64;
+    UnsafeShutdowns: Int64;
+    /// Прочитано и записано за всё время, байт (0 — неизвестно).
+    TotalReadBytes: Double;
+    TotalWrittenBytes: Double;
+    /// Переназначенные, нестабильные (ожидают переназначения) и неисправимые секторы
+    /// по SMART (-1 — неизвестно).
+    ReallocatedSectors: Int64;
+    PendingSectors: Int64;
+    UncorrectableSectors: Int64;
+    /// NVMe: биты критического предупреждения (-1 — неизвестно), доступный запас и его порог, %.
+    CriticalWarning: Integer;
+    AvailableSparePercent: Integer;
+    SpareThresholdPercent: Integer;
     class function Create(ANumber: Integer; const AModel: string): TMHDiskInfo; static;
   end;
 
@@ -785,6 +816,14 @@ begin
   Result.Number := ANumber;
   Result.Model := AModel;
   Result.PowerOnHours := -1;
+  Result.PowerCycles := -1;
+  Result.UnsafeShutdowns := -1;
+  Result.ReallocatedSectors := -1;
+  Result.PendingSectors := -1;
+  Result.UncorrectableSectors := -1;
+  Result.CriticalWarning := -1;
+  Result.AvailableSparePercent := -1;
+  Result.SpareThresholdPercent := -1;
 end;
 
 { TMHVolumeInfo }
