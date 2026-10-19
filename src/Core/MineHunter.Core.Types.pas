@@ -344,8 +344,13 @@ type
     HasLoad: Boolean;
     LoadPercent: Double;
     ComputePercent: Double;
+    /// Выделенная видеопамять (своя память видеокарты).
     HasMemory: Boolean;
     MemoryBytes: Double;
+    /// Общая память — часть оперативной, которую использует видеокарта (у встроенной
+    /// графики своей памяти нет — только общая), как «Общая память GPU» в диспетчере задач.
+    HasSharedMemory: Boolean;
+    SharedMemoryBytes: Double;
     HasTemperature: Boolean;
     TemperatureCelsius: Double;
     HasPower: Boolean;

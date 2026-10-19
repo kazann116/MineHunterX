@@ -45,6 +45,8 @@ type
     ProcessMemory: TArray<TMHGpuCounterSample>;
     /// «GPU Adapter Memory(*)\Dedicated Usage», байт.
     AdapterMemory: TArray<TMHGpuCounterSample>;
+    /// «GPU Adapter Memory(*)\Shared Usage», байт (общая память, у встроенной графики — вся).
+    AdapterSharedMemory: TArray<TMHGpuCounterSample>;
   end;
 
   /// Датчик видеокарты.
@@ -201,7 +203,8 @@ type
 
 /// Видеокарты по отдельности из сумм по движкам («luid…_phys_N_eng_K») и датчиков.
 function BuildAdapters(APerEngine: TDictionary<string, Double>; ACompute: TDictionary<string, Boolean>;
-  const AAdapterMemory: TArray<TMHGpuCounterSample>; const ASensors: TArray<TMHGpuSensor>): TArray<TMHGpuAdapterInfo>;
+  const AAdapterMemory, ASharedMemory: TArray<TMHGpuCounterSample>;
+  const ASensors: TArray<TMHGpuSensor>): TArray<TMHGpuAdapterInfo>;
 var
   LList: TList<TMHGpuAdapterInfo>;
   LInfo: TMHGpuAdapterInfo;
@@ -256,6 +259,17 @@ begin
       LInfo.MemoryBytes := LInfo.MemoryBytes + Max(0.0, LSample.Value);
       LList[I] := LInfo;
     end;
+    for LSample in ASharedMemory do
+    begin
+      LAdapter := LSample.InstanceName;
+      if not LAdapter.StartsWith('luid_', True) then
+        Continue;
+      I := IndexOf(LAdapter);
+      LInfo := LList[I];
+      LInfo.HasSharedMemory := True;
+      LInfo.SharedMemoryBytes := LInfo.SharedMemoryBytes + Max(0.0, LSample.Value);
+      LList[I] := LInfo;
+    end;
     // Имена и температура — из датчиков D3DKMT (по LUID); мощность NVML — по имени.
     for LSensor in ASensors do
     begin
@@ -294,9 +308,10 @@ begin
           end;
     end;
     // Безымянный адаптер без нагрузки и памяти — не видеокарта пользователя
-    // (Basic Render, удалённый дисплей); с нагрузкой остаётся всегда.
+    // (Basic Render, удалённый дисплей: килобайты общей памяти); с нагрузкой остаётся всегда.
     for J := LList.Count - 1 downto 0 do
-      if (LList[J].Name = '') and (LList[J].LoadPercent < 0.5) and (LList[J].MemoryBytes <= 0) then
+      if (LList[J].Name = '') and (LList[J].LoadPercent < 0.5) and (LList[J].MemoryBytes <= 0) and
+         (LList[J].SharedMemoryBytes < 16 * 1024 * 1024) then
         LList.Delete(J);
     for J := 0 to LList.Count - 1 do
       if LList[J].Name = '' then
@@ -430,7 +445,8 @@ begin
         LMetrics.Add(TMHMetric.NoData(mkGpuMemoryBytes, LNow));
 
       // Видеокарты по отдельности: самый загруженный движок адаптера и его видеопамять.
-      LAdapterInfos := BuildAdapters(LPerEngine, LComputeEngines, LCounters.AdapterMemory, LSensors);
+      LAdapterInfos := BuildAdapters(LPerEngine, LComputeEngines, LCounters.AdapterMemory,
+        LCounters.AdapterSharedMemory, LSensors);
 
       // Процессы снимка без экземпляров GPU не используют видеокарту: 0%, как в диспетчере задач.
       for LInfo in ASnapshot.Processes do

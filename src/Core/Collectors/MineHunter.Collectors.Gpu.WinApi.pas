@@ -6,7 +6,7 @@
   Загрузка и видеопамять — счётчики производительности Windows (PDH):
     \GPU Engine(*)\Utilization Percentage,
     \GPU Process Memory(*)\Dedicated Usage,
-    \GPU Adapter Memory(*)\Dedicated Usage.
+    \GPU Adapter Memory(*)\Dedicated Usage и Shared Usage (общая память — у встроенной графики вся).
   Они есть начиная с Windows 10 1709 при драйвере WDDM 2.0+; права
   администратора не нужны.
 
@@ -50,6 +50,7 @@ type
     FEngineCounter: THandle;
     FProcessMemoryCounter: THandle;
     FAdapterMemoryCounter: THandle;
+    FAdapterSharedCounter: THandle;
     FCounterError: string;
     FSensorTick: UInt64;
     FSensors: TArray<TMHGpuSensor>;
@@ -234,6 +235,7 @@ begin
       'GPU counters are missing (Windows 10 1709+ and a WDDM 2.0+ graphics driver are required)');
   FProcessMemoryCounter := FPdh.AddCounter('\GPU Process Memory(*)\Dedicated Usage');
   FAdapterMemoryCounter := FPdh.AddCounter('\GPU Adapter Memory(*)\Dedicated Usage');
+  FAdapterSharedCounter := FPdh.AddCounter('\GPU Adapter Memory(*)\Shared Usage');
 end;
 
 destructor TMHWinGpuApi.Destroy;
@@ -291,6 +293,8 @@ begin
     Result.ProcessMemory := ToSamples(LItems);
   if FPdh.ReadArray(FAdapterMemoryCounter, LItems) then
     Result.AdapterMemory := ToSamples(LItems);
+  if (FAdapterSharedCounter <> 0) and FPdh.ReadArray(FAdapterSharedCounter, LItems) then
+    Result.AdapterSharedMemory := ToSamples(LItems);
   Result.Available := True;
 end;
 

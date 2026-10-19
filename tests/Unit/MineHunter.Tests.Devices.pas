@@ -194,8 +194,11 @@ begin
     Sample('pid_300_' + NV + '_eng_0_engtype_3D', 25),          // сумма по процессам на движке — 55
     Sample('pid_400_' + NV + '_eng_2_engtype_Compute_0', 40),
     Sample('pid_500_' + IGPU + '_eng_0_engtype_VideoDecode', 12)];
-  LGpu.Counters.AdapterMemory := [Sample(NV, 2 * 1024 * 1024 * 1024.0), Sample(IGPU, 256 * 1024 * 1024.0),
+  LGpu.Counters.AdapterMemory := [Sample(NV, 2 * 1024 * 1024 * 1024.0), Sample(IGPU, 0),
     Sample('luid_0x00000000_0x0000AAAA_phys_0', 0)];                // пустой безымянный — скрыт
+  // Встроенная графика: своей памяти нет, только общая (часть оперативной).
+  LGpu.Counters.AdapterSharedMemory := [Sample(NV, 64 * 1024 * 1024.0), Sample(IGPU, 885 * 1024 * 1024.0),
+    Sample('luid_0x00000000_0x0000AAAA_phys_0', 8 * 1024)];        // Basic Render: килобайты — скрыт
   LSensor := Default(TMHGpuSensor);
   LSensor.AdapterName := 'NVIDIA GeForce GTX 1660 Ti';
   LSensor.Adapter := NV.ToLower;
@@ -226,6 +229,10 @@ begin
   Assert.IsTrue(LNv.HasPower, 'Мощность NVML — по имени адаптера');
   Assert.AreEqual(95.0, LNv.PowerWatts, 0.01);
   Assert.AreEqual(12.0, LIgpu.LoadPercent, 0.01);
+  Assert.IsTrue(LIgpu.HasSharedMemory);
+  Assert.AreEqual(885.0 * 1024 * 1024, LIgpu.SharedMemoryBytes, 1, 'Общая память встроенной графики');
+  Assert.AreEqual(0.0, LIgpu.MemoryBytes, 0.01, 'Выделенной памяти нет');
+  Assert.AreEqual(64.0 * 1024 * 1024, LNv.SharedMemoryBytes, 1);
   Assert.IsTrue(LIgpu.Name.Contains('1'), 'Без датчика — «Видеокарта N»: ' + LIgpu.Name);
   Assert.IsFalse(LIgpu.HasPower);
 end;

@@ -1667,7 +1667,7 @@ begin
   Assert.AreEqual('40 кбит/с', LPage.NetView.Items[0].SubItems[3], 'Приём — в битах, как в диспетчере задач');
   Assert.AreEqual(3, LPage.GpuView.Items.Count, 'Две видеокарты и «Всего»');
   Assert.AreEqual('50 %', LPage.GpuView.Items[2].SubItems[0], 'Всего — самая загруженная');
-  Assert.AreEqual('100 Вт', LPage.GpuView.Items[2].SubItems[4], 'Мощность суммируется');
+  Assert.AreEqual('100 Вт', LPage.GpuView.Items[2].SubItems[5], 'Мощность суммируется');
   // График по умолчанию — «Всего»; выбор строки — график этого устройства.
   Assert.AreEqual(5, Integer(Length(LPage.NetChart.Points)));
   Assert.IsTrue(LPage.NetChart.Title.Contains('Всего'));

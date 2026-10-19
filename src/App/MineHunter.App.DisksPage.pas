@@ -409,13 +409,17 @@ begin
   end;
   FGpu := NewList(FGpuScroll, alTop, 0,
     [MHL('Видеокарта', 'Graphics card'), MHL('Загрузка', 'Load'), MHL('Вычисления', 'Compute'),
-     MHL('Видеопамять', 'Video memory'), MHL('Температура', 'Temperature'), MHL('Мощность', 'Power')],
-    [300, 90, 100, 110, 110, 90]);
+     MHL('Выделенная память', 'Dedicated memory'), MHL('Общая память', 'Shared memory'),
+     MHL('Температура', 'Temperature'), MHL('Мощность', 'Power')],
+    [300, 90, 100, 130, 120, 110, 100]);
   FGpu.OnSelectItem := DeviceSelect;
-  FGpu.Hint := MHL('Температуру видеокарты MineHunter X берёт из Windows (D3DKMT), мощность — у NVIDIA (NVML). ' +
+  FGpu.Hint := MHL('Выделенная память — своя память видеокарты, общая — часть оперативной (у встроенной ' +
+    'графики только она), как в диспетчере задач. Температуру видеокарты MineHunter X берёт из Windows (D3DKMT), ' +
+    'мощность — у NVIDIA (NVML). ' +
     'Встроенная видеокарта Intel через эти интерфейсы температуру и мощность не сообщает: HWiNFO читает их ' +
     'своим драйвером. MineHunter X драйверы не устанавливает.', 'MineHunter X takes the graphics card temperature ' +
-    'from Windows (D3DKMT) and power from NVIDIA (NVML). Intel integrated graphics do not report temperature and ' +
+    'from Windows (D3DKMT) and power from NVIDIA (NVML). Dedicated memory is the card''s own memory, shared ' +
+    'memory is part of RAM (integrated graphics only have shared memory), as in Task Manager. Intel integrated graphics do not report temperature and ' +
     'power through these interfaces: HWiNFO reads them with its own driver. MineHunter X does not install drivers.');
   FGpu.ShowHint := True;
   FGpuChart := TMHLineChart.Create(Self);
@@ -1042,7 +1046,7 @@ procedure TMHDisksPage.UpdateGpus(const ASnapshot: TMHSnapshot);
 var
   LGpu: TMHGpuAdapterInfo;
   LItem: TListItem;
-  LMaxLoad, LMaxCompute, LMemory, LPower: Double;
+  LMaxLoad, LMaxCompute, LMemory, LShared, LPower: Double;
   LHasPower: Boolean;
   LState: TMHListState;
 begin
@@ -1054,6 +1058,7 @@ begin
     LMaxLoad := 0;
     LMaxCompute := 0;
     LMemory := 0;
+    LShared := 0;
     LPower := 0;
     LHasPower := False;
     for LGpu in ASnapshot.GpuAdapters do
@@ -1070,8 +1075,15 @@ begin
         LItem.SubItems.Add(MH_NO_DATA);
         LItem.SubItems.Add(MH_NO_DATA);
       end;
-      if LGpu.HasMemory then
+      // Встроенная графика своей памяти не имеет — только общую (как в диспетчере задач).
+      if LGpu.HasMemory and (LGpu.MemoryBytes > 0) then
         LItem.SubItems.Add(MHFormatSize(LGpu.MemoryBytes))
+      else if LGpu.HasSharedMemory or LGpu.HasMemory then
+        LItem.SubItems.Add('—')
+      else
+        LItem.SubItems.Add(MH_NO_DATA);
+      if LGpu.HasSharedMemory then
+        LItem.SubItems.Add(MHFormatSize(LGpu.SharedMemoryBytes))
       else
         LItem.SubItems.Add(MH_NO_DATA);
       if LGpu.HasTemperature then
@@ -1081,10 +1093,11 @@ begin
       if LGpu.HasPower then
         LItem.SubItems.Add(FormatFloat('0', LGpu.PowerWatts) + MHL(' Вт', ' W'))
       else
-        LItem.SubItems.Add(MH_NO_DATA);
+        LItem.SubItems.Add(MHL('не сообщает', 'not reported'));
       LMaxLoad := Max(LMaxLoad, LGpu.LoadPercent);
       LMaxCompute := Max(LMaxCompute, LGpu.ComputePercent);
       LMemory := LMemory + LGpu.MemoryBytes;
+      LShared := LShared + LGpu.SharedMemoryBytes;
       if LGpu.HasPower then
       begin
         LPower := LPower + LGpu.PowerWatts;
@@ -1099,6 +1112,7 @@ begin
       LItem.SubItems.Add(FormatFloat('0', LMaxLoad) + ' %');
       LItem.SubItems.Add(FormatFloat('0', LMaxCompute) + ' %');
       LItem.SubItems.Add(MHFormatSize(LMemory));
+      LItem.SubItems.Add(MHFormatSize(LShared));
       LItem.SubItems.Add('');
       if LHasPower then
         LItem.SubItems.Add(FormatFloat('0', LPower) + MHL(' Вт', ' W'))
