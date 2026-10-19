@@ -59,7 +59,7 @@ type
   TMHSQLiteRepository = class(TInterfacedObject, IMHRepository, IMHMetricHistory,
     IMHFindingHistory, IMHActionLog, IMHBaselineStore, IMHInventoryHistory, IMHLaunchHistory)
   public const
-    SchemaVersion = 4;
+    SchemaVersion = 5;
     /// Журнал запусков: срок хранения не меньше этого и не больше MaxLaunchRows строк.
     MinLaunchRetentionDays = 30;
     MaxLaunchRows = 300000;
@@ -206,7 +206,7 @@ const
   // Для 64-битных значений используется тип BIGINT: FireDAC читает колонки
   // SQLite типа INTEGER как 32-битные. id INTEGER PRIMARY KEY — псевдоним rowid.
 
-  MIGRATIONS: array[1..4] of string = (
+  MIGRATIONS: array[1..5] of string = (
     'CREATE TABLE snapshots(' +
     '  id INTEGER PRIMARY KEY,' +
     '  seq BIGINT NOT NULL,' +
@@ -291,19 +291,24 @@ const
     '  parent_name TEXT,' +
     '  source TEXT NOT NULL,' +
     '  PRIMARY KEY(pid, create_time)) WITHOUT ROWID;' +
-    'CREATE INDEX ix_launches_start ON launches(start_ts);'
+    'CREATE INDEX ix_launches_start ON launches(start_ts);',
+
+    // 5: параметры запуска (командная строка) в журнале запусков.
+    'ALTER TABLE launches ADD COLUMN command_line TEXT;'
   );
 
   // Запуск и завершение одного экземпляра приходят разными записями: объединяем.
   UPSERT_LAUNCH_SQL =
-    'INSERT INTO launches(pid, create_time, start_ts, exit_ts, name, image_path, parent_pid, parent_name, source) ' +
-    'VALUES (:pid, :ct, :start, :exit, :name, :path, :ppid, :pname, :source) ' +
+    'INSERT INTO launches(pid, create_time, start_ts, exit_ts, name, image_path, parent_pid, parent_name, source, ' +
+    '  command_line) ' +
+    'VALUES (:pid, :ct, :start, :exit, :name, :path, :ppid, :pname, :source, :cmd) ' +
     'ON CONFLICT(pid, create_time) DO UPDATE SET ' +
     '  exit_ts = COALESCE(excluded.exit_ts, launches.exit_ts),' +
     '  name = CASE WHEN excluded.name <> '''' THEN excluded.name ELSE launches.name END,' +
     '  image_path = COALESCE(excluded.image_path, launches.image_path),' +
     '  parent_pid = CASE WHEN excluded.parent_pid <> 0 THEN excluded.parent_pid ELSE launches.parent_pid END,' +
-    '  parent_name = COALESCE(excluded.parent_name, launches.parent_name)';
+    '  parent_name = COALESCE(excluded.parent_name, launches.parent_name),' +
+    '  command_line = COALESCE(excluded.command_line, launches.command_line)';
 
   UPSERT_INVENTORY_SQL =
     'INSERT INTO inventory(kind, key, name, details, image_path, first_seen, last_seen) ' +
@@ -1205,7 +1210,7 @@ end;
 procedure TMHSQLiteRepository.SaveLaunchesLocked(const ASnapshot: TMHSnapshot);
 var
   LRecord: TMHLaunchRecord;
-  LExit, LPath, LParent: Variant;
+  LExit, LPath, LParent, LCommand: Variant;
 begin
   for LRecord in ASnapshot.LaunchEvents do
   begin
@@ -1223,6 +1228,11 @@ begin
       LParent := LRecord.ParentName
     else
       LParent := Null;
+    // Параметры запуска раскрывают пути и аргументы — хранятся вместе с путями.
+    if FOptions.StoreProcessPaths and (LRecord.CommandLine <> '') then
+      LCommand := Copy(LRecord.CommandLine, 1, MH_LAUNCH_COMMAND_LINE_MAX)
+    else
+      LCommand := Null;
     SetParam(FUpsertLaunch, 'pid', Int64(LRecord.Pid), ftLargeint);
     SetParam(FUpsertLaunch, 'ct', Int64(LRecord.CreateTime), ftLargeint);
     SetParam(FUpsertLaunch, 'start', MHUtcToUnixMs(LRecord.StartUtc), ftLargeint);
@@ -1232,6 +1242,7 @@ begin
     SetParam(FUpsertLaunch, 'ppid', Int64(LRecord.ParentPid), ftLargeint);
     SetParam(FUpsertLaunch, 'pname', LParent, ftWideString);
     SetParam(FUpsertLaunch, 'source', LRecord.Source, ftWideString);
+    SetParam(FUpsertLaunch, 'cmd', LCommand, ftWideString);
     FUpsertLaunch.ExecSQL;
   end;
 end;
@@ -1249,11 +1260,11 @@ begin
   FLock.Enter;
   try
     CheckOpen;
-    LSql := 'SELECT pid, create_time, start_ts, exit_ts, name, image_path, parent_pid, parent_name, source ' +
-      'FROM launches WHERE start_ts >= :f AND start_ts <= :t';
+    LSql := 'SELECT pid, create_time, start_ts, exit_ts, name, image_path, parent_pid, parent_name, source, ' +
+      'command_line FROM launches WHERE start_ts >= :f AND start_ts <= :t';
     if AFilter <> '' then
       LSql := LSql + ' AND (instr(lower(name), :q) > 0 OR instr(lower(COALESCE(image_path, '''')), :q) > 0 ' +
-        'OR instr(lower(COALESCE(parent_name, '''')), :q) > 0)';
+        'OR instr(lower(COALESCE(parent_name, '''')), :q) > 0 OR instr(lower(COALESCE(command_line, '''')), :q) > 0)';
     LSql := LSql + ' ORDER BY start_ts DESC LIMIT :n';
     LQuery := NewQuery(LSql);
     LList := TList<TMHLaunchRecord>.Create;
@@ -1277,6 +1288,7 @@ begin
         LRecord.ParentPid := Cardinal(LQuery.Fields[6].AsLargeInt);
         LRecord.ParentName := LQuery.Fields[7].AsString;
         LRecord.Source := LQuery.Fields[8].AsString;
+        LRecord.CommandLine := LQuery.Fields[9].AsString;
         LList.Add(LRecord);
         LQuery.Next;
       end;

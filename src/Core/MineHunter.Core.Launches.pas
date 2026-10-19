@@ -20,14 +20,64 @@ type
       AMaxCount: Integer): TArray<TMHLaunchRecord>;
   end;
 
+const
+  /// Предел длины сохраняемой командной строки (защита истории от огромных строк).
+  MH_LAUNCH_COMMAND_LINE_MAX = 2048;
+
 /// Длительность работы в читаемом виде («0,4 с», «5 мин», «2 ч 10 мин»);
 /// '' — процесс ещё работает или завершение не наблюдалось.
 function MHLaunchDurationText(const ARecord: TMHLaunchRecord): string;
+/// Параметры запуска — командная строка без программы (первого слова, возможно в кавычках).
+function MHCommandLineArguments(const ACommandLine: string): string;
+/// Путь и параметры для показа: «C:\...pp.exe --type=renderer»; без пути — командная строка.
+function MHLaunchPathText(const ARecord: TMHLaunchRecord): string;
+/// Командная строка, обрезанная до MH_LAUNCH_COMMAND_LINE_MAX.
+function MHLimitCommandLine(const ACommandLine: string): string;
 
 implementation
 
 uses
   System.Math, MineHunter.Core.Lang;
+
+function MHCommandLineArguments(const ACommandLine: string): string;
+var
+  LLine: string;
+  LEnd: Integer;
+begin
+  LLine := TrimLeft(ACommandLine);
+  if LLine = '' then
+    Exit('');
+  if LLine[1] = '"' then
+  begin
+    LEnd := Pos('"', LLine, 2);
+    if LEnd = 0 then
+      Exit('');
+  end
+  else
+  begin
+    LEnd := Pos(' ', LLine);
+    if LEnd = 0 then
+      Exit('');
+  end;
+  Result := Trim(Copy(LLine, LEnd + 1, MaxInt));
+end;
+
+function MHLaunchPathText(const ARecord: TMHLaunchRecord): string;
+var
+  LArguments: string;
+begin
+  if ARecord.ImagePath = '' then
+    Exit(Trim(ARecord.CommandLine));
+  Result := ARecord.ImagePath;
+  LArguments := MHCommandLineArguments(ARecord.CommandLine);
+  if LArguments <> '' then
+    Result := Result + ' ' + LArguments;
+end;
+
+function MHLimitCommandLine(const ACommandLine: string): string;
+begin
+  Result := Copy(ACommandLine, 1, MH_LAUNCH_COMMAND_LINE_MAX);
+end;
 
 function MHLaunchDurationText(const ARecord: TMHLaunchRecord): string;
 var

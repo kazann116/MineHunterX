@@ -124,10 +124,10 @@ begin
   LCaptions[2] := 'PID';
   LCaptions[3] := MHL('Кто запустил', 'Launched by');
   LCaptions[4] := MHL('Работала', 'Ran for');
-  LCaptions[5] := MHL('Путь', 'Path');
+  LCaptions[5] := MHL('Путь и параметры запуска', 'Path and arguments');
   LCaptions[6] := MHL('Источник', 'Source');
   LWidths[0] := 120; LWidths[1] := 170; LWidths[2] := 60; LWidths[3] := 150; LWidths[4] := 95;
-  LWidths[5] := 420; LWidths[6] := 70;
+  LWidths[5] := 640; LWidths[6] := 70;
   for I := 0 to High(LCaptions) do
     with FList.Columns.Add do
     begin
@@ -194,6 +194,8 @@ begin
           LOld.ExitUtc := LRecord.ExitUtc;
         if LOld.Name = '' then
           LOld.Name := LRecord.Name;
+        if LOld.CommandLine = '' then
+          LOld.CommandLine := LRecord.CommandLine;
         LMerged[LKey] := LOld;
       end
       else
@@ -202,7 +204,8 @@ begin
     for LRecord in LMerged.Values do
       if (LRecord.StartUtc >= LNow - PeriodHours / HoursPerDay) and ((LFilter = '') or
          LRecord.Name.ToLower.Contains(LFilter.ToLower) or LRecord.ImagePath.ToLower.Contains(LFilter.ToLower) or
-         LRecord.ParentName.ToLower.Contains(LFilter.ToLower)) then
+         LRecord.ParentName.ToLower.Contains(LFilter.ToLower) or
+         LRecord.CommandLine.ToLower.Contains(LFilter.ToLower)) then
         LList.Add(LRecord);
     LList.Sort(TComparer<TMHLaunchRecord>.Construct(
       function(const A, B: TMHLaunchRecord): Integer
@@ -266,7 +269,7 @@ begin
       if LDuration = '' then
         LDuration := MHL('работает', 'running');
       LItem.SubItems.Add(LDuration);
-      LItem.SubItems.Add(LRecord.ImagePath);
+      LItem.SubItems.Add(MHLaunchPathText(LRecord));
       if LRecord.Source = 'etw' then
         LItem.SubItems.Add('ETW')
       else

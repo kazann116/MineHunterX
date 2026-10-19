@@ -28,6 +28,11 @@ uses
   Winapi.Windows, System.SysUtils, System.Classes, System.SyncObjs, System.Generics.Collections,
   MineHunter.Collectors.ProcessEvents;
 
+/// Командная строка процесса (NtQueryInformationProcess, ProcessCommandLineInformation;
+/// Windows 8.1+, достаточно PROCESS_QUERY_LIMITED_INFORMATION). ACreateTime <> 0 — проверка,
+/// что PID принадлежит тому же экземпляру. '' — недоступна (процесс завершился, защищён).
+function MHReadProcessCommandLine(APid: Cardinal; ACreateTime: UInt64): string;
+
 type
   TRACEHANDLE = UInt64;
 
@@ -204,6 +209,83 @@ implementation
 uses
   System.DateUtils,
   MineHunter.Core.Lang;
+
+type
+  TUnicodeStringHeader = record
+    Length: Word;
+    MaximumLength: Word;
+    Buffer: PWideChar;
+  end;
+  PUnicodeStringHeader = ^TUnicodeStringHeader;
+  TNtQueryInformationProcess = function(AProcess: THandle; AInfoClass: Integer; AInfo: Pointer;
+    AInfoLength: ULONG; AReturnLength: PULONG): LongInt; stdcall;
+
+const
+  /// PROCESSINFOCLASS.ProcessCommandLineInformation (Windows 8.1+).
+  PROCESS_COMMAND_LINE_INFORMATION = 60;
+  PROCESS_QUERY_LIMITED_INFORMATION = $1000;
+  STATUS_INFO_LENGTH_MISMATCH = LongInt($C0000004);
+
+var
+  GNtQueryInformationProcess: TNtQueryInformationProcess;
+  GNtQueryResolved: Boolean;
+
+function MHReadProcessCommandLine(APid: Cardinal; ACreateTime: UInt64): string;
+var
+  LProcess: THandle;
+  LCreate, LExit, LKernel, LUser: TFileTime;
+  LBuffer: TBytes;
+  LSize, LReturned: ULONG;
+  LStatus: LongInt;
+  LHeader: PUnicodeStringHeader;
+  LAttempt: Integer;
+begin
+  Result := '';
+  if APid <= 4 then
+    Exit;
+  if not GNtQueryResolved then
+  begin
+    @GNtQueryInformationProcess := GetProcAddress(GetModuleHandle('ntdll.dll'), 'NtQueryInformationProcess');
+    GNtQueryResolved := True;
+  end;
+  if not Assigned(GNtQueryInformationProcess) then
+    Exit;
+  LProcess := OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, APid);
+  if LProcess = 0 then
+    Exit;
+  try
+    // PID мог достаться другому процессу — сверяем время создания.
+    if ACreateTime <> 0 then
+    begin
+      if not GetProcessTimes(LProcess, LCreate, LExit, LKernel, LUser) or
+         (UInt64(LCreate) <> ACreateTime) then
+        Exit;
+    end;
+    LSize := 2048;
+    for LAttempt := 1 to 2 do
+    begin
+      SetLength(LBuffer, LSize);
+      LReturned := 0;
+      LStatus := GNtQueryInformationProcess(LProcess, PROCESS_COMMAND_LINE_INFORMATION, @LBuffer[0], LSize,
+        @LReturned);
+      if (LStatus = STATUS_INFO_LENGTH_MISMATCH) and (LReturned > LSize) and (LReturned < 1024 * 1024) then
+      begin
+        LSize := LReturned;
+        Continue;
+      end;
+      if LStatus < 0 then
+        Exit;
+      LHeader := PUnicodeStringHeader(@LBuffer[0]);
+      if (LHeader.Buffer <> nil) and (LHeader.Length > 0) and
+         (NativeUInt(LHeader.Buffer) >= NativeUInt(@LBuffer[0])) and
+         (NativeUInt(LHeader.Buffer) + LHeader.Length <= NativeUInt(@LBuffer[0]) + LSize) then
+        SetString(Result, LHeader.Buffer, LHeader.Length div SizeOf(WideChar));
+      Exit;
+    end;
+  finally
+    CloseHandle(LProcess);
+  end;
+end;
 
 const
   KERNEL_PROCESS_PROVIDER: TGUID = '{22FB2CD6-0E7B-422B-A0C7-2FAD1FD0E716}';
@@ -414,6 +496,9 @@ begin
   end;
   if ReadUInt64(AEvent, 'CreateTime', LCreate) then
     LEvent.CreateTime := LCreate;
+  // Командной строки в событии нет — читаем у процесса сразу, пока он жив.
+  if LEvent.Kind = pekStart then
+    LEvent.CommandLine := MHReadProcessCommandLine(LEvent.Pid, LEvent.CreateTime);
   // ProcessTrace по умолчанию переводит метки времени в системное время (FILETIME UTC);
   // сырые значения QPC пришли бы только с PROCESS_TRACE_MODE_RAW_TIMESTAMP.
   LEvent.TimestampUtc := FileTimeToUtc(AEvent.EventHeader.TimeStamp);

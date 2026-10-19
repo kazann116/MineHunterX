@@ -243,9 +243,13 @@ begin
   // живут меньше интервала опроса. После процессов — для имён родителей.
   AContainer.RegisterSingleton<IMHCollector>(
     function: IMHCollector
+    var
+      LEvents: TMHProcessEventCollector;
     begin
-      Result := TMHProcessEventCollector.Create(TMHEtwProcessSource.Create as IMHProcessEventSource,
+      LEvents := TMHProcessEventCollector.Create(TMHEtwProcessSource.Create as IMHProcessEventSource,
         AContainer.Resolve<IMHClock>);
+      LEvents.CommandLineReader := MHReadProcessCommandLine;
+      Result := LEvents;
     end);
 
   // После процессов: сопоставляет счётчики GPU с процессами снимка по PID.

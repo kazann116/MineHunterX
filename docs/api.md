@@ -135,8 +135,11 @@ end;
 - `IMHInventoryHistory`, `MHInventoryFromSnapshot` (`MineHunter.Core.Inventory`) — учёт «что изменилось»
   (хранилище схемы 3).
 - `MHBuildCheckReport` (`MineHunter.Core.CheckReport`) — отчёт «Проверить сейчас».
+- `MHCommandLineArguments`, `MHLaunchPathText` (`MineHunter.Core.Launches`) — параметры запуска из командной
+  строки и «путь с параметрами» для показа; `MHReadProcessCommandLine` (`MineHunter.Collectors.ProcessEvents.WinApi`) —
+  командная строка живого процесса с проверкой экземпляра (PID + время создания).
 - `IMHLaunchHistory` (`MineHunter.Core.Launches`) — журнал запусков (`TMHLaunchRecord`, таблица `launches`
-  схемы 4, хранится не меньше 30 дней и не больше 300 000 записей); `TMHSnapshot.LaunchEvents`.
+  схемы 4, параметры запуска — со схемы 5; хранится не меньше 30 дней и не больше 300 000 записей); `TMHSnapshot.LaunchEvents`.
 - `MHAnalyzeDisks`, `MHVolumeSpaceLevel`, `MHTopIoProcesses` (`MineHunter.Analysis.Disks`) — правила по
   дискам и «кто грузит диск»; `TMHSnapshot.Disks` / `Volumes`, `TMHProcessInfo.IoRead` / `IoWrite`.
 - `TMHFileScanner`, `MHClassifyFile` (`MineHunter.Core.FileScan`, ФС — `IMHFileScanFs`) — проверка файлов

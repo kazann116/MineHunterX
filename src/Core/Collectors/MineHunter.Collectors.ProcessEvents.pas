@@ -33,7 +33,12 @@ type
     TimestampUtc: TDateTime;
     /// Путь в формате Windows (C:\...). Только у события запуска.
     ImagePath: string;
+    /// Командная строка, прочитанная источником сразу при запуске ('' — не успели или нет доступа).
+    CommandLine: string;
   end;
+
+  /// Чтение командной строки живого процесса (PID и время создания — экземпляр).
+  TMHCommandLineReader = reference to function(APid: Cardinal; ACreateTime: UInt64): string;
 
   IMHProcessEventSource = interface
     ['{6F0B7C1E-2E1A-4F57-9A0C-3D5B8E7A1CF0}']
@@ -88,6 +93,7 @@ type
     /// Без ETW: экземпляры процессов из прошлого снимка (журнал по опросу).
     FPolled: TDictionary<string, TMHLaunchRecord>;
     FPollInitialized: Boolean;
+    FCommandLineReader: TMHCommandLineReader;
     procedure PollLaunches(const ASnapshot: TMHSnapshot; ANowUtc: TDateTime);
     procedure EnsureStarted(ANowUtc: TDateTime);
     procedure Apply(const AEvent: TMHProcessEvent);
@@ -104,13 +110,15 @@ type
     function Collect(const ASnapshot: TMHSnapshot): TMHCollectionResult;
     /// Запусков в окне (для диагностики и тестов).
     function TrackedCount: Integer;
+    /// Чтение командной строки для журнала по опросу (без ETW); nil — не читается.
+    property CommandLineReader: TMHCommandLineReader read FCommandLineReader write FCommandLineReader;
   end;
 
 implementation
 
 uses
   System.Math, System.DateUtils, System.Generics.Defaults,
-  MineHunter.Core.Lang;
+  MineHunter.Core.Lang, MineHunter.Core.Launches;
 
 constructor TMHProcessEventCollector.Create(const ASource: IMHProcessEventSource; const AClock: IMHClock;
   AWindowMinutes, AShortLivedSeconds: Integer);
@@ -216,6 +224,7 @@ begin
       begin
         LRecord.ImagePath := AEvent.ImagePath;
         LRecord.Name := ExtractFileName(AEvent.ImagePath);
+        LRecord.CommandLine := MHLimitCommandLine(AEvent.CommandLine);
         LRecord.ParentPid := AEvent.ParentPid;
         if FNames.TryGetValue(AEvent.ParentPid, LParentName) then
           LRecord.ParentName := LParentName;
@@ -385,6 +394,7 @@ var
   LInfo: TMHProcessInfo;
   LRecord: TMHLaunchRecord;
   LPair: TPair<string, TMHLaunchRecord>;
+  LPrevious: TMHLaunchRecord;
   LKey: string;
 begin
   // Без прав администратора ETW недоступен: запуски видны по появлению процессов
@@ -404,10 +414,16 @@ begin
         FNames.TryGetValue(LInfo.ParentPid, LRecord.ParentName);
         LRecord.Source := 'poll';
         LKey := InstanceKey(LRecord.Pid, LRecord.CreateTime);
-        LCurrent.AddOrSetValue(LKey, LRecord);
         // Процессы, работавшие до начала наблюдения, запусками не считаются.
         if FPollInitialized and not FPolled.ContainsKey(LKey) then
+        begin
+          if Assigned(FCommandLineReader) then
+            LRecord.CommandLine := MHLimitCommandLine(FCommandLineReader(LRecord.Pid, LRecord.CreateTime));
           FRecords.Add(LRecord);
+        end
+        else if FPolled.TryGetValue(LKey, LPrevious) then
+          LRecord.CommandLine := LPrevious.CommandLine;
+        LCurrent.AddOrSetValue(LKey, LRecord);
       end;
     if FPollInitialized then
       for LPair in FPolled do

@@ -22,6 +22,16 @@ type
     [Test] procedure Etw_StartAndStop_BecomeRecords;
     [Test] procedure Polling_WithoutAdmin;
     [Test] procedure DurationText;
+    [Test] procedure CommandLine_ArgumentsAndPathText;
+    [Test] procedure Etw_CommandLineKeptAndLimited;
+    [Test] procedure Polling_ReadsCommandLineOnlyForNewLaunches;
+  end;
+
+  [TestFixture]
+  [Category('Integration')]
+  TLaunchCommandLineIntegrationTests = class
+  public
+    [Test] procedure OwnProcess_CommandLineRead_WrongInstanceEmpty;
   end;
 
   [TestFixture]
@@ -34,6 +44,7 @@ type
     [TearDown] procedure TearDown;
     [Test] procedure StartAndExit_Merged_FilterAndPeriod;
     [Test] procedure Privacy_NoPaths;
+    [Test] procedure CommandLine_StoredMergedAndSearchable;
   end;
 
 implementation
@@ -41,7 +52,8 @@ implementation
 uses
   System.IOUtils, System.DateUtils, System.StrUtils,
   MineHunter.Core.Interfaces, MineHunter.Core.Launches, MineHunter.Collectors.ProcessEvents,
-  MineHunter.Storage.SQLite, MineHunter.Tests.Fakes, MineHunter.Tests.ProcessEvents;
+  MineHunter.Storage.SQLite, MineHunter.Tests.Fakes, MineHunter.Tests.ProcessEvents,
+  MineHunter.Collectors.ProcessEvents.WinApi, Winapi.Windows;
 
 const
   // 2026-10-16 12:00 UTC в формате FILETIME.
@@ -146,6 +158,107 @@ begin
     MHFileTimeToUtc(CT_BASE) + 130 / MinsPerDay)));
 end;
 
+procedure TLaunchJournalTests.CommandLine_ArgumentsAndPathText;
+var
+  LRecord: TMHLaunchRecord;
+begin
+  Assert.AreEqual('--type=renderer --lang=ru',
+    MHCommandLineArguments('"C:\Program Files\Google\Chrome\Application\chrome.exe" --type=renderer --lang=ru'));
+  Assert.AreEqual('-k netsvcs -p', MHCommandLineArguments('C:\Windows\system32\svchost.exe -k netsvcs -p'));
+  Assert.AreEqual('', MHCommandLineArguments('"C:\Apps\tool.exe"'), 'Без параметров');
+  Assert.AreEqual('', MHCommandLineArguments('tool.exe'));
+  Assert.AreEqual('', MHCommandLineArguments(''));
+  Assert.AreEqual('', MHCommandLineArguments('"C:\незакрытая кавычка'), 'Повреждённая строка — без параметров');
+  LRecord := Rec(1, CT_BASE, 'xmrig.exe');
+  LRecord.CommandLine := 'xmrig.exe -o pool.example:3333 -u wallet';
+  Assert.AreEqual('C:\Apps\xmrig.exe -o pool.example:3333 -u wallet', MHLaunchPathText(LRecord),
+    'Путь из события и параметры из командной строки');
+  LRecord.ImagePath := '';
+  Assert.AreEqual('xmrig.exe -o pool.example:3333 -u wallet', MHLaunchPathText(LRecord), 'Без пути — командная строка');
+  LRecord.CommandLine := '';
+  LRecord.ImagePath := 'C:\Apps\a.exe';
+  Assert.AreEqual('C:\Apps\a.exe', MHLaunchPathText(LRecord), 'Параметры не прочитаны — только путь');
+end;
+
+procedure TLaunchJournalTests.Etw_CommandLineKeptAndLimited;
+var
+  LSource: TFakeEventSource;
+  LIntf: IMHCollector;
+  LResult: TMHCollectionResult;
+begin
+  LSource := TFakeEventSource.Create;
+  LIntf := TMHProcessEventCollector.Create(LSource, TFakeClock.Create(FAKE_NOW));
+  LSource.AddStart(500, 100, CT_BASE, FAKE_NOW, 'C:\Apps\tool.exe', '"C:\Apps\tool.exe" --silent');
+  LSource.AddStart(501, 100, CT_BASE + 1, FAKE_NOW, 'C:\Apps\big.exe', 'big.exe ' + StringOfChar('x', 5000));
+  LResult := LIntf.Collect(TMHSnapshot.Create(1, FAKE_NOW));
+  Assert.AreEqual('"C:\Apps\tool.exe" --silent', LResult.LaunchEvents[0].CommandLine);
+  Assert.AreEqual(MH_LAUNCH_COMMAND_LINE_MAX, Length(LResult.LaunchEvents[1].CommandLine), 'Огромная строка обрезана');
+end;
+
+procedure TLaunchJournalTests.Polling_ReadsCommandLineOnlyForNewLaunches;
+var
+  LSource: TFakeEventSource;
+  LCollector: TMHProcessEventCollector;
+  LIntf: IMHCollector;
+  LSnapshot: TMHSnapshot;
+  LResult: TMHCollectionResult;
+  A, B: TMHProcessInfo;
+  LReads: Integer;
+  LRecord: TMHLaunchRecord;
+begin
+  LSource := TFakeEventSource.Create;
+  LSource.StartResult := False;
+  LSource.StartDenied := True;
+  LCollector := TMHProcessEventCollector.Create(LSource, TFakeClock.Create(FAKE_NOW));
+  LIntf := LCollector;
+  LReads := 0;
+  LCollector.CommandLineReader :=
+    function(APid: Cardinal; ACreateTime: UInt64): string
+    begin
+      Inc(LReads);
+      Result := Format('app%d.exe --id %d', [APid, Int64(ACreateTime - CT_BASE)]);
+    end;
+  A := TMHProcessInfo.Create(TMHProcessId.Create(100, CT_BASE), 'explorer.exe', FAKE_NOW);
+  B := TMHProcessInfo.Create(TMHProcessId.Create(300, CT_BASE + 7), 'new.exe', FAKE_NOW);
+  LSnapshot := TMHSnapshot.Create(1, FAKE_NOW);
+  LSnapshot.Processes := [A];
+  LIntf.Collect(LSnapshot);
+  Assert.AreEqual(0, LReads, 'Уже работавшие программы не опрашиваются');
+  LSnapshot := TMHSnapshot.Create(2, IncSecond(FAKE_NOW, 2));
+  LSnapshot.Processes := [A, B];
+  LResult := LIntf.Collect(LSnapshot);
+  Assert.AreEqual(1, LReads, 'Только новый запуск');
+  Assert.AreEqual('app300.exe --id 7', LResult.LaunchEvents[0].CommandLine);
+  LSnapshot := TMHSnapshot.Create(3, IncSecond(FAKE_NOW, 4));
+  LSnapshot.Processes := [A, B];
+  LIntf.Collect(LSnapshot);
+  Assert.AreEqual(1, LReads, 'Повторно не читается');
+  // Завершение несёт те же параметры.
+  LSnapshot := TMHSnapshot.Create(4, IncSecond(FAKE_NOW, 6));
+  LSnapshot.Processes := [A];
+  LResult := LIntf.Collect(LSnapshot);
+  Assert.AreEqual(1, Integer(Length(LResult.LaunchEvents)));
+  LRecord := LResult.LaunchEvents[0];
+  Assert.IsTrue(LRecord.ExitUtc > 0);
+  Assert.AreEqual('app300.exe --id 7', LRecord.CommandLine);
+end;
+
+{ TLaunchCommandLineIntegrationTests }
+
+procedure TLaunchCommandLineIntegrationTests.OwnProcess_CommandLineRead_WrongInstanceEmpty;
+var
+  LCreate, LExit, LKernel, LUser: TFileTime;
+  LLine: string;
+begin
+  Assert.IsTrue(GetProcessTimes(GetCurrentProcess, LCreate, LExit, LKernel, LUser));
+  LLine := MHReadProcessCommandLine(GetCurrentProcessId, UInt64(LCreate));
+  Assert.IsTrue(LLine.ToLower.Contains('minehunter.tests'), 'Своя командная строка: ' + LLine);
+  Assert.AreEqual('', MHReadProcessCommandLine(GetCurrentProcessId, UInt64(LCreate) + 1),
+    'Другой экземпляр с тем же PID — пусто');
+  Assert.AreEqual('', MHReadProcessCommandLine(4, 0), 'System — без командной строки');
+  Assert.AreEqual('', MHReadProcessCommandLine($7FFFFFF0, 0), 'Нет такого процесса');
+end;
+
 { TLaunchStorageTests }
 
 procedure TLaunchStorageTests.Setup;
@@ -220,8 +333,48 @@ begin
   LIntf := nil;
 end;
 
+procedure TLaunchStorageTests.CommandLine_StoredMergedAndSearchable;
+var
+  LRepo: TMHSQLiteRepository;
+  LIntf: IMHRepository;
+  LOptions: TMHStorageOptions;
+  LSnapshot: TMHSnapshot;
+  LRecord: TMHLaunchRecord;
+  LRows: TArray<TMHLaunchRecord>;
+begin
+  LRepo := TMHSQLiteRepository.Create(TPath.Combine(FDir, 'c.db'), TMHStorageOptions.Default,
+    TFakeClock.Create(FAKE_NOW), TRecordingLogger.Create);
+  LIntf := LRepo;
+  LRecord := Rec(500, CT_BASE, 'xmrig.exe');
+  LRecord.CommandLine := 'xmrig.exe -o pool.minexmr.com:443';
+  LSnapshot := TMHSnapshot.Create(1, FAKE_NOW);
+  LSnapshot.LaunchEvents := [LRecord];
+  LRepo.SaveSnapshot(LSnapshot);
+  // Завершение без командной строки не стирает её.
+  LSnapshot := TMHSnapshot.Create(2, IncSecond(FAKE_NOW, 5));
+  LSnapshot.LaunchEvents := [Rec(500, CT_BASE, '', IncSecond(MHFileTimeToUtc(CT_BASE), 3))];
+  LRepo.SaveSnapshot(LSnapshot);
+  LRows := LRepo.LoadLaunches(FAKE_NOW - 1, FAKE_NOW + 1, '', 10);
+  Assert.AreEqual('xmrig.exe -o pool.minexmr.com:443', LRows[0].CommandLine);
+  Assert.AreEqual(1, Integer(Length(LRepo.LoadLaunches(FAKE_NOW - 1, FAKE_NOW + 1, 'MINEXMR', 10))),
+    'Поиск по параметрам');
+  LIntf := nil;
+  // Без хранения путей параметры тоже не сохраняются.
+  LOptions := TMHStorageOptions.Default;
+  LOptions.StoreProcessPaths := False;
+  LRepo := TMHSQLiteRepository.Create(TPath.Combine(FDir, 'c2.db'), LOptions, TFakeClock.Create(FAKE_NOW),
+    TRecordingLogger.Create);
+  LIntf := LRepo;
+  LSnapshot := TMHSnapshot.Create(1, FAKE_NOW);
+  LSnapshot.LaunchEvents := [LRecord];
+  LRepo.SaveSnapshot(LSnapshot);
+  Assert.AreEqual('', LRepo.LoadLaunches(FAKE_NOW - 1, FAKE_NOW + 1, '', 10)[0].CommandLine);
+  LIntf := nil;
+end;
+
 initialization
   TDUnitX.RegisterTestFixture(TLaunchJournalTests);
+  TDUnitX.RegisterTestFixture(TLaunchCommandLineIntegrationTests);
   TDUnitX.RegisterTestFixture(TLaunchStorageTests);
 
 end.

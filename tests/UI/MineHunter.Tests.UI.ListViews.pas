@@ -28,6 +28,7 @@ type
     [TearDown] procedure TearDown;
     [Test] procedure RowsInsertedAbove_SameRecordStaysOnTopAndSelected;
     [Test] procedure AtTop_StaysAtTopAndShowsNewRows;
+    [Test] procedure AtTopWithSelection_EverythingStaysInPlace;
     [Test] procedure SelectedRecordGone_NoSelection;
     [Test] procedure ScrolledUpAfterSelectingBelow_StaysUp;
     [Test] procedure ItemTextKey_UsesCaptionAndColumns;
@@ -125,12 +126,31 @@ var
   LState: TMHListState;
 begin
   Fill(Names(1, 200));
-  FList.Items[3].Selected := True;
   LState := MHSaveListState(FList, CaptionKey);
   Fill(Names(1, 5, 'new') + Names(1, 200));
   MHRestoreListState(FList, LState, CaptionKey);
-  Assert.AreEqual(0, MHListTopIndex(FList), 'В начале списка новые записи видны');
+  Assert.AreEqual(0, MHListTopIndex(FList), 'В начале списка без выделения новые записи видны');
+  Assert.AreEqual('new001', FList.Items[0].Caption);
+end;
+
+procedure TListStateTests.AtTopWithSelection_EverythingStaysInPlace;
+var
+  LState: TMHListState;
+  LRect: TRect;
+  LBefore: Integer;
+begin
+  // Отзыв: «Выделил — выделение осталось. Таблица обновилась, но всё осталось на том же месте».
+  Fill(Names(1, 200));
+  FList.Items[3].Selected := True;
+  Assert.IsTrue(ListView_GetItemRect(FList.Handle, 3, LRect, LVIR_BOUNDS));
+  LBefore := LRect.Top;
+  LState := MHSaveListState(FList, CaptionKey);
+  Fill(Names(1, 5, 'new') + Names(1, 200));
+  MHRestoreListState(FList, LState, CaptionKey);
+  Assert.AreEqual('r001', FList.Items[MHListTopIndex(FList)].Caption, 'Первая видимая — та же запись');
   Assert.AreEqual('r004', FList.Selected.Caption);
+  Assert.IsTrue(ListView_GetItemRect(FList.Handle, FList.Selected.Index, LRect, LVIR_BOUNDS));
+  Assert.AreEqual(LBefore, LRect.Top, 'Выделенная строка на том же месте экрана');
 end;
 
 procedure TListStateTests.SelectedRecordGone_NoSelection;
@@ -171,7 +191,8 @@ begin
     Fill(Names(1, I, 'new') + Names(1, 200));
     MHRestoreListState(FList, LState, CaptionKey);
     Application.ProcessMessages;
-    Assert.AreEqual(0, MHListTopIndex(FList), 'Обновление ' + IntToStr(I));
+    Assert.AreEqual('r001', FList.Items[MHListTopIndex(FList)].Caption,
+      'Обновление ' + IntToStr(I) + ': таблица не уходит к выделенной строке и не сдвигается');
     Assert.AreEqual('r126', FList.Selected.Caption);
   end;
 end;

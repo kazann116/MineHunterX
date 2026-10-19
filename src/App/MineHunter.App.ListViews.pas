@@ -41,9 +41,9 @@ procedure MHRebuildList(AList: TListView; const ABuild: TProc);
 
 /// Запоминает прокрутку и выделение перед пересборкой строк (Clear + Add).
 function MHSaveListState(AList: TListView; const AKeyOf: TMHListItemKey): TMHListState;
-/// Возвращает выделение и прокрутку по ключам записей. Список, прокрученный в самое
-/// начало, остаётся в начале (новые записи видны); иначе первой видимой остаётся та же
-/// запись, даже если перед ней появились новые.
+/// Возвращает выделение и прокрутку по ключам записей: первой видимой остаётся та же
+/// запись, даже если перед ней появились новые. Исключение — список в самом начале без
+/// выделения: он остаётся в начале, чтобы новые записи были видны.
 procedure MHRestoreListState(AList: TListView; const AState: TMHListState; const AKeyOf: TMHListItemKey);
 /// Ключ по тексту первого столбца и столбцов SubItems с указанными номерами.
 function MHItemTextKey(AItem: TListItem; const ASubItems: array of Integer): string;
@@ -197,7 +197,7 @@ function MHSaveListState(AList: TListView; const AKeyOf: TMHListItemKey): TMHLis
 begin
   Result := Default(TMHListState);
   Result.Top := MHListTopIndex(AList);
-  if (Result.Top > 0) and (Result.Top < AList.Items.Count) then
+  if (Result.Top >= 0) and (Result.Top < AList.Items.Count) then
     Result.TopKey := AKeyOf(AList.Items[Result.Top]);
   Result.HasSelection := AList.Selected <> nil;
   if Result.HasSelection then
@@ -221,7 +221,8 @@ begin
   if AState.Top < 0 then
     Exit;
   LTop := AState.Top;
-  if LTop > 0 then
+  // Пользователь выделил запись или прокрутил список — всё остаётся на месте.
+  if (LTop > 0) or AState.HasSelection then
   begin
     LIndex := FindByKey(AList, AState.TopKey, AKeyOf);
     if LIndex >= 0 then

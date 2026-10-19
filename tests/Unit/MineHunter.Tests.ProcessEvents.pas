@@ -26,7 +26,8 @@ type
     Lost: Integer;
     constructor Create;
     destructor Destroy; override;
-    procedure AddStart(APid, AParent: Cardinal; ACreate: UInt64; ATime: TDateTime; const APath: string);
+    procedure AddStart(APid, AParent: Cardinal; ACreate: UInt64; ATime: TDateTime; const APath: string;
+      const ACommandLine: string = '');
     procedure AddStop(APid: Cardinal; ACreate: UInt64; ATime: TDateTime);
     function Start(out AError: string; out AAccessDenied: Boolean): Boolean;
     procedure Stop;
@@ -96,7 +97,7 @@ begin
 end;
 
 procedure TFakeEventSource.AddStart(APid, AParent: Cardinal; ACreate: UInt64; ATime: TDateTime;
-  const APath: string);
+  const APath, ACommandLine: string);
 var
   LEvent: TMHProcessEvent;
 begin
@@ -107,6 +108,7 @@ begin
   LEvent.CreateTime := ACreate;
   LEvent.TimestampUtc := ATime;
   LEvent.ImagePath := APath;
+  LEvent.CommandLine := ACommandLine;
   Pending.Add(LEvent);
 end;
 
