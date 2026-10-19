@@ -113,6 +113,18 @@ def load_isolated():
     return json.load(open(path, encoding='utf-8'))
 
 
+def load_trace():
+    """Построчная трассировка (tools/binarylab_assert_trace.py): «файл:строка» → число выполнений."""
+    path = os.path.join(ROOT, 'build', 'binarylab-assert-trace.json')
+    if not os.path.exists(path):
+        return None
+    import json
+    data = json.load(open(path, encoding='utf-8'))
+    if not data.get('all_passed'):
+        return {}
+    return {'%s:%d' % (c['file'], c['line']): c['executed'] for c in data['checks']}
+
+
 def load_results():
     """Итоги прогонов DUnitX (NUnit XML): сборка → {тест: пройден}. Нет файла — сборка пропускается."""
     results = {}
@@ -229,6 +241,7 @@ def main():
     tests = test_procedures()
     results = load_results()
     isolated = load_isolated()
+    trace = load_trace()
     rows = []
     missing = []
     used = set()
@@ -278,6 +291,12 @@ def main():
                     if cases_run.get(t) is not True:
                         missing.append('%s — тест %s не прошёл изолированно в %s' % (key, t, config))
                 run.append('отдельно %s %d/%d' % (config, alone, len(case_tests)))
+            if trace is not None:
+                done = sum(1 for rel, lineno, _t, _x in checks if trace.get('%s:%d' % (rel, lineno), 0) > 0)
+                for rel, lineno, _t, _x in checks:
+                    if trace.get('%s:%d' % (rel, lineno), 0) == 0:
+                        missing.append('%s — строка %s:%d не выполнялась' % (key, rel, lineno))
+                run.append('строк Assert выполнено %d/%d' % (done, len(checks)))
             run_text = ', '.join(run) or 'не запускались'
 
             used.add(key)
@@ -293,7 +312,9 @@ def main():
            'Колонка «Прогон» — итоги последнего запуска всех тестов (`build/tests-Debug.xml`,',
            '`build/tests-Release.xml`, отчёты NUnit XML DUnitX): сколько тестов случаев выполнено и пройдено;',
            '«отдельно» — каждый тест случая запущен своим процессом (`python tools/binarylab_isolated_run.py`,',
-           '`build/binarylab-isolated.json`).', '',
+           '`build/binarylab-isolated.json`); «строк Assert выполнено» — построчная трассировка: в копию тестов',
+           'перед каждой строкой проверки вставлена отметка, весь набор пройден, и каждая строка выполнилась',
+           '(`python tools/binarylab_assert_trace.py`, `build/binarylab-assert-trace.json`).', '',
            '| Требование | Тесты (граничные и ошибочные случаи) | Прогон |', '|---|---|---|']
     for requirement, names in REQUIREMENTS:
         found = [n for n in names if any(proc == n for _u, _f, proc, _b, _l in tests)]
@@ -346,6 +367,12 @@ def main():
         len(rows), total_checks, len(conditional), len(missing),
         ', '.join('%s — %d тестов, пройдено %d' % (c, len(r), sum(1 for v in r.values() if v))
                   for c, r in results.items()) or 'нет')]
+    # Полный список проверок — для построчной трассировки (tools/binarylab_assert_trace.py).
+    import json
+    all_checks = sorted({(rel, lineno, test) for _u, _n, _h, _c, checks in rows for rel, lineno, test, _t in checks})
+    with open(os.path.join(ROOT, 'build', 'binarylab-checks.json'), 'w', encoding='utf-8') as f:
+        json.dump([{'file': rel, 'line': lineno, 'test': test} for rel, lineno, test in all_checks], f,
+                  ensure_ascii=False, indent=0)
     target = os.path.join(ROOT, 'docs', 'binarylab-tests.md')
     with open(target, 'w', encoding='utf-8-sig', newline='\n') as f:
         f.write('\n'.join(out) + '\n')
