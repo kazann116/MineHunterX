@@ -13,6 +13,11 @@
     --report=PATH      файл отчёта Markdown (по умолчанию reports\soak-report.md рядом с exe)
     --rebuild-every=N  дополнительно перестраивать профиль нормы каждые N минут
                        (0 — только по расписанию приложения, раз в час)
+    --flush=SEC        запись истории пакетом раз в SEC секунд (0 — каждый снимок
+                       отдельно; по умолчанию — как в приложении)
+
+  В отчёте — объём записи процесса (GetProcessIoCounters, как в таблице
+  «Кто читает и пишет»): в основном это история SQLite.
 
   Критерии (ТЗ, раздел 9): выполнено заданное число циклов, ни одного сбоя
   цикла или обработчика, рост частной памяти после прогрева < 30 МБ, рост
@@ -31,6 +36,7 @@ uses
   MineHunter.Core.Types in '..\..\src\Core\MineHunter.Core.Types.pas',
   MineHunter.Core.Interfaces in '..\..\src\Core\MineHunter.Core.Interfaces.pas',
   MineHunter.Core.Scanner in '..\..\src\Core\MineHunter.Core.Scanner.pas',
+  MineHunter.Storage.SQLite in '..\..\src\Storage\MineHunter.Storage.SQLite.pas',
   MineHunter.App.Bootstrap in '..\..\src\App\MineHunter.App.Bootstrap.pas';
 
 const
@@ -46,6 +52,8 @@ type
     Errors: Integer;
     Findings: Integer;
     HistoryPoints: Integer;
+    /// Записано процессом с запуска, МБ.
+    WrittenMB: Double;
   end;
 
 function ArgValue(const AName, ADefault: string): string;
@@ -87,6 +95,17 @@ begin
   Result := LBytes / 1048576;
 end;
 
+function WrittenMB: Double;
+var
+  LCounters: TIOCounters;
+begin
+  FillChar(LCounters, SizeOf(LCounters), 0);
+  if GetProcessIoCounters(GetCurrentProcess, LCounters) then
+    Result := LCounters.WriteTransferCount / 1048576
+  else
+    Result := 0;
+end;
+
 function HandleCount: Cardinal;
 begin
   if not GetProcessHandleCount(GetCurrentProcess, Result) then
@@ -118,7 +137,9 @@ var
   LSamples: TArray<TSample>;
   LSample: TSample;
   LReport: TStringList;
-  LMemGrowth, LCpuPercent: Double;
+  LMemGrowth, LCpuPercent, LWrittenStart: Double;
+  LFlushSec: Integer;
+  LStorageOptions: TMHStorageOptions;
   LHandleGrowth: Integer;
   LPassed: Boolean;
   LStarted: TDateTime;
@@ -131,6 +152,7 @@ begin
   LIntervalMs := StrToIntDef(ArgValue('interval', '250'), 250);
   LRebuildEvery := Max(0, StrToIntDef(ArgValue('rebuild-every', '0'), 0));
   LRebuilds := 0;
+  LFlushSec := StrToIntDef(ArgValue('flush', '-1'), -1);
   LReportPath := TPath.GetFullPath(ArgValue('report',
     TPath.Combine(ExtractFilePath(ParamStr(0)), 'reports\soak-report.md')));
   LTempDir := TPath.Combine(TPath.GetTempPath, 'MineHunterSoak-' + FormatDateTime('yyyymmdd-hhnnss', Now));
@@ -147,6 +169,15 @@ begin
       LOptions.IntervalMs := LIntervalMs;
       LOptions.EventDispatch := edWorkerThread;
       LServices.Scanner.Options := LOptions;
+      if (LFlushSec >= 0) and (LServices.Storage <> nil) then
+      begin
+        LStorageOptions := LServices.Storage.Options;
+        LStorageOptions.FlushIntervalSec := LFlushSec;
+        LServices.Storage.Options := LStorageOptions;
+      end;
+      if LServices.Storage <> nil then
+        LFlushSec := LServices.Storage.Options.FlushIntervalSec;
+      LWrittenStart := WrittenMB;
       LServices.Scanner.OnCycle :=
         procedure(const ASnapshot: TMHSnapshot; const AFindings: TMHFindings)
         begin
@@ -174,13 +205,15 @@ begin
         LSample.Handles := HandleCount;
         LSample.Errors := ErrorCount(LServices);
         LSample.Findings := TInterlocked.CompareExchange(LFindingsTotal, 0, 0);
+        LSample.WrittenMB := WrittenMB - LWrittenStart;
         LSample.HistoryPoints := -1;
         if LServices.Analyzer <> nil then
           LSample.HistoryPoints := LServices.Analyzer.TotalSamples;
         LSamples := LSamples + [LSample];
-        Writeln(Format('%3d мин: циклов %d, память %.1f МБ (куча %.1f МБ), дескрипторов %d, ошибок %d, точек истории %d',
+        Writeln(Format('%3d мин: циклов %d, память %.1f МБ (куча %.1f МБ), дескрипторов %d, ошибок %d, ' +
+          'точек истории %d, записано %.1f МБ',
           [LMinute, LSample.Cycles, LSample.PrivateMB, LSample.HeapMB, LSample.Handles, LSample.Errors,
-           LSample.HistoryPoints]));
+           LSample.HistoryPoints, LSample.WrittenMB]));
       end;
       LServices.Scanner.Stop;
       LWallMs := Round((Now - LStarted) * MSecsPerDay);
@@ -217,13 +250,18 @@ begin
         if LRebuildEvery > 0 then
           LReport.Add(Format('Дополнительные перестройки профиля нормы: каждые %d мин (запрошено %d) — ' +
             'проверка, что перестройка не наращивает память.', [LRebuildEvery, LRebuilds]));
+        LReport.Add(Format('Запись на диск: %.1f МБ за %d мин — %.1f КБ/с, %.1f КБ на цикл ' +
+          '(история пишется пакетом раз в %d с; 0 — каждый снимок отдельно).',
+          [LSamples[High(LSamples)].WrittenMB, LMinute,
+           LSamples[High(LSamples)].WrittenMB * 1024 / Max(1, LMinute * 60),
+           LSamples[High(LSamples)].WrittenMB * 1024 / Max(1, LSamples[High(LSamples)].Cycles), LFlushSec]));
         LReport.Add('');
-        LReport.Add('| Минута | Циклов | Частная память, МБ | Куча Delphi, МБ | Дескрипторов | Ошибок цикла | Находок (сумма) | Точек истории анализатора |');
-        LReport.Add('|---|---|---|---|---|---|---|---|');
+        LReport.Add('| Минута | Циклов | Частная память, МБ | Куча Delphi, МБ | Дескрипторов | Ошибок цикла | Находок (сумма) | Точек истории анализатора | Записано, МБ |');
+        LReport.Add('|---|---|---|---|---|---|---|---|---|');
         for LSample in LSamples do
-          LReport.Add(Format('| %d | %d | %.1f | %.1f | %d | %d | %d | %d |', [LSample.Minute, LSample.Cycles,
+          LReport.Add(Format('| %d | %d | %.1f | %.1f | %d | %d | %d | %d | %.1f |', [LSample.Minute, LSample.Cycles,
             LSample.PrivateMB, LSample.HeapMB, LSample.Handles, LSample.Errors, LSample.Findings,
-            LSample.HistoryPoints]));
+            LSample.HistoryPoints, LSample.WrittenMB]));
         LReport.Add('');
         LReport.Add(Format('Рост памяти после прогрева (с %d-й минуты): %.1f МБ (порог 30). ' +
           'Рост дескрипторов: %d (порог 100). Ошибок цикла: %d.',

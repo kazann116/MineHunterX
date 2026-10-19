@@ -50,6 +50,12 @@ type
     [Test] procedure NewerSchema_IsNotModified;
     [Test] procedure InvalidLocation_RaisesStorageError;
     [Test] procedure ConcurrentSaveAndRead;
+    [Test] procedure Batch_WrittenAfterIntervalNotEachSnapshot;
+    [Test] procedure Batch_ReadAndCloseWritePending;
+    [Test] procedure Batch_ZeroInterval_WritesEachSnapshot;
+    [Test] procedure Batch_FindingsMergedInOneWrite;
+    [Test] procedure Batch_ClockBackOrClear;
+    [Test] procedure Batch_QueueKeepsCopyOfSnapshot;
   end;
 
   [TestFixture]
@@ -98,6 +104,34 @@ begin
     LInfo.SourceId := 'processes';
     Result.Processes[I] := LInfo;
   end;
+end;
+
+/// Число строк, видимое другим соединением, — то, что действительно записано в файл.
+function RawCount(const APath, ATable: string): Int64;
+var
+  LConnection: TFDConnection;
+begin
+  LConnection := TFDConnection.Create(nil);
+  try
+    LConnection.DriverName := 'SQLite';
+    LConnection.Params.Database := APath;
+    LConnection.LoginPrompt := False;
+    Result := LConnection.ExecSQLScalar('SELECT COUNT(*) FROM ' + ATable);
+  finally
+    LConnection.Free;
+  end;
+end;
+
+function BatchFinding(const AKey: string; AScore: Integer; ADetected: TDateTime): TMHFinding;
+begin
+  Result := Default(TMHFinding);
+  Result.Id := TGUID.NewGuid;
+  Result.Key := AKey;
+  Result.Process := TMHProcessId.Create(4321, $1D9A0000);
+  Result.ProcessName := 'miner.exe';
+  Result.Title := 'Находка ' + AKey;
+  Result.Score := AScore;
+  Result.DetectedAtUtc := ADetected;
 end;
 
 { TStorageTests }
@@ -441,6 +475,163 @@ begin
   for I := 2 to 5 do
     LRepo.SaveSnapshot(Snap(I, FAKE_NOW, I));
   Assert.AreEqual<Int64>(4, LRepo.GetStats.SnapshotCount);
+end;
+
+procedure TStorageTests.Batch_WrittenAfterIntervalNotEachSnapshot;
+var
+  LRepo: TMHSQLiteRepository;
+  LIntf: IMHRepository;
+  I: Integer;
+begin
+  Assert.AreEqual(60, TMHStorageOptions.Default.FlushIntervalSec, 'По умолчанию — раз в минуту');
+  LRepo := Open;
+  LIntf := LRepo;
+  // Снимки каждые 2 с в течение 58 с — на диске ещё ничего нет.
+  for I := 1 to 30 do
+  begin
+    LRepo.SaveSnapshot(Snap(I, FClock.NowUtc, I, 5));
+    if I < 30 then
+      FClock.AdvanceMs(2000);
+  end;
+  Assert.AreEqual<Int64>(0, RawCount(FPath, 'snapshots'), 'Каждый снимок не пишется отдельно');
+  // Прошла минута с первого снимка в очереди — весь пакет одной транзакцией.
+  FClock.AdvanceMs(2000);
+  LRepo.SaveSnapshot(Snap(31, FClock.NowUtc, 31, 5));
+  Assert.AreEqual<Int64>(31, RawCount(FPath, 'snapshots'));
+  Assert.AreEqual<Int64>(31 * 5, RawCount(FPath, 'process_samples'));
+  Assert.AreEqual<Int64>(31 * 3, RawCount(FPath, 'metrics'));
+  // Новый пакет начинается заново.
+  FClock.AdvanceMs(2000);
+  LRepo.SaveSnapshot(Snap(32, FClock.NowUtc, 32));
+  Assert.AreEqual<Int64>(31, RawCount(FPath, 'snapshots'));
+end;
+
+procedure TStorageTests.Batch_ReadAndCloseWritePending;
+var
+  LRepo: TMHSQLiteRepository;
+  LSnapshots: TArray<TMHSnapshot>;
+begin
+  LRepo := Open;
+  try
+    LRepo.SaveSnapshot(Snap(1, FAKE_NOW, 10, 2));
+    Assert.AreEqual<Int64>(0, RawCount(FPath, 'snapshots'));
+    // Чтение видит очередь: она записывается перед запросом.
+    LSnapshots := LRepo.LoadHistory(FAKE_NOW - 1, FAKE_NOW + 1, 10);
+    Assert.AreEqual(1, Integer(Length(LSnapshots)));
+    Assert.AreEqual(2, Integer(Length(LSnapshots[0].Processes)));
+    Assert.AreEqual<Int64>(1, RawCount(FPath, 'snapshots'));
+    Assert.AreEqual(1, Integer(Length(LRepo.LoadMetricSeries(mkCpuPercent, FAKE_NOW - 1, FAKE_NOW + 1, 10))));
+    // Явная запись.
+    LRepo.SaveSnapshot(Snap(2, FAKE_NOW + 1 / SecsPerDay, 20));
+    LRepo.Flush;
+    Assert.AreEqual<Int64>(2, RawCount(FPath, 'snapshots'));
+    // Закрытие записывает остаток.
+    LRepo.SaveSnapshot(Snap(3, FAKE_NOW + 2 / SecsPerDay, 30));
+    LRepo.SaveSnapshot(Snap(4, FAKE_NOW + 3 / SecsPerDay, 40));
+  finally
+    LRepo.Free;
+  end;
+  Assert.AreEqual<Int64>(4, RawCount(FPath, 'snapshots'), 'При закрытии очередь не теряется');
+end;
+
+procedure TStorageTests.Batch_ZeroInterval_WritesEachSnapshot;
+var
+  LRepo: TMHSQLiteRepository;
+  LIntf: IMHRepository;
+  LOptions: TMHStorageOptions;
+begin
+  LOptions := TMHStorageOptions.Default;
+  LOptions.FlushIntervalSec := 0;
+  LRepo := Open(LOptions);
+  LIntf := LRepo;
+  LRepo.SaveSnapshot(Snap(1, FAKE_NOW, 1));
+  Assert.AreEqual<Int64>(1, RawCount(FPath, 'snapshots'));
+  LRepo.SaveSnapshot(Snap(2, FAKE_NOW, 2));
+  Assert.AreEqual<Int64>(2, RawCount(FPath, 'snapshots'));
+  // Включение пакетов и обратно: накопленное пишется при переходе на «сразу».
+  LOptions.FlushIntervalSec := 60;
+  LRepo.Options := LOptions;
+  LRepo.SaveSnapshot(Snap(3, FAKE_NOW, 3));
+  Assert.AreEqual<Int64>(2, RawCount(FPath, 'snapshots'));
+  LOptions.FlushIntervalSec := 0;
+  LRepo.Options := LOptions;
+  Assert.AreEqual<Int64>(3, RawCount(FPath, 'snapshots'));
+  // Границы параметра.
+  LOptions.FlushIntervalSec := -5;
+  Assert.AreEqual(0, LOptions.Normalized.FlushIntervalSec);
+  LOptions.FlushIntervalSec := 100000;
+  Assert.AreEqual(3600, LOptions.Normalized.FlushIntervalSec);
+end;
+
+procedure TStorageTests.Batch_FindingsMergedInOneWrite;
+var
+  LRepo: TMHSQLiteRepository;
+  LIntf: IMHRepository;
+  LStored: TArray<TMHStoredFinding>;
+begin
+  LRepo := Open;
+  LIntf := LRepo;
+  LRepo.SaveFindings([BatchFinding('k1', 40, FAKE_NOW - 2 / SecsPerDay)]);
+  LRepo.SaveFindings([BatchFinding('k1', 70, FAKE_NOW - 1 / SecsPerDay),
+    BatchFinding('k2', 30, FAKE_NOW - 1 / SecsPerDay)]);
+  LRepo.SaveFindings([BatchFinding('k1', 50, FAKE_NOW)]);
+  Assert.AreEqual<Int64>(0, RawCount(FPath, 'findings'), 'Находки ждут пакета');
+  LStored := LRepo.LoadFindings(FAKE_NOW - 1, FAKE_NOW + 1, 10);
+  Assert.AreEqual(2, Integer(Length(LStored)));
+  Assert.AreEqual('k1', LStored[0].Finding.Key);
+  // Повторы объединяются так же, как при записи по одной.
+  Assert.AreEqual(3, LStored[0].Occurrences);
+  Assert.AreEqual(70, LStored[0].MaxScore);
+  Assert.AreEqual(50, LStored[0].Finding.Score, 'Состояние — от последнего наблюдения');
+  Assert.AreEqual(FAKE_NOW - 2 / SecsPerDay, LStored[0].FirstSeenUtc, 1 / MSecsPerDay);
+  Assert.AreEqual(FAKE_NOW, LStored[0].LastSeenUtc, 1 / MSecsPerDay);
+  Assert.AreEqual(1, LStored[1].Occurrences);
+end;
+
+procedure TStorageTests.Batch_ClockBackOrClear;
+var
+  LRepo: TMHSQLiteRepository;
+  LIntf: IMHRepository;
+  LClock: TFakeClock;
+  LClockIntf: IMHClock;
+begin
+  LClock := TFakeClock.Create(FAKE_NOW + 1 / HoursPerDay);
+  LClockIntf := LClock;
+  LRepo := TMHSQLiteRepository.Create(FPath, TMHStorageOptions.Default, LClockIntf, FLoggerIntf);
+  LIntf := LRepo;
+  LRepo.SaveSnapshot(Snap(2, FAKE_NOW + 1 / HoursPerDay, 2));
+  Assert.AreEqual<Int64>(0, RawCount(FPath, 'snapshots'));
+  // Часы переведены назад: пакет не ждёт минуту от «будущего» времени.
+  LClock.SetNow(FAKE_NOW);
+  LRepo.SaveSnapshot(Snap(3, FAKE_NOW, 3));
+  Assert.AreEqual<Int64>(2, RawCount(FPath, 'snapshots'), 'Часы назад — пакет записан');
+  // Очистка истории удаляет и очередь.
+  LRepo.SaveSnapshot(Snap(4, FAKE_NOW, 4));
+  LRepo.SaveFindings([BatchFinding('k', 50, FAKE_NOW)]);
+  LRepo.Clear;
+  LRepo.Flush;
+  Assert.AreEqual<Int64>(0, RawCount(FPath, 'snapshots'));
+  Assert.AreEqual<Int64>(0, RawCount(FPath, 'findings'));
+end;
+
+procedure TStorageTests.Batch_QueueKeepsCopyOfSnapshot;
+var
+  LRepo: TMHSQLiteRepository;
+  LIntf: IMHRepository;
+  LSnapshot: TMHSnapshot;
+  LSeries: TArray<TMHMetric>;
+begin
+  LRepo := Open;
+  LIntf := LRepo;
+  LSnapshot := Snap(1, FAKE_NOW, 25, 3);
+  LRepo.SaveSnapshot(LSnapshot);
+  // Сканер может менять массивы своего снимка после вызова — в очереди копия.
+  LSnapshot.Metrics[0] := TMHMetric.Available(mkCpuPercent, 99, FAKE_NOW);
+  LSnapshot.Processes[0].Name := 'changed.exe';
+  LSeries := LRepo.LoadMetricSeries(mkCpuPercent, FAKE_NOW - 1, FAKE_NOW + 1, 10);
+  Assert.AreEqual(1, Integer(Length(LSeries)));
+  Assert.AreEqual(25.0, LSeries[0].Value, 0.001);
+  Assert.AreEqual(3, Integer(Length(LRepo.LoadHistory(FAKE_NOW - 1, FAKE_NOW + 1, 10)[0].Processes)));
 end;
 
 procedure TStorageTests.Clear_RemovesEverything;

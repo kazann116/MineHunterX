@@ -9,7 +9,7 @@
 
   - FireDAC со статически встроенным SQLite: внешняя sqlite3.dll не нужна.
   - Защита от повреждения: WAL + synchronous=NORMAL, транзакция на каждый
-    снимок, PRAGMA quick_check при открытии. Повреждённый файл не удаляется,
+    пакет снимков, PRAGMA quick_check при открытии. Повреждённый файл не удаляется,
     а переименовывается в «*.corrupt-<время>» и создаётся новая база.
   - Миграции схемы версионируются (таблица schema_version). База более новой
     версии не изменяется — открытие завершается ошибкой.
@@ -17,6 +17,13 @@
     превышении MaxDatabaseBytes, самых старых снимков; затем incremental_vacuum.
   - Объём: для каждого снимка сохраняются системные метрики и не более
     MaxProcessesPerSnapshot самых нагруженных процессов (по CPU, затем по памяти).
+  - Пакетная запись: снимки и находки копятся в памяти и пишутся одной
+    транзакцией раз в FlushIntervalSec. Отдельная транзакция на снимок каждые
+    1–2 с переписывала десятки страниц по 4 КБ (индекс процессов по PID
+    разбрасывает вставки по всему дереву) — ≈ 225 КБ записи на снимок против
+    ≈ 16 КБ при пакете за минуту. Перед любым чтением истории и при закрытии
+    очередь записывается, поэтому читатели видят все данные; при аварийном
+    завершении теряется не больше FlushIntervalSec последних секунд.
   - Приватность: при StoreProcessPaths = False пути процессов не сохраняются.
   - Потокобезопасность: одно соединение, все операции под блокировкой.
     SaveSnapshot вызывается из потока сканера, чтение — из любого потока.
@@ -52,6 +59,9 @@ type
     MaintenanceEverySaves: Integer;
     /// Сколько последних записей журнала действий хранится.
     MaxActionRecords: Integer;
+    /// Снимки и находки пишутся на диск пакетом раз в столько секунд
+    /// (0 — сразу, каждый снимок отдельной транзакцией).
+    FlushIntervalSec: Integer;
     class function Default: TMHStorageOptions; static;
     function Normalized: TMHStorageOptions;
   end;
@@ -69,6 +79,17 @@ type
     /// Предел кэша страниц SQLite на соединение (страниц по 4 КБ ≈ 8 МБ). Значение
     /// FireDAC по умолчанию — 10000 страниц (≈ 40 МБ), кэш растёт вместе с базой.
     CacheSizePages = 2000;
+    /// Предел очереди записи: при достижении пакет пишется раньше срока.
+    MaxPendingSnapshots = 600;
+    MaxPendingFindings = 20000;
+  private type
+    /// Снимок в очереди записи: только сохраняемые поля (метрики, источники,
+    /// отобранные процессы, запуски) и, если подошёл срок, учёт «что изменилось».
+    TPendingSnapshot = record
+      Snapshot: TMHSnapshot;
+      HasInventory: Boolean;
+      Inventory: TArray<TMHInventoryItem>;
+    end;
   private
     FLock: TCriticalSection;
     FConnection: TFDConnection;
@@ -83,8 +104,25 @@ type
     FUpsertInventory: TFDQuery;
     FUpsertLaunch: TFDQuery;
     FLastInventoryUtc: TDateTime;
+    FPending: TArray<TPendingSnapshot>;
+    FPendingCount: Integer;
+    FPendingFindings: TArray<TMHFinding>;
+    FPendingFindingCount: Integer;
+    /// Время постановки в очередь первой записи пакета (0 — очередь пуста).
+    FPendingSinceUtc: TDateTime;
     procedure SaveLaunchesLocked(const ASnapshot: TMHSnapshot);
-    procedure SaveInventoryLocked(const ASnapshot: TMHSnapshot);
+    /// Подошёл ли срок обновить учёт (не чаще MH_INVENTORY_REFRESH_SECONDS).
+    function InventoryDueLocked(ATimestampUtc: TDateTime): Boolean;
+    procedure WriteInventoryLocked(const AItems: TArray<TMHInventoryItem>; ASeenUtc: TDateTime);
+    procedure WriteSnapshotLocked(const AItem: TPendingSnapshot);
+    procedure WriteFindingLocked(const AFinding: TMHFinding);
+    procedure MarkPendingLocked;
+    function FlushDueLocked: Boolean;
+    /// Пишет очередь одной транзакцией. При ошибке пакет отбрасывается
+    /// (как раньше отдельный снимок), исключение передаётся вызывающему.
+    procedure FlushLocked;
+    /// Перед чтением: записать очередь, ошибку — только в журнал.
+    procedure FlushBeforeReadLocked;
     procedure Log(ALevel: TMHLogLevel; const AMessage: string);
     procedure CheckOpen;
     procedure OpenConnection(AIsNew: Boolean);
@@ -119,7 +157,10 @@ type
     destructor Destroy; override;
 
     { IMHRepository }
+    /// Ставит снимок в очередь записи (см. TMHStorageOptions.FlushIntervalSec).
     procedure SaveSnapshot(const ASnapshot: TMHSnapshot);
+    /// Записывает очередь снимков и находок на диск сейчас.
+    procedure Flush;
     function LoadHistory(AFromUtc, AToUtc: TDateTime; AMaxCount: Integer): TArray<TMHSnapshot>;
     { IMHMetricHistory }
     function LoadMetricSeries(AKind: TMHMetricKind; AFromUtc, AToUtc: TDateTime;
@@ -406,6 +447,7 @@ begin
   Result.StoreProcessPaths := True;
   Result.MaintenanceEverySaves := 300;
   Result.MaxActionRecords := 10000;
+  Result.FlushIntervalSec := 60;
 end;
 
 function TMHStorageOptions.Normalized: TMHStorageOptions;
@@ -416,6 +458,7 @@ begin
   Result.MaxProcessesPerSnapshot := EnsureRange(MaxProcessesPerSnapshot, 0, 10000);
   Result.MaintenanceEverySaves := Max(1, MaintenanceEverySaves);
   Result.MaxActionRecords := EnsureRange(MaxActionRecords, 10, 1000000);
+  Result.FlushIntervalSec := EnsureRange(FlushIntervalSec, 0, 3600);
 end;
 
 { TMHSQLiteRepository }
@@ -482,6 +525,14 @@ begin
   begin
     FLock.Enter;
     try
+      if FConnection <> nil then
+        try
+          FlushLocked;
+        except
+          on E: Exception do
+            Log(llWarning, MHL('Последние снимки не записаны при закрытии: ',
+              'The latest snapshots were not written on close: ') + E.Message);
+        end;
       CloseConnection;
     finally
       FLock.Leave;
@@ -671,6 +722,8 @@ begin
   FLock.Enter;
   try
     FOptions := AValue.Normalized;
+    if (FPendingSinceUtc <> 0) and FlushDueLocked then
+      FlushBeforeReadLocked;
   finally
     FLock.Leave;
   end;
@@ -710,78 +763,181 @@ end;
 
 procedure TMHSQLiteRepository.SaveSnapshot(const ASnapshot: TMHSnapshot);
 var
+  LItem: TPendingSnapshot;
+begin
+  FLock.Enter;
+  try
+    CheckOpen;
+    // В очереди — только то, что пишется в базу: полный снимок (файлы,
+    // соединения, автозапуск) занимал бы мегабайты памяти за минуту. Массивы
+    // копируются: снимок принадлежит сканеру и может меняться после вызова.
+    LItem.Snapshot := TMHSnapshot.Create(ASnapshot.Sequence, ASnapshot.TimestampUtc);
+    LItem.Snapshot.Context := ASnapshot.Context;
+    LItem.Snapshot.Metrics := Copy(ASnapshot.Metrics);
+    LItem.Snapshot.Sources := Copy(ASnapshot.Sources);
+    LItem.Snapshot.Processes := SelectProcesses(ASnapshot);
+    LItem.Snapshot.LaunchEvents := Copy(ASnapshot.LaunchEvents);
+    LItem.HasInventory := InventoryDueLocked(ASnapshot.TimestampUtc);
+    if LItem.HasInventory then
+      LItem.Inventory := MHInventoryFromSnapshot(ASnapshot, FOptions.StoreProcessPaths)
+    else
+      LItem.Inventory := nil;
+    if FPendingCount = Length(FPending) then
+      SetLength(FPending, Max(16, FPendingCount * 2));
+    FPending[FPendingCount] := LItem;
+    Inc(FPendingCount);
+    MarkPendingLocked;
+    if FlushDueLocked then
+      FlushLocked;
+  finally
+    FLock.Leave;
+  end;
+end;
+
+procedure TMHSQLiteRepository.WriteSnapshotLocked(const AItem: TPendingSnapshot);
+var
   LSnapshotId: Int64;
   LMetric: TMHMetric;
   LStatus: TMHSourceStatus;
   LInfo: TMHProcessInfo;
   LPath, LContext: Variant;
 begin
-  FLock.Enter;
-  try
-    CheckOpen;
-    if ASnapshot.Context.Available then
-      LContext := MHWorkContextToName(ASnapshot.Context.WorkContext)
+  if AItem.Snapshot.Context.Available then
+    LContext := MHWorkContextToName(AItem.Snapshot.Context.WorkContext)
+  else
+    LContext := Null;
+  SetParam(FInsertSnapshot, 'seq', Int64(AItem.Snapshot.Sequence), ftLargeint);
+  SetParam(FInsertSnapshot, 'ts', MHUtcToUnixMs(AItem.Snapshot.TimestampUtc), ftLargeint);
+  SetParam(FInsertSnapshot, 'ctx', LContext, ftWideString);
+  FInsertSnapshot.ExecSQL;
+  LSnapshotId := FConnection.GetLastAutoGenValue('');
+
+  for LMetric in AItem.Snapshot.Metrics do
+  begin
+    SetParam(FInsertMetric, 'sid', LSnapshotId, ftLargeint);
+    SetParam(FInsertMetric, 'kind', MHMetricKindToName(LMetric.Kind), ftWideString);
+    SetParam(FInsertMetric, 'value', MetricValue(LMetric), ftFloat);
+    FInsertMetric.ExecSQL;
+  end;
+
+  for LStatus in AItem.Snapshot.Sources do
+  begin
+    SetParam(FInsertSource, 'sid', LSnapshotId, ftLargeint);
+    SetParam(FInsertSource, 'source', LStatus.SourceId, ftWideString);
+    SetParam(FInsertSource, 'state', MHSourceStateToName(LStatus.State), ftWideString);
+    SetParam(FInsertSource, 'message', LStatus.Message, ftWideString);
+    SetParam(FInsertSource, 'elev', Ord(LStatus.RequiresElevation), ftInteger);
+    SetParam(FInsertSource, 'duration', Int64(LStatus.DurationMs), ftLargeint);
+    SetParam(FInsertSource, 'items', LStatus.ItemCount, ftInteger);
+    FInsertSource.ExecSQL;
+  end;
+
+  // Процессы уже отобраны при постановке в очередь (SelectProcesses).
+  for LInfo in AItem.Snapshot.Processes do
+  begin
+    if FOptions.StoreProcessPaths and (LInfo.ImagePath <> '') then
+      LPath := LInfo.ImagePath
     else
-      LContext := Null;
+      LPath := Null;
+    SetParam(FInsertProcess, 'sid', LSnapshotId, ftLargeint);
+    SetParam(FInsertProcess, 'pid', Int64(LInfo.Id.Pid), ftLargeint);
+    SetParam(FInsertProcess, 'ct', Int64(LInfo.Id.CreateTime), ftLargeint);
+    SetParam(FInsertProcess, 'ppid', Int64(LInfo.ParentPid), ftLargeint);
+    SetParam(FInsertProcess, 'name', LInfo.Name, ftWideString);
+    SetParam(FInsertProcess, 'path', LPath, ftWideString);
+    SetParam(FInsertProcess, 'access', MHAccessLevelToName(LInfo.Access), ftWideString);
+    SetParam(FInsertProcess, 'cpu', MetricValue(LInfo.Cpu), ftFloat);
+    SetParam(FInsertProcess, 'ws', MetricValue(LInfo.WorkingSet), ftFloat);
+    SetParam(FInsertProcess, 'priv', MetricValue(LInfo.PrivateBytes), ftFloat);
+    SetParam(FInsertProcess, 'threads', LInfo.ThreadCount, ftInteger);
+    SetParam(FInsertProcess, 'source', LInfo.SourceId, ftWideString);
+    FInsertProcess.ExecSQL;
+  end;
+  if AItem.HasInventory then
+    WriteInventoryLocked(AItem.Inventory, AItem.Snapshot.TimestampUtc);
+  SaveLaunchesLocked(AItem.Snapshot);
+end;
+
+procedure TMHSQLiteRepository.WriteFindingLocked(const AFinding: TMHFinding);
+begin
+  SetParam(FUpsertFinding, 'key', AFinding.Key, ftWideString);
+  SetParam(FUpsertFinding, 'seen', MHUtcToUnixMs(AFinding.DetectedAtUtc), ftLargeint);
+  SetParam(FUpsertFinding, 'score', AFinding.Score, ftInteger);
+  SetParam(FUpsertFinding, 'level', MHRiskLevelToName(AFinding.Level), ftWideString);
+  SetParam(FUpsertFinding, 'json', TMHJson.FindingToString(AFinding), ftWideMemo);
+  FUpsertFinding.ExecSQL;
+end;
+
+procedure TMHSQLiteRepository.MarkPendingLocked;
+begin
+  if FPendingSinceUtc = 0 then
+    FPendingSinceUtc := FClock.NowUtc;
+end;
+
+function TMHSQLiteRepository.FlushDueLocked: Boolean;
+var
+  LNow: TDateTime;
+begin
+  if (FOptions.FlushIntervalSec = 0) or (FPendingCount >= MaxPendingSnapshots) or
+     (FPendingFindingCount >= MaxPendingFindings) then
+    Exit(True);
+  LNow := FClock.NowUtc;
+  // Часы переведены назад — пакет пишется, а не копится до нового срока.
+  // Разница — в целых миллисекундах: сумма шагов TDateTime теряет точность.
+  Result := (LNow < FPendingSinceUtc) or
+    (Round((LNow - FPendingSinceUtc) * MSecsPerDay) >= Int64(FOptions.FlushIntervalSec) * 1000);
+end;
+
+procedure TMHSQLiteRepository.FlushLocked;
+var
+  I, LWritten: Integer;
+begin
+  if (FPendingCount = 0) and (FPendingFindingCount = 0) then
+    Exit;
+  LWritten := FPendingCount;
+  try
     FConnection.StartTransaction;
     try
-      SetParam(FInsertSnapshot, 'seq', Int64(ASnapshot.Sequence), ftLargeint);
-      SetParam(FInsertSnapshot, 'ts', MHUtcToUnixMs(ASnapshot.TimestampUtc), ftLargeint);
-      SetParam(FInsertSnapshot, 'ctx', LContext, ftWideString);
-      FInsertSnapshot.ExecSQL;
-      LSnapshotId := FConnection.GetLastAutoGenValue('');
-
-      for LMetric in ASnapshot.Metrics do
-      begin
-        SetParam(FInsertMetric, 'sid', LSnapshotId, ftLargeint);
-        SetParam(FInsertMetric, 'kind', MHMetricKindToName(LMetric.Kind), ftWideString);
-        SetParam(FInsertMetric, 'value', MetricValue(LMetric), ftFloat);
-        FInsertMetric.ExecSQL;
-      end;
-
-      for LStatus in ASnapshot.Sources do
-      begin
-        SetParam(FInsertSource, 'sid', LSnapshotId, ftLargeint);
-        SetParam(FInsertSource, 'source', LStatus.SourceId, ftWideString);
-        SetParam(FInsertSource, 'state', MHSourceStateToName(LStatus.State), ftWideString);
-        SetParam(FInsertSource, 'message', LStatus.Message, ftWideString);
-        SetParam(FInsertSource, 'elev', Ord(LStatus.RequiresElevation), ftInteger);
-        SetParam(FInsertSource, 'duration', Int64(LStatus.DurationMs), ftLargeint);
-        SetParam(FInsertSource, 'items', LStatus.ItemCount, ftInteger);
-        FInsertSource.ExecSQL;
-      end;
-
-      for LInfo in SelectProcesses(ASnapshot) do
-      begin
-        if FOptions.StoreProcessPaths and (LInfo.ImagePath <> '') then
-          LPath := LInfo.ImagePath
-        else
-          LPath := Null;
-        SetParam(FInsertProcess, 'sid', LSnapshotId, ftLargeint);
-        SetParam(FInsertProcess, 'pid', Int64(LInfo.Id.Pid), ftLargeint);
-        SetParam(FInsertProcess, 'ct', Int64(LInfo.Id.CreateTime), ftLargeint);
-        SetParam(FInsertProcess, 'ppid', Int64(LInfo.ParentPid), ftLargeint);
-        SetParam(FInsertProcess, 'name', LInfo.Name, ftWideString);
-        SetParam(FInsertProcess, 'path', LPath, ftWideString);
-        SetParam(FInsertProcess, 'access', MHAccessLevelToName(LInfo.Access), ftWideString);
-        SetParam(FInsertProcess, 'cpu', MetricValue(LInfo.Cpu), ftFloat);
-        SetParam(FInsertProcess, 'ws', MetricValue(LInfo.WorkingSet), ftFloat);
-        SetParam(FInsertProcess, 'priv', MetricValue(LInfo.PrivateBytes), ftFloat);
-        SetParam(FInsertProcess, 'threads', LInfo.ThreadCount, ftInteger);
-        SetParam(FInsertProcess, 'source', LInfo.SourceId, ftWideString);
-        FInsertProcess.ExecSQL;
-      end;
-      SaveInventoryLocked(ASnapshot);
-      SaveLaunchesLocked(ASnapshot);
+      for I := 0 to FPendingCount - 1 do
+        WriteSnapshotLocked(FPending[I]);
+      for I := 0 to FPendingFindingCount - 1 do
+        WriteFindingLocked(FPendingFindings[I]);
       FConnection.Commit;
     except
       FConnection.Rollback;
       raise;
     end;
+  finally
+    FPending := nil;
+    FPendingCount := 0;
+    FPendingFindings := nil;
+    FPendingFindingCount := 0;
+    FPendingSinceUtc := 0;
+  end;
 
-    Inc(FSavesSinceMaintenance);
-    if FSavesSinceMaintenance >= FOptions.MaintenanceEverySaves then
-      MaintenanceLocked;
+  Inc(FSavesSinceMaintenance, LWritten);
+  if FSavesSinceMaintenance >= FOptions.MaintenanceEverySaves then
+    MaintenanceLocked;
+end;
+
+procedure TMHSQLiteRepository.FlushBeforeReadLocked;
+begin
+  if FConnection = nil then
+    Exit;
+  try
+    FlushLocked;
+  except
+    on E: Exception do
+      Log(llWarning, MHL('Не удалось записать историю: ', 'Failed to write history: ') + E.Message);
+  end;
+end;
+
+procedure TMHSQLiteRepository.Flush;
+begin
+  FLock.Enter;
+  try
+    CheckOpen;
+    FlushLocked;
   finally
     FLock.Leave;
   end;
@@ -853,6 +1009,7 @@ procedure TMHSQLiteRepository.RunMaintenance;
 begin
   FLock.Enter;
   try
+    FlushBeforeReadLocked;
     MaintenanceLocked;
   finally
     FLock.Leave;
@@ -992,6 +1149,7 @@ begin
   FLock.Enter;
   try
     CheckOpen;
+    FlushBeforeReadLocked;
     Result := LoadSnapshotsLocked('SELECT id, seq, ts, context FROM snapshots ' +
       'WHERE ts >= :f AND ts <= :t ORDER BY ts LIMIT :n',
       procedure(AQuery: TFDQuery)
@@ -1017,6 +1175,7 @@ begin
   FLock.Enter;
   try
     CheckOpen;
+    FlushBeforeReadLocked;
     LQuery := NewQuery('SELECT COUNT(*) FROM snapshots WHERE ' + LWhere);
     try
       LQuery.ParamByName('c').AsWideString := MHWorkContextToName(AContext);
@@ -1053,6 +1212,7 @@ begin
   FLock.Enter;
   try
     CheckOpen;
+    FlushBeforeReadLocked;
     LQuery := NewQuery('SELECT COUNT(*) FROM snapshots WHERE ' + LWhere);
     try
       LQuery.ParamByName('c').AsWideString := LContextName;
@@ -1097,6 +1257,7 @@ begin
   Result := nil;
   if (AMaxPoints <= 0) or (AToMs <= AFromMs) then
     Exit;
+  FlushBeforeReadLocked;
   LBucket := Max(Int64(1), (AToMs - AFromMs + AMaxPoints - 1) div AMaxPoints);
   LList := TList<TMHMetric>.Create;
   LQuery := NewQuery(ASql);
@@ -1174,6 +1335,7 @@ begin
   Result := Default(TMHHistoryStats);
   FLock.Enter;
   try
+    FlushBeforeReadLocked;
     LQuery := NewQuery('SELECT COUNT(*), MIN(ts), MAX(ts) FROM snapshots');
     try
       LQuery.Open;
@@ -1204,18 +1366,23 @@ begin
   end;
 end;
 
-procedure TMHSQLiteRepository.SaveInventoryLocked(const ASnapshot: TMHSnapshot);
+function TMHSQLiteRepository.InventoryDueLocked(ATimestampUtc: TDateTime): Boolean;
+begin
+  // Учёт обновляется не на каждом снимке: состав автозапуска и программ меняется
+  // редко, а запись сотен строк каждые 2 секунды тратила бы диск.
+  Result := (FLastInventoryUtc = 0) or (ATimestampUtc < FLastInventoryUtc) or
+    ((ATimestampUtc - FLastInventoryUtc) * SecsPerDay >= MH_INVENTORY_REFRESH_SECONDS);
+  if Result then
+    FLastInventoryUtc := ATimestampUtc;
+end;
+
+procedure TMHSQLiteRepository.WriteInventoryLocked(const AItems: TArray<TMHInventoryItem>;
+  ASeenUtc: TDateTime);
 var
   LItem: TMHInventoryItem;
   LPath: Variant;
 begin
-  // Учёт обновляется не на каждом снимке: состав автозапуска и программ меняется
-  // редко, а запись сотен строк каждые 2 секунды тратила бы диск.
-  if (FLastInventoryUtc <> 0) and (ASnapshot.TimestampUtc >= FLastInventoryUtc) and
-     ((ASnapshot.TimestampUtc - FLastInventoryUtc) * SecsPerDay < MH_INVENTORY_REFRESH_SECONDS) then
-    Exit;
-  FLastInventoryUtc := ASnapshot.TimestampUtc;
-  for LItem in MHInventoryFromSnapshot(ASnapshot, FOptions.StoreProcessPaths) do
+  for LItem in AItems do
   begin
     if LItem.ImagePath <> '' then
       LPath := LItem.ImagePath
@@ -1226,7 +1393,7 @@ begin
     SetParam(FUpsertInventory, 'name', LItem.Name, ftWideString);
     SetParam(FUpsertInventory, 'details', LItem.Details, ftWideString);
     SetParam(FUpsertInventory, 'path', LPath, ftWideString);
-    SetParam(FUpsertInventory, 'seen', MHUtcToUnixMs(ASnapshot.TimestampUtc), ftLargeint);
+    SetParam(FUpsertInventory, 'seen', MHUtcToUnixMs(ASeenUtc), ftLargeint);
     FUpsertInventory.ExecSQL;
   end;
 end;
@@ -1284,6 +1451,7 @@ begin
   FLock.Enter;
   try
     CheckOpen;
+    FlushBeforeReadLocked;
     LSql := 'SELECT pid, create_time, start_ts, exit_ts, name, image_path, parent_pid, parent_name, source, ' +
       'command_line FROM launches WHERE start_ts >= :f AND start_ts <= :t';
     if AFilter <> '' then
@@ -1333,6 +1501,7 @@ begin
   FLock.Enter;
   try
     CheckOpen;
+    FlushBeforeReadLocked;
     LValue := FConnection.ExecSQLScalar('SELECT MIN(first_seen) FROM inventory');
     if VarIsNull(LValue) or VarIsEmpty(LValue) then
       Result := 0
@@ -1355,6 +1524,7 @@ begin
   FLock.Enter;
   try
     CheckOpen;
+    FlushBeforeReadLocked;
     // Исходное состояние каждого вида — всё, что замечено в первые
     // MH_INVENTORY_GRACE_MINUTES после начала его учёта.
     LQuery := NewQuery('SELECT i.kind, i.key, i.name, i.details, i.image_path, i.first_seen, i.last_seen ' +
@@ -1397,6 +1567,12 @@ procedure TMHSQLiteRepository.Clear;
 begin
   FLock.Enter;
   try
+    // Очередь тоже относится к удаляемой истории.
+    FPending := nil;
+    FPendingCount := 0;
+    FPendingFindings := nil;
+    FPendingFindingCount := 0;
+    FPendingSinceUtc := 0;
     FConnection.ExecSQL('DELETE FROM snapshots');
     FConnection.ExecSQL('DELETE FROM findings');
     FConnection.ExecSQL('DELETE FROM inventory');
@@ -1422,28 +1598,24 @@ begin
   FLock.Enter;
   try
     CheckOpen;
-    FConnection.StartTransaction;
-    try
-      for LFinding in AFindings do
-      begin
-        // Копия: ключ и время дополняются до сериализации, чтобы JSON совпадал с записью.
-        LItem := LFinding;
-        if LItem.Key = '' then
-          LItem.Key := MHDefaultFindingKey(LItem);
-        if LItem.DetectedAtUtc = 0 then
-          LItem.DetectedAtUtc := LNow;
-        SetParam(FUpsertFinding, 'key', LItem.Key, ftWideString);
-        SetParam(FUpsertFinding, 'seen', MHUtcToUnixMs(LItem.DetectedAtUtc), ftLargeint);
-        SetParam(FUpsertFinding, 'score', LItem.Score, ftInteger);
-        SetParam(FUpsertFinding, 'level', MHRiskLevelToName(LItem.Level), ftWideString);
-        SetParam(FUpsertFinding, 'json', TMHJson.FindingToString(LItem), ftWideMemo);
-        FUpsertFinding.ExecSQL;
-      end;
-      FConnection.Commit;
-    except
-      FConnection.Rollback;
-      raise;
+    // Находки пишутся вместе с пакетом снимков: повтор той же находки каждые
+    // 1–2 с переписывал бы её JSON отдельной транзакцией.
+    for LFinding in AFindings do
+    begin
+      // Копия: ключ и время дополняются до сериализации, чтобы JSON совпадал с записью.
+      LItem := LFinding;
+      if LItem.Key = '' then
+        LItem.Key := MHDefaultFindingKey(LItem);
+      if LItem.DetectedAtUtc = 0 then
+        LItem.DetectedAtUtc := LNow;
+      if FPendingFindingCount = Length(FPendingFindings) then
+        SetLength(FPendingFindings, Max(16, FPendingFindingCount * 2));
+      FPendingFindings[FPendingFindingCount] := LItem;
+      Inc(FPendingFindingCount);
     end;
+    MarkPendingLocked;
+    if FlushDueLocked then
+      FlushLocked;
   finally
     FLock.Leave;
   end;
@@ -1463,6 +1635,7 @@ begin
   LQuery := nil;
   try
     CheckOpen;
+    FlushBeforeReadLocked;
     LQuery := NewQuery('SELECT key, first_seen, last_seen, max_score, occurrences, json ' +
       'FROM findings WHERE last_seen >= :f AND last_seen <= :t ' +
       'ORDER BY last_seen DESC, key LIMIT :n');

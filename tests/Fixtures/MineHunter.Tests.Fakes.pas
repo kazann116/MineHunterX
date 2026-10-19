@@ -24,6 +24,8 @@ type
     function NowUtc: TDateTime;
     function TickMs: UInt64;
     procedure AdvanceMs(AMs: Cardinal);
+    /// Перевод часов (в том числе назад); счётчик тиков не меняется.
+    procedure SetNow(ANowUtc: TDateTime);
   end;
 
   /// Журнал, сохраняющий записи для проверки в тестах (потокобезопасный).
@@ -135,6 +137,11 @@ procedure TFakeClock.AdvanceMs(AMs: Cardinal);
 begin
   Inc(FTick, AMs);
   FNow := FNow + AMs / MSecsPerDay;
+end;
+
+procedure TFakeClock.SetNow(ANowUtc: TDateTime);
+begin
+  FNow := ANowUtc;
 end;
 
 { TRecordingLogger }
