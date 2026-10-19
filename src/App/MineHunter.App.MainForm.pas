@@ -306,6 +306,7 @@ type
     FBinaryLabPage: TMHBinaryLabPage;
     FCbLanguage: TComboBox;
     FCbTheme: TComboBox;
+    FCbChartScale: TComboBox;
     FChkUpdates: TCheckBox;
     FBtnCheckUpdates: TButton;
     FBtnExportSettings: TButton;
@@ -536,6 +537,7 @@ type
     procedure OpenInBinaryLab(const APath: string);
     property LanguageCombo: TComboBox read FCbLanguage;
     property ThemeCombo: TComboBox read FCbTheme;
+    property ChartScaleCombo: TComboBox read FCbChartScale;
     property UpdatesCheckBox: TCheckBox read FChkUpdates;
     /// Экспорт настроек в файл JSON (False и причина в AError).
     function ExportSettingsTo(const AFileName: string; out AError: string): Boolean;
@@ -4176,7 +4178,7 @@ begin
   FAppearanceBox := TGroupBox.Create(Self);
   FAppearanceBox.Parent := sbSettings;
   FAppearanceBox.SetBounds(gbActionLog.Left, FBackgroundBox.Top + FBackgroundBox.Height + 16,
-    gbActionLog.Width, 196);
+    gbActionLog.Width, 226);
   FAppearanceBox.Caption := MHTr('Внешний вид и обновления');
   LTop := 26;
   FInitializingSettings := True;
@@ -4207,6 +4209,27 @@ begin
     FCbTheme.Items.Add(MHTr('Светлая'));
     FCbTheme.Items.Add(MHTr('Тёмная'));
     FCbTheme.ItemIndex := Ord(FServices.Settings.Theme);
+    Inc(LTop, 30);
+    with TLabel.Create(Self) do
+    begin
+      Parent := FAppearanceBox;
+      SetBounds(16, LTop + 4, 150, 15);
+      Caption := MHL('Шкала графиков:', 'Chart scale:');
+    end;
+    FCbChartScale := TComboBox.Create(Self);
+    FCbChartScale.Parent := FAppearanceBox;
+    FCbChartScale.Style := csDropDownList;
+    FCbChartScale.SetBounds(170, LTop, 380, 23);
+    FCbChartScale.Items.Add(MHL('Статичная — от нуля, проценты 0–100 %', 'Static — from zero, percentages 0–100%'));
+    FCbChartScale.Items.Add(MHL('Динамическая — по данным, видны малые изменения',
+      'Dynamic — fitted to the data, small changes are visible'));
+    FCbChartScale.Hint := MHL('Статичная шкала удобна для сравнения графиков между собой, динамическая — ' +
+      'чтобы рассмотреть небольшие колебания нагрузки. Деления шкалы — круглые числа.',
+      'A static scale makes charts easy to compare; a dynamic one shows small load fluctuations. ' +
+      'Scale divisions are round numbers.');
+    FCbChartScale.ShowHint := True;
+    FCbChartScale.ItemIndex := Ord(FServices.Settings.ChartScale);
+    TMHLineChart.DynamicScale := FServices.Settings.ChartScale = chsDynamic;
     Inc(LTop, 30);
     FLblAppearanceNote := TLabel.Create(Self);
     FLblAppearanceNote.Parent := FAppearanceBox;
@@ -4262,6 +4285,7 @@ begin
   end;
   FCbLanguage.OnChange := AppearanceChange;
   FCbTheme.OnChange := AppearanceChange;
+  FCbChartScale.OnChange := AppearanceChange;
   FChkUpdates.OnClick := UpdatesClick;
   if not MHDarkThemeAvailable then
   begin
@@ -4283,7 +4307,10 @@ begin
     LSettings.Language := TMHUiLanguage(FCbLanguage.ItemIndex);
   if FCbTheme.ItemIndex >= 0 then
     LSettings.Theme := TMHUiTheme(FCbTheme.ItemIndex);
+  if FCbChartScale.ItemIndex >= 0 then
+    LSettings.ChartScale := TMHChartScale(FCbChartScale.ItemIndex);
   ChangeSettings(LSettings);
+  TMHLineChart.DynamicScale := LSettings.ChartScale = chsDynamic;
   if Sender = FCbLanguage then
     FLblAppearanceNote.Caption := 'Язык изменится после перезапуска MineHunter X. / ' +
       'The language will change after MineHunter X restarts.'
@@ -4458,6 +4485,8 @@ begin
     FChkUpdates.Checked := FServices.Settings.CheckForUpdates;
     FCbLanguage.ItemIndex := Ord(FServices.Settings.Language);
     FCbTheme.ItemIndex := Ord(FServices.Settings.Theme);
+    FCbChartScale.ItemIndex := Ord(FServices.Settings.ChartScale);
+    TMHLineChart.DynamicScale := FServices.Settings.ChartScale = chsDynamic;
     FEdPrice.Text := FormatFloat('0.00', FServices.Settings.ElectricityPrice);
   finally
     FInitializingSettings := False;

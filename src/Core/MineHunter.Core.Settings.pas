@@ -34,6 +34,8 @@ type
   TMHUiLanguage = (ulRussian, ulEnglish);
   /// Цветовая тема интерфейса.
   TMHUiTheme = (utLight, utDark);
+  /// Шкала графиков: статичная (от нуля, проценты 0–100) или динамическая (по данным).
+  TMHChartScale = (chsStatic, chsDynamic);
 
   TMHAppSettings = record
   public const
@@ -94,6 +96,7 @@ type
     Acknowledged: TArray<TMHAcknowledgement>;
     Language: TMHUiLanguage;
     Theme: TMHUiTheme;
+    ChartScale: TMHChartScale;
     class function Default: TMHAppSettings; static;
     /// Копия с приведёнными к допустимым диапазонам значениями; исключения
     /// с пустым ключом или некорректным SHA-256 отбрасываются, повторы
@@ -220,6 +223,7 @@ begin
   Result.Acknowledged := nil;
   Result.Language := ulRussian;
   Result.Theme := utLight;
+  Result.ChartScale := chsStatic;
 end;
 
 function TMHAppSettings.Normalized: TMHAppSettings;
@@ -250,6 +254,8 @@ begin
     Result.Language := ulRussian;
   if not (Theme in [Low(TMHUiTheme)..High(TMHUiTheme)]) then
     Result.Theme := utLight;
+  if not (ChartScale in [Low(TMHChartScale)..High(TMHChartScale)]) then
+    Result.ChartScale := chsStatic;
 
   LList := nil;
   for LItem in Exclusions do
@@ -414,6 +420,7 @@ end;
 const
   LANGUAGE_CODES: array[TMHUiLanguage] of string = ('ru', 'en');
   THEME_CODES: array[TMHUiTheme] of string = ('light', 'dark');
+  CHART_SCALE_CODES: array[TMHChartScale] of string = ('static', 'dynamic');
 
 function MHSettingsToJson(const ASettings: TMHAppSettings): string;
 var
@@ -448,6 +455,7 @@ begin
     LRoot.AddPair('lastFileScan', DateToJsonValue(ASettings.LastFileScanUtc));
     LRoot.AddPair('language', LANGUAGE_CODES[ASettings.Language]);
     LRoot.AddPair('theme', THEME_CODES[ASettings.Theme]);
+    LRoot.AddPair('chartScale', CHART_SCALE_CODES[ASettings.ChartScale]);
 
     LAnalyzer := TJSONObject.Create;
     LRoot.AddPair('analyzer', LAnalyzer);
@@ -545,6 +553,8 @@ begin
       Result.Language := ulEnglish;
     if SameText(ReadString(LRoot, 'theme'), THEME_CODES[utDark]) then
       Result.Theme := utDark;
+    if SameText(ReadString(LRoot, 'chartScale'), CHART_SCALE_CODES[chsDynamic]) then
+      Result.ChartScale := chsDynamic;
 
     LValue := LRoot.GetValue('analyzer');
     if LValue is TJSONObject then

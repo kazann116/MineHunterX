@@ -10,6 +10,9 @@
     максимум), чтобы информация не передавалась только изображением.
   - Необязательная вторая линия (например, приём и передача сети) — своим
     цветом, с подписями обеих линий в заголовке; шкала общая.
+  - Шкала с «круглыми» делениями (1, 2, 5 × 10^n), подписано каждое деление.
+    Статичная — от нуля (проценты 0–100); динамическая — по данным, чтобы были
+    видны небольшие изменения. Режим общий для всех графиков (DynamicScale).
   Расчёты вынесены в чистые функции и покрыты тестами.
 }
 
@@ -44,6 +47,13 @@ type
     Max: Double;
   end;
 
+  /// Ось значений: от Min до Max ровно за MH_CHART_DIVISIONS шагов Step.
+  TMHChartAxis = record
+    Min: Double;
+    Max: Double;
+    Step: Double;
+  end;
+
   TMHLineChart = class(TCustomControl)
   private
     FPoints: TArray<TMHMetric>;
@@ -58,6 +68,10 @@ type
     FSecondColor: TColor;
     FFirstLegend, FSecondLegend: string;
     FMinGapSeconds: Double;
+    class var FDynamicScale: Boolean;
+    class var FInstances: TList;
+    class destructor Destroy;
+    class procedure SetDynamicScale(AValue: Boolean); static;
     procedure SetTitle(const AValue: string);
     procedure SetLineColor(AValue: TColor);
     function Fmt(AValue: Double): string;
@@ -67,7 +81,13 @@ type
     procedure Paint; override;
   public
     constructor Create(AOwner: TComponent); override;
+    destructor Destroy; override;
     procedure SetPoints(const APoints: TArray<TMHMetric>);
+    /// Ось, по которой рисуется график (с учётом фиксированной шкалы и режима).
+    function Axis: TMHChartAxis;
+    /// Режим шкалы всех графиков: False — статичная (от нуля, фиксированные
+    /// шкалы как есть), True — динамическая (по данным). Меняет уже созданные графики.
+    class property DynamicScale: Boolean read FDynamicScale write SetDynamicScale;
     /// Вторая линия со своим цветом; подписи обеих линий выводятся в заголовке.
     /// APoints = nil — только основная линия.
     procedure SetSecondSeries(const APoints: TArray<TMHMetric>; const AFirstLegend, ASecondLegend: string);
@@ -107,6 +127,21 @@ function MHPointsSince(const APoints: TArray<TMHMetric>; AFromUtc: TDateTime): T
 /// Диапазон оси Y по данным: с небольшим запасом; плоский ряд расширяется.
 /// False — в ряду нет ни одного значения.
 function MHComputeRange(const APoints: TArray<TMHMetric>; out ARange: TMHValueRange): Boolean;
+
+const
+  /// Делений на оси значений (линий сетки — на одну больше).
+  MH_CHART_DIVISIONS = 4;
+
+/// Наименьший «круглый» шаг (1, 2 или 5 × 10^n), не меньший ARaw; ARaw <= 0 — 1.
+function MHNiceStep(ARaw: Double): Double;
+
+/// Ось значений с круглыми делениями.
+/// ADynamic = False — статичная: фиксированная шкала (AHasFixed) как есть, иначе от нуля
+/// до круглого значения не ниже максимума. ADynamic = True — по данным (с запасом),
+/// в пределах фиксированной шкалы, если она задана; без данных — как статичная.
+/// False — в рядах нет ни одного значения.
+function MHComputeAxis(const APoints: TArray<TMHMetric>; ADynamic, AHasFixed: Boolean;
+  AFixedMin, AFixedMax: Double; out AAxis: TMHChartAxis): Boolean;
 
 implementation
 
@@ -276,11 +311,161 @@ begin
     ARange.Min := 0;
 end;
 
+function MHNiceStep(ARaw: Double): Double;
+var
+  LPower, LFraction: Double;
+begin
+  if IsNan(ARaw) or IsInfinite(ARaw) or (ARaw <= 0) then
+    Exit(1);
+  // Основание — явно Double: с целым 10 выбирается перегрузка Single и теряется точность (0,2 → 0,2000000029).
+  LPower := IntPower(Double(10), Floor(Log10(ARaw)));
+  LFraction := ARaw / LPower;
+  // Допуск на погрешность: 0,2 / 0,1 даёт 2,0000000000000004.
+  if LFraction <= 1 + 1E-9 then
+    Result := LPower
+  else if LFraction <= 2 + 1E-9 then
+    Result := 2 * LPower
+  else if LFraction <= 5 + 1E-9 then
+    Result := 5 * LPower
+  else
+    Result := 10 * LPower;
+end;
+
+function MHComputeAxis(const APoints: TArray<TMHMetric>; ADynamic, AHasFixed: Boolean;
+  AFixedMin, AFixedMax: Double; out AAxis: TMHChartAxis): Boolean;
+var
+  LRaw: TMHValueRange;
+  LLo, LHi, LSpan, LFloor: Double;
+  I: Integer;
+begin
+  AHasFixed := AHasFixed and (AFixedMax > AFixedMin);
+  // Данные без запаса MHComputeRange.
+  Result := False;
+  LLo := 0;
+  LHi := 0;
+  for I := 0 to High(APoints) do
+    if APoints[I].HasValue and not IsNan(APoints[I].Value) and not IsInfinite(APoints[I].Value) then
+    begin
+      if not Result then
+      begin
+        LLo := APoints[I].Value;
+        LHi := LLo;
+        Result := True;
+      end;
+      LLo := Min(LLo, APoints[I].Value);
+      LHi := Max(LHi, APoints[I].Value);
+    end;
+  LRaw.Min := LLo;
+  LRaw.Max := LHi;
+
+  if not ADynamic or not Result then
+  begin
+    if AHasFixed then
+    begin
+      AAxis.Min := AFixedMin;
+      AAxis.Max := AFixedMax;
+      AAxis.Step := (AFixedMax - AFixedMin) / MH_CHART_DIVISIONS;
+      Exit;
+    end;
+    // От нуля (или ниже, если есть отрицательные значения) до круглого значения.
+    AAxis.Min := 0;
+    if Result and (LRaw.Min < 0) then
+      AAxis.Min := -MHNiceStep(-LRaw.Min / MH_CHART_DIVISIONS) * MH_CHART_DIVISIONS;
+    AAxis.Step := MHNiceStep((Max(LRaw.Max, 0) - AAxis.Min) / MH_CHART_DIVISIONS);
+    if not Result or (LRaw.Max - AAxis.Min <= 0) then
+      AAxis.Step := MHNiceStep(0.25);
+    while AAxis.Min + AAxis.Step * MH_CHART_DIVISIONS < LRaw.Max do
+      AAxis.Step := MHNiceStep(AAxis.Step * 1.01);
+    AAxis.Max := AAxis.Min + AAxis.Step * MH_CHART_DIVISIONS;
+    Exit;
+  end;
+
+  // Динамическая: по данным с запасом; ровная линия — посередине.
+  LSpan := LRaw.Max - LRaw.Min;
+  if LSpan <= 0 then
+  begin
+    LSpan := Max(Abs(LRaw.Max) * 0.1, 1);
+    LLo := LRaw.Min - LSpan / 2;
+    LHi := LRaw.Max + LSpan / 2;
+  end
+  else
+  begin
+    LLo := LRaw.Min - LSpan * 0.05;
+    LHi := LRaw.Max + LSpan * 0.05;
+  end;
+  // Нижняя граница: метрики неотрицательны — ось не уходит ниже нуля (и ниже фиксированной шкалы).
+  if AHasFixed then
+    LFloor := AFixedMin
+  else if LRaw.Min >= 0 then
+    LFloor := 0
+  else
+    LFloor := -MaxDouble;
+  LLo := Max(LLo, LFloor);
+  if AHasFixed then
+    LHi := Min(LHi, AFixedMax);
+  AAxis.Step := MHNiceStep((LHi - LLo) / MH_CHART_DIVISIONS);
+  for I := 1 to 64 do
+  begin
+    AAxis.Min := Floor(LLo / AAxis.Step + 1E-9) * AAxis.Step;
+    if AAxis.Min < LFloor then
+      AAxis.Min := LFloor;
+    AAxis.Max := AAxis.Min + AAxis.Step * MH_CHART_DIVISIONS;
+    if AHasFixed and (AAxis.Max > AFixedMax) then
+    begin
+      // Сдвиг вниз, чтобы не выйти за фиксированную шкалу.
+      AAxis.Max := AFixedMax;
+      AAxis.Min := Max(AFixedMin, AFixedMax - AAxis.Step * MH_CHART_DIVISIONS);
+      AAxis.Max := AAxis.Min + AAxis.Step * MH_CHART_DIVISIONS;
+    end;
+    if AAxis.Max >= LHi - 1E-9 * Max(1, Abs(LHi)) then
+      Break;
+    AAxis.Step := MHNiceStep(AAxis.Step * 1.01);
+  end;
+  if AHasFixed and ((AAxis.Max > AFixedMax + 1E-9) or (AAxis.Min < AFixedMin - 1E-9)) then
+  begin
+    // Данные занимают почти всю фиксированную шкалу — она и есть ось.
+    AAxis.Min := AFixedMin;
+    AAxis.Max := AFixedMax;
+    AAxis.Step := (AFixedMax - AFixedMin) / MH_CHART_DIVISIONS;
+  end;
+end;
+
 { TMHLineChart }
+
+class destructor TMHLineChart.Destroy;
+begin
+  FreeAndNil(FInstances);
+end;
+
+class procedure TMHLineChart.SetDynamicScale(AValue: Boolean);
+var
+  I: Integer;
+begin
+  FDynamicScale := AValue;
+  if FInstances <> nil then
+    for I := 0 to FInstances.Count - 1 do
+      TMHLineChart(FInstances[I]).Invalidate;
+end;
+
+destructor TMHLineChart.Destroy;
+begin
+  if FInstances <> nil then
+    FInstances.Remove(Self);
+  inherited Destroy;
+end;
+
+function TMHLineChart.Axis: TMHChartAxis;
+begin
+  MHComputeAxis(FPoints + FSecondPoints, FDynamicScale, FUseFixedRange, FFixedMin, FFixedMax, Result);
+end;
 
 constructor TMHLineChart.Create(AOwner: TComponent);
 begin
   inherited Create(AOwner);
+  // Графики создаются и освобождаются в главном потоке.
+  if FInstances = nil then
+    FInstances := TList.Create;
+  FInstances.Add(Self);
   ControlStyle := ControlStyle + [csOpaque];
   DoubleBuffered := True;
   ParentFont := True;
@@ -404,6 +589,7 @@ procedure TMHLineChart.Paint;
 var
   LRect, LPlot: TRect;
   LRange: TMHValueRange;
+  LAxis: TMHChartAxis;
   LHasData: Boolean;
   LFrom, LTo: TDateTime;
   LSegments: TArray<TArray<Integer>>;
@@ -476,31 +662,32 @@ begin
     Canvas.TextOut(LRect.Right - S(6) - Canvas.TextWidth(LText), LRect.Top + S(4), LText);
   end;
 
-  // Шкала — общая для обеих линий.
-  LHasData := MHComputeRange(FPoints + FSecondPoints, LRange);
-  if FUseFixedRange then
-  begin
-    LRange.Min := FFixedMin;
-    LRange.Max := FFixedMax;
-  end;
+  // Шкала — общая для обеих линий, с круглыми делениями.
+  LHasData := MHComputeAxis(FPoints + FSecondPoints, FDynamicScale, FUseFixedRange, FFixedMin, FFixedMax, LAxis);
+  LRange.Min := LAxis.Min;
+  LRange.Max := LAxis.Max;
 
-  LLabelW := Max(Canvas.TextWidth(Fmt(LRange.Max)), Canvas.TextWidth(Fmt(LRange.Min))) + S(8);
+  LLabelW := 0;
+  for I := 0 to MH_CHART_DIVISIONS do
+    LLabelW := Max(LLabelW, Canvas.TextWidth(Fmt(LAxis.Min + LAxis.Step * I)));
+  Inc(LLabelW, S(8));
   LPlot := Rect(LRect.Left + LLabelW, LRect.Top + LTextH + S(10),
     LRect.Right - S(8), LRect.Bottom - LTextH - S(8));
   if (LPlot.Width < S(20)) or (LPlot.Height < S(10)) then
     Exit;
 
-  // Сетка и подписи оси Y.
+  // Сетка и подписи оси Y — у каждого деления.
   Canvas.Pen.Color := MHThemeColor(clBtnFace);
   Canvas.Font.Color := MHThemeColor(clGrayText);
-  for I := 0 to 4 do
+  for I := 0 to MH_CHART_DIVISIONS do
   begin
-    J := LPlot.Bottom - Round(LPlot.Height * I / 4);
+    J := LPlot.Bottom - Round(LPlot.Height * I / MH_CHART_DIVISIONS);
     Canvas.MoveTo(LPlot.Left, J);
     Canvas.LineTo(LPlot.Right, J);
-    if I in [0, 4] then
+    // Подписи не налезают друг на друга на низком графике.
+    if (I in [0, MH_CHART_DIVISIONS]) or (LPlot.Height >= MH_CHART_DIVISIONS * (LTextH + S(2))) then
     begin
-      LValue := LRange.Min + (LRange.Max - LRange.Min) * I / 4;
+      LValue := LAxis.Min + LAxis.Step * I;
       LText := Fmt(LValue);
       Canvas.TextOut(LPlot.Left - S(4) - Canvas.TextWidth(LText), J - LTextH div 2, LText);
     end;
@@ -530,6 +717,12 @@ begin
     FormatDateTime('dd.mm hh:nn', TTimeZone.Local.ToLocalTime(LFrom)));
   LText := FormatDateTime('dd.mm hh:nn', TTimeZone.Local.ToLocalTime(LTo));
   Canvas.TextOut(LPlot.Right - Canvas.TextWidth(LText), LPlot.Bottom + S(4), LText);
+  // Середина оси времени — если помещается между крайними подписями.
+  if (LTo > LFrom) and (LPlot.Width > 4 * Canvas.TextWidth(LText)) then
+  begin
+    LText := FormatDateTime('hh:nn', TTimeZone.Local.ToLocalTime(LFrom + (LTo - LFrom) / 2));
+    Canvas.TextOut(LPlot.Left + (LPlot.Width - Canvas.TextWidth(LText)) div 2, LPlot.Bottom + S(4), LText);
+  end;
 
   // Линии по непрерывным отрезкам; одиночная точка — маркер.
   Canvas.Pen.Color := FLineColor;

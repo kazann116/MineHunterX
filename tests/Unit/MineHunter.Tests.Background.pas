@@ -378,6 +378,7 @@ begin
   Assert.IsTrue(LSettings.EconomyWhenHidden);
   Assert.AreEqual(Ord(ulRussian), Ord(LSettings.Language));
   Assert.AreEqual(Ord(utLight), Ord(LSettings.Theme));
+  Assert.AreEqual(Ord(chsStatic), Ord(LSettings.ChartScale), 'Шкала графиков по умолчанию — статичная');
   Assert.AreEqual(TMHAppSettings.DefaultElectricityPrice, LSettings.ElectricityPrice, 0.0001);
 end;
 
@@ -394,7 +395,9 @@ begin
   LSettings.ElectricityPrice := 7.85;
   LSettings.Language := ulEnglish;
   LSettings.Theme := utDark;
+  LSettings.ChartScale := chsDynamic;
   LLoaded := MHSettingsFromJson(MHSettingsToJson(LSettings));
+  Assert.AreEqual(Ord(chsDynamic), Ord(LLoaded.ChartScale));
   Assert.IsFalse(LLoaded.MinimizeToTray);
   Assert.IsFalse(LLoaded.RemindInBackground);
   Assert.IsFalse(LLoaded.NotifyAlerts);
@@ -415,6 +418,9 @@ begin
   Assert.IsFalse(LLoaded.CheckForUpdates);
   Assert.AreEqual(Ord(ulRussian), Ord(LLoaded.Language), 'Неизвестный язык — русский');
   Assert.AreEqual(Ord(utLight), Ord(LLoaded.Theme));
+  Assert.AreEqual(Ord(chsStatic), Ord(LLoaded.ChartScale), 'Старый файл — статичная шкала');
+  Assert.AreEqual(Ord(chsStatic), Ord(MHSettingsFromJson('{"version":1,"chartScale":"zoom"}').ChartScale),
+    'Неизвестное значение — статичная');
   Assert.AreEqual(TMHAppSettings.DefaultElectricityPrice, LLoaded.ElectricityPrice, 0.0001);
 end;
 

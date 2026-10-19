@@ -102,7 +102,7 @@ uses
   MineHunter.Tests.Fakes, MineHunter.Core.DataDir, MineHunter.App.FileActions, Vcl.StdCtrls,
   Vcl.ComCtrls, MineHunter.App.BinaryLabPage, MineHunter.BinaryLab.Types, MineHunter.BinaryLab.Source,
   MineHunter.BinaryLab.Anomalies, MineHunter.Tests.PeBuilder, MineHunter.App.BinaryLab.Controls,
-  MineHunter.Core.Lang;
+  MineHunter.Core.Lang, MineHunter.App.Chart;
 
 var
   // Подмена операций ОС для тестов действий (nil — настоящие операции).
@@ -1661,6 +1661,17 @@ begin
   FForm.ThemeCombo.ItemIndex := 1;
   FForm.ThemeCombo.OnChange(FForm.ThemeCombo);
   Assert.AreEqual(Ord(utDark), Ord(FServices.Settings.Theme));
+  // Шкала графиков: по умолчанию статичная; выбор применяется ко всем графикам сразу.
+  Assert.AreEqual(2, FForm.ChartScaleCombo.Items.Count);
+  Assert.AreEqual(Ord(chsStatic), FForm.ChartScaleCombo.ItemIndex);
+  Assert.IsFalse(TMHLineChart.DynamicScale);
+  FForm.ChartScaleCombo.ItemIndex := Ord(chsDynamic);
+  FForm.ChartScaleCombo.OnChange(FForm.ChartScaleCombo);
+  Assert.AreEqual(Ord(chsDynamic), Ord(FServices.Settings.ChartScale));
+  Assert.IsTrue(TMHLineChart.DynamicScale);
+  FForm.ChartScaleCombo.ItemIndex := Ord(chsStatic);
+  FForm.ChartScaleCombo.OnChange(FForm.ChartScaleCombo);
+  Assert.IsFalse(TMHLineChart.DynamicScale);
 end;
 
 procedure TMainFormSmokeTests.Disks_PageTablesScanAndActions;
