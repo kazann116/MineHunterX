@@ -70,6 +70,15 @@ REQUIREMENTS = [
 ]
 
 
+# Признаки проверки граничного или ошибочного случая в тесте: ожидаемое исключение,
+# отказ, «не найдено», пустые и предельные значения, отмена, выход за границы,
+# повреждённые данные, лимиты.
+EDGE = re.compile(r'WillRaise|Assert\.IsFalse|AreEqual(?:<Int64>)?\(-1|MH_NO_OFFSET|\bnil\b|\(\'\'|, \'\'\)|'
+                  r'Default\(T|High\(Int64\)|MaxInt|\$FFFFFFFF|\$7FFFFFFF|1, 1\)|Tiny|Huge|Cancel|'
+                  r'[Пп]уст|[Оо]тмен|за конц|[Гг]раниц|[Лл]имит|[Оо]брез|[Пп]овреж|[Нн]евер|[Оо]триц|[Оо]шиб|'
+                  r'[Нн]ет такого|[Нн]е найден|вне |огромн|[Пп]редел')
+
+
 def read(path):
     return open(path, encoding='utf-8-sig').read()
 
@@ -135,9 +144,13 @@ def main():
                 pattern += r'|\.' + re.escape(name[3:]) + r'\b'
             hits = sorted({'%s.%s' % (fixture, proc) for _u, fixture, proc, body in tests
                            if re.search(pattern, body)})
-            rows.append((unit, name, hits))
+            edges = sorted({'%s.%s' % (fixture, proc) for _u, fixture, proc, body in tests
+                            if re.search(pattern, body) and EDGE.search(body)})
+            rows.append((unit, name, hits, edges))
             if not hits:
                 missing.append('%s.%s' % (unit, name))
+            elif not edges:
+                missing.append('%s.%s — нет граничных или ошибочных случаев' % (unit, name))
     out = ['# BinaryLab: матрица «функция → тесты»', '',
            'Создаётся `python tools/binarylab_test_matrix.py` из исходников: для каждой публичной функции и',
            'метода BinaryLab — тесты DUnitX, которые её вызывают (граничные и ошибочные случаи — в тех же тестах).',
@@ -150,10 +163,12 @@ def main():
             missing.append('ТЗ: %s — нет тестов %s' % (requirement, sorted(set(names) - set(found))))
         out.append('| %s | %s |' % (requirement, ', '.join('`%s`' % n for n in names)))
     out += ['', '## Публичные функции → тесты', '',
-            '| Модуль | Функция | Тесты |', '|---|---|---|']
-    for unit, name, hits in rows:
-        shown = ', '.join(hits[:6]) + (' и ещё %d' % (len(hits) - 6) if len(hits) > 6 else '')
-        out.append('| `%s` | `%s` | %s |' % (unit.replace('MineHunter.', ''), name, shown or '**нет**'))
+            '| Модуль | Функция | Тесты | Граничные и ошибочные случаи |', '|---|---|---|---|']
+    for unit, name, hits, edges in rows:
+        shown = ', '.join(hits[:5]) + (' и ещё %d' % (len(hits) - 5) if len(hits) > 5 else '')
+        edge_shown = ', '.join(edges[:4]) + (' и ещё %d' % (len(edges) - 4) if len(edges) > 4 else '')
+        out.append('| `%s` | `%s` | %s | %s |' % (unit.replace('MineHunter.', ''), name, shown or '**нет**',
+                                                  edge_shown or '**нет**'))
     out += ['', 'Функций: %d, без тестов: %d.' % (len(rows), len(missing))]
     target = os.path.join(ROOT, 'docs', 'binarylab-tests.md')
     with open(target, 'w', encoding='utf-8-sig', newline='\n') as f:

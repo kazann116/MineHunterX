@@ -31,14 +31,55 @@ type
     [Test] procedure Sections_FlagsFindAndRva;
     [Test] procedure DiffTitles_AndSaveDiff;
     [Test] procedure Report_HasAnomalyAndDiffCountOf;
+    [Test] procedure Checksum_EmptyTinyFieldOutsideAndCancel;
+    [Test] procedure Options_NormalizedLimitsBothSides;
+    [Test] procedure Histogram_BarFractionEdges;
+    [Test] procedure HexView_OffsetDigitsAtFourGigabytes;
   end;
 
 implementation
 
 uses
-  System.IOUtils, System.Generics.Collections, System.JSON,
+  System.IOUtils, System.Generics.Collections, System.JSON, System.Math,
   MineHunter.BinaryLab.FileType, MineHunter.BinaryLab.Pe, MineHunter.BinaryLab.Diff,
-  MineHunter.BinaryLab.Report, MineHunter.Tests.PeBuilder;
+  MineHunter.BinaryLab.Report, MineHunter.App.BinaryLab.Controls, MineHunter.Tests.PeBuilder;
+
+type
+  /// Источник заданного размера из нулевых байтов (файлы больше 4 ГБ без диска).
+  TSizedSource = class(TInterfacedObject, IMHBinarySource)
+  private
+    FSize: Int64;
+  public
+    constructor Create(ASize: Int64);
+    function GetSize: Int64;
+    function GetName: string;
+    function ReadAt(AOffset: Int64; var ABuffer; ACount: Integer): Integer;
+  end;
+
+constructor TSizedSource.Create(ASize: Int64);
+begin
+  inherited Create;
+  FSize := ASize;
+end;
+
+function TSizedSource.GetSize: Int64;
+begin
+  Result := FSize;
+end;
+
+function TSizedSource.GetName: string;
+begin
+  Result := 'sized';
+end;
+
+function TSizedSource.ReadAt(AOffset: Int64; var ABuffer; ACount: Integer): Integer;
+begin
+  Result := 0;
+  if (ACount <= 0) or (AOffset < 0) or (AOffset >= FSize) then
+    Exit;
+  Result := Integer(Min(Int64(ACount), FSize - AOffset));
+  FillChar(ABuffer, Result, 0);
+end;
 
 { TBinaryLabApiTests }
 
@@ -349,6 +390,128 @@ begin
       end, Exception);
   finally
     TDirectory.Delete(LDir, True);
+  end;
+end;
+
+procedure TBinaryLabApiTests.Checksum_EmptyTinyFieldOutsideAndCancel;
+begin
+  // Пустой файл: сумма слов 0 плюс длина 0.
+  Assert.AreEqual<Cardinal>(0, MHComputePeChecksum(TMHBytesSource.Create(nil), 64));
+  // Один байт (нечётная длина): байт как младшая половина слова плюс длина 1.
+  Assert.AreEqual<Cardinal>($41 + 1, MHComputePeChecksum(TMHBytesSource.Create(TestBytes([$41])), 64));
+  // Поле CheckSum за концом файла — пропускать нечего: обычная сумма слов.
+  Assert.AreEqual<Cardinal>($0201 + $0403 + 4, MHComputePeChecksum(TMHBytesSource.Create(TestBytes([1, 2, 3, 4])), 1000));
+  // Поле CheckSum на смещении 0 — его 4 байта не учитываются.
+  Assert.AreEqual<Cardinal>(0 + 6, MHComputePeChecksum(TMHBytesSource.Create(TestBytes([9, 9, 9, 9, 0, 0])), 0));
+  // Перенос старшего разряда сворачивается: FFFF + 0001 = 0001 (+ длина 4).
+  Assert.AreEqual<Cardinal>(1 + 4, MHComputePeChecksum(TMHBytesSource.Create(TestBytes([$FF, $FF, 1, 0])), 1000));
+  Assert.WillRaise(
+    procedure
+    begin
+      MHComputePeChecksum(TMHBytesSource.Create(TestRandomBytes(10000)), 64,
+        function: Boolean
+        begin
+          Result := True;
+        end);
+    end, EMHBinaryLabCancelled);
+end;
+
+procedure TBinaryLabApiTests.Options_NormalizedLimitsBothSides;
+var
+  LOptions: TMHBinaryLabOptions;
+begin
+  LOptions := TMHBinaryLabOptions.Default;
+  LOptions.MaxScanBytes := High(Int64);
+  LOptions.EntropyBlockSize := MaxInt;
+  LOptions.MaxEntropyBlocks := MaxInt;
+  LOptions.MinStringLength := 1000;
+  LOptions.MaxStringLength := MaxInt;
+  LOptions.MaxStrings := MaxInt;
+  LOptions.MaxEmbedded := MaxInt;
+  LOptions.MaxImportedFunctions := MaxInt;
+  LOptions.MaxResources := MaxInt;
+  LOptions.MaxExports := MaxInt;
+  LOptions := LOptions.Normalized;
+  Assert.AreEqual<Int64>(Int64(4) * 1024 * 1024 * 1024, LOptions.MaxScanBytes, 'Верхний предел сканирования — 4 ГБ');
+  Assert.AreEqual(16 * 1024 * 1024, LOptions.EntropyBlockSize);
+  Assert.AreEqual(65536, LOptions.MaxEntropyBlocks);
+  Assert.AreEqual(64, LOptions.MinStringLength);
+  Assert.AreEqual(65536, LOptions.MaxStringLength);
+  Assert.AreEqual(1000000, LOptions.MaxStrings);
+  Assert.AreEqual(100000, LOptions.MaxEmbedded);
+  Assert.AreEqual(1000000, LOptions.MaxImportedFunctions);
+  // Отрицательные значения — нижние пределы.
+  LOptions := TMHBinaryLabOptions.Default;
+  LOptions.MaxScanBytes := -1;
+  LOptions.EntropyBlockSize := -5;
+  LOptions.MaxEntropyBlocks := -1;
+  LOptions.MaxEmbedded := -1;
+  LOptions.MaxImportedFunctions := -1;
+  LOptions.MaxResources := -1;
+  LOptions.MaxExports := -1;
+  LOptions.MaxSectionHashBytes := -1;
+  LOptions := LOptions.Normalized;
+  Assert.AreEqual<Int64>(4096, LOptions.MaxScanBytes);
+  Assert.AreEqual(64, LOptions.EntropyBlockSize, 'Явный размер блока — не меньше 64');
+  Assert.AreEqual(16, LOptions.MaxEntropyBlocks);
+  Assert.AreEqual(0, LOptions.MaxEmbedded);
+  Assert.AreEqual(0, LOptions.MaxImportedFunctions);
+  Assert.AreEqual(0, LOptions.MaxResources);
+  Assert.AreEqual(0, LOptions.MaxExports);
+  Assert.AreEqual<Int64>(0, LOptions.MaxSectionHashBytes);
+  // Нормализация не меняет допустимые значения по умолчанию.
+  Assert.AreEqual<Int64>(TMHBinaryLabOptions.Default.MaxScanBytes, TMHBinaryLabOptions.Default.Normalized.MaxScanBytes);
+  Assert.AreEqual(TMHBinaryLabOptions.Default.MaxStrings, TMHBinaryLabOptions.Default.Normalized.MaxStrings);
+end;
+
+procedure TBinaryLabApiTests.Histogram_BarFractionEdges;
+var
+  LHistogram: TMHByteHistogram;
+  LCounts: array[Byte] of Int64;
+begin
+  LHistogram := TMHByteHistogram.Create(nil);
+  try
+    // Пустая гистограмма: все доли нулевые, деления на ноль нет.
+    Assert.AreEqual(0.0, LHistogram.BarFraction(0), 1e-12);
+    Assert.AreEqual(0.0, LHistogram.BarFraction(255), 1e-12);
+    LHistogram.SetHistogram([]);
+    Assert.AreEqual(0.0, LHistogram.BarFraction(7), 1e-12);
+    FillChar(LCounts, SizeOf(LCounts), 0);
+    LCounts[0] := 1000;
+    LCounts[1] := 10;
+    LHistogram.SetHistogram(LCounts);
+    Assert.AreEqual(1.0, LHistogram.BarFraction(0), 1e-12, 'Наибольший столбец — вся высота');
+    Assert.AreEqual(0.0, LHistogram.BarFraction(2), 1e-12, 'Нулевой счётчик — нет столбца');
+    LHistogram.Logarithmic := True;
+    Assert.AreEqual(Ln(11) / Ln(1001), LHistogram.BarFraction(1), 1e-9, 'Логарифмическая шкала');
+    LHistogram.Logarithmic := False;
+    Assert.AreEqual(0.01, LHistogram.BarFraction(1), 1e-9, 'Линейная шкала');
+    // Меньше 256 значений — остальные байты нулевые.
+    LHistogram.SetHistogram([5]);
+    Assert.AreEqual(1.0, LHistogram.BarFraction(0), 1e-12);
+    Assert.AreEqual(0.0, LHistogram.BarFraction(1), 1e-12);
+  finally
+    LHistogram.Free;
+  end;
+end;
+
+procedure TBinaryLabApiTests.HexView_OffsetDigitsAtFourGigabytes;
+var
+  LHex: TMHHexView;
+begin
+  LHex := TMHHexView.Create(nil);
+  try
+    Assert.AreEqual(8, LHex.OffsetDigits, 'Без источника');
+    LHex.Source := TSizedSource.Create(0);
+    Assert.AreEqual(8, LHex.OffsetDigits, 'Пустой файл');
+    LHex.Source := TSizedSource.Create($100000000);
+    Assert.AreEqual(8, LHex.OffsetDigits, 'Ровно 4 ГБ: последнее смещение FFFFFFFF');
+    LHex.Source := TSizedSource.Create($100000001);
+    Assert.AreEqual(12, LHex.OffsetDigits, 'На байт больше 4 ГБ');
+    LHex.Source := nil;
+    Assert.AreEqual(8, LHex.OffsetDigits, 'Источник снят');
+  finally
+    LHex.Free;
   end;
 end;
 
