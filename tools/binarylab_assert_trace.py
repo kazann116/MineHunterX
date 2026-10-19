@@ -5,7 +5,8 @@
 2. Копирует тестовые модули в build/tmp/trace и в каждую такую строку вставляет
    TraceHit('<файл>:<строка>') (в блоке begin … end, чтобы не менять логику
    конструкций вида «if … then Assert…»).
-3. Собирает копию набора тестов (build/tmp/dcc.ps1) и запускает весь набор.
+3. Собирает копию набора тестов в конфигурациях Debug и Release (tools/dcc_config.ps1 —
+   ключи компилятора тех же конфигураций проекта) и запускает весь набор в каждой.
 4. Проверяет: все тесты пройдены и каждая строка Assert выполнилась хотя бы раз.
    Тест прерывается на первой неудачной проверке, поэтому выполненная строка в
    пройденном тесте — пройденная проверка.
@@ -96,45 +97,46 @@ def main():
                       os.path.join(ROOT, 'tests', 'Fixtures', 'MineHunter.Tests.Trace.pas'), 1)
     dpr_path = os.path.join(TRACE_DIR, 'MineHunter.Tests.dpr')
     open(dpr_path, 'w', encoding='utf-8-sig', newline='\r\n').write(dpr)
-    build = subprocess.run(['powershell', '-ExecutionPolicy', 'Bypass', '-File',
-                            os.path.join(ROOT, 'build', 'tmp', 'dcc.ps1'), '-Dpr', dpr_path, '-Out', 'traceout'],
-                           capture_output=True, cwd=ROOT)
-    log = build.stdout.decode('cp866', errors='replace')
-    if build.returncode != 0 or re.search(r'\b(Error|Fatal)\b', log):
-        print(log[-3000:])
-        raise SystemExit('Сборка трассировки не удалась')
-    exe = os.path.join(ROOT, 'build', 'tmp', 'traceout', 'MineHunter.Tests.exe')
-    hits_file = os.path.join(ROOT, 'build', 'tmp', 'traceout', 'hits.txt')
-    if os.path.exists(hits_file):
-        os.remove(hits_file)
-    env = dict(os.environ, MH_TRACE_FILE=hits_file)
-    run = subprocess.run([exe, '--exitbehavior:Continue', '--consolemode:Quiet'], capture_output=True, env=env,
-                         cwd=os.path.dirname(exe), timeout=3000)
-    out = run.stdout.decode('cp866', errors='replace')
-    found = re.search(r'Tests Found\s*:\s*(\d+)', out)
-    passed = re.search(r'Tests Passed\s*:\s*(\d+)', out)
-    all_passed = run.returncode == 0 and found and passed and found.group(1) == passed.group(1)
-    hits = {}
-    for line in open(hits_file, encoding='utf-8-sig').read().splitlines():
-        key, count = line.split('\t')
-        hits[key] = int(count)
-    report = []
-    not_hit = []
-    for item in checks:
-        key = '%s:%d' % (item['file'], item['line'])
-        count = hits.get(key, 0)
-        report.append({'file': item['file'], 'line': item['line'], 'test': item['test'], 'executed': count})
-        if count == 0:
-            not_hit.append(key)
+    summary = {}
+    failed = False
+    for config in ('Debug', 'Release'):
+        out_name = 'traceout-' + config
+        build = subprocess.run(['powershell', '-ExecutionPolicy', 'Bypass', '-File',
+                                os.path.join(ROOT, 'tools', 'dcc_config.ps1'), '-Dpr', dpr_path, '-Out', out_name,
+                                '-Config', config], capture_output=True, cwd=ROOT)
+        log = build.stdout.decode('cp866', errors='replace')
+        if build.returncode != 0 or re.search(r'\b(Error|Fatal)\b', log):
+            print(log[-3000:])
+            raise SystemExit('Сборка трассировки %s не удалась' % config)
+        exe = os.path.join(ROOT, 'build', 'tmp', out_name, 'MineHunter.Tests.exe')
+        hits_file = os.path.join(ROOT, 'build', 'tmp', out_name, 'hits.txt')
+        if os.path.exists(hits_file):
+            os.remove(hits_file)
+        env = dict(os.environ, MH_TRACE_FILE=hits_file)
+        run = subprocess.run([exe, '--exitbehavior:Continue', '--consolemode:Quiet'], capture_output=True, env=env,
+                             cwd=os.path.dirname(exe), timeout=3000)
+        out = run.stdout.decode('cp866', errors='replace')
+        found = re.search(r'Tests Found\s*:\s*(\d+)', out)
+        passed = re.search(r'Tests Passed\s*:\s*(\d+)', out)
+        all_passed = bool(run.returncode == 0 and found and passed and found.group(1) == passed.group(1))
+        hits = {}
+        for line in open(hits_file, encoding='utf-8-sig').read().splitlines():
+            key, count = line.split('\t')
+            hits[key] = int(count)
+        not_hit = [('%s:%d' % (c['file'], c['line'])) for c in checks if hits.get('%s:%d' % (c['file'], c['line']), 0) == 0]
+        summary[config] = {'tests_found': found.group(1) if found else None,
+                           'tests_passed': passed.group(1) if passed else None, 'all_passed': all_passed,
+                           'executed': {('%s:%d' % (c['file'], c['line'])): hits.get('%s:%d' % (c['file'], c['line']), 0)
+                                        for c in checks}}
+        print('%s: tests %s/%s passed; checks=%d executed=%d not_executed=%d' % (
+            config, summary[config]['tests_passed'], summary[config]['tests_found'], len(checks),
+            len(checks) - len(not_hit), len(not_hit)))
+        for key in not_hit:
+            print('NOT EXECUTED (%s): %s' % (config, key))
+        failed = failed or not all_passed or bool(not_hit)
     with open(os.path.join(ROOT, 'build', 'binarylab-assert-trace.json'), 'w', encoding='utf-8') as f:
-        json.dump({'tests_found': found.group(1) if found else None, 'tests_passed': passed.group(1) if passed else None,
-                   'all_passed': bool(all_passed), 'checks': report}, f, ensure_ascii=False, indent=0)
-    print('tests %s/%s passed; checks=%d executed=%d not_executed=%d' % (
-        passed.group(1) if passed else '?', found.group(1) if found else '?', len(checks),
-        len(checks) - len(not_hit), len(not_hit)))
-    for key in not_hit:
-        print('NOT EXECUTED:', key)
-    return 0 if all_passed and not not_hit else 1
+        json.dump({'checks': checks, 'configs': summary}, f, ensure_ascii=False, indent=0)
+    return 1 if failed else 0
 
 
 if __name__ == '__main__':

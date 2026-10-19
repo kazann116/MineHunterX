@@ -114,15 +114,15 @@ def load_isolated():
 
 
 def load_trace():
-    """Построчная трассировка (tools/binarylab_assert_trace.py): «файл:строка» → число выполнений."""
+    """Построчная трассировка (tools/binarylab_assert_trace.py): сборка → {«файл:строка»: число выполнений}.
+    Сборка, где не все тесты прошли, даёт пустой словарь (ни одна строка не засчитывается)."""
     path = os.path.join(ROOT, 'build', 'binarylab-assert-trace.json')
     if not os.path.exists(path):
-        return None
+        return {}
     import json
     data = json.load(open(path, encoding='utf-8'))
-    if not data.get('all_passed'):
-        return {}
-    return {'%s:%d' % (c['file'], c['line']): c['executed'] for c in data['checks']}
+    return {config: (info['executed'] if info.get('all_passed') else {})
+            for config, info in data.get('configs', {}).items()}
 
 
 def load_results():
@@ -291,12 +291,12 @@ def main():
                     if cases_run.get(t) is not True:
                         missing.append('%s — тест %s не прошёл изолированно в %s' % (key, t, config))
                 run.append('отдельно %s %d/%d' % (config, alone, len(case_tests)))
-            if trace is not None:
-                done = sum(1 for rel, lineno, _t, _x in checks if trace.get('%s:%d' % (rel, lineno), 0) > 0)
+            for config, executed in trace.items():
+                done = sum(1 for rel, lineno, _t, _x in checks if executed.get('%s:%d' % (rel, lineno), 0) > 0)
                 for rel, lineno, _t, _x in checks:
-                    if trace.get('%s:%d' % (rel, lineno), 0) == 0:
-                        missing.append('%s — строка %s:%d не выполнялась' % (key, rel, lineno))
-                run.append('строк Assert выполнено %d/%d' % (done, len(checks)))
+                    if executed.get('%s:%d' % (rel, lineno), 0) == 0:
+                        missing.append('%s — строка %s:%d не выполнялась в %s' % (key, rel, lineno, config))
+                run.append('строк Assert выполнено в %s %d/%d' % (config, done, len(checks)))
             run_text = ', '.join(run) or 'не запускались'
 
             used.add(key)
