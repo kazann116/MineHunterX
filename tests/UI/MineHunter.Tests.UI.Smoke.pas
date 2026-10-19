@@ -69,6 +69,7 @@ type
     [Test] procedure Launches_PageShowsJournalWithFilter;
     [Test] procedure Devices_NetworkAndGpuTabsWithTotalsAndCharts;
     [Test] procedure Disks_AttributesOfSelectedDisk;
+    [Test] procedure Pages_TablesShownWholeAndWheelScrollsPage;
   end;
 
 implementation
@@ -1371,6 +1372,75 @@ begin
   FForm.LaunchesPage.FilterEdit.Text := 'APP3'; // OnChange перечитывает журнал
   Assert.AreEqual(1, FForm.LaunchesPage.List.Items.Count);
   Assert.AreEqual('app3.exe', FForm.LaunchesPage.List.Items[0].SubItems[0]);
+end;
+
+procedure TMainFormSmokeTests.Pages_TablesShownWholeAndWheelScrollsPage;
+var
+  LPage: TMHDisksPage;
+  LSnapshot: TMHSnapshot;
+  LVolumes: TArray<TMHVolumeInfo>;
+  I, LBefore: Integer;
+  LHandled: Boolean;
+  LPoint: TPoint;
+begin
+  FForm.SetBounds(0, 0, 1200, 700);
+  FForm.Show;
+  SetWindowPos(FForm.Handle, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE or SWP_NOSIZE or SWP_NOACTIVATE);
+  try
+    // «Устройства»: 14 разделов — таблица целиком, прокручивается вся вкладка.
+    LPage := FForm.DisksPage;
+    FForm.NavigateTo(pgDisks);
+    LPage.Tabs.ActivePageIndex := 0;
+    SetLength(LVolumes, 14);
+    for I := 0 to High(LVolumes) do
+    begin
+      LVolumes[I] := Default(TMHVolumeInfo);
+      LVolumes[I].Name := Chr(Ord('C') + I) + ':';
+      LVolumes[I].TotalBytes := Int64(100) * 1024 * 1024 * 1024;
+      LVolumes[I].FreeBytes := Int64(50) * 1024 * 1024 * 1024;
+    end;
+    LSnapshot := TMHSnapshot.Create(1, FServices.Clock.NowUtc);
+    LSnapshot.Volumes := LVolumes;
+    LPage.UpdateSnapshot(LSnapshot);
+    Application.ProcessMessages;
+    Assert.AreEqual(14, LPage.VolumesView.Items.Count);
+    Assert.IsFalse(MHListCanScroll(LPage.VolumesView), 'Разделы — без своей прокрутки');
+    Assert.IsFalse(MHListCanScroll(LPage.IoView));
+    Assert.IsTrue(LPage.DiskScroll.VertScrollBar.IsScrollBarVisible, 'Прокручивается вкладка');
+    LPage.DiskScroll.VertScrollBar.Position := 0;
+    LPoint := LPage.VolumesView.ClientToScreen(Point(20, 40));
+    LHandled := False;
+    FForm.OnMouseWheel(FForm, [], -WHEEL_DELTA, LPoint, LHandled);
+    Assert.IsTrue(LHandled, 'Колесо над таблицей без прокрутки — странице');
+    Assert.IsTrue(LPage.DiskScroll.VertScrollBar.Position > 0);
+
+    // «История»: сравнение с нормой и «что изменилось» — целиком, страница прокручивается.
+    FForm.NavigateTo(pgHistory);
+    Application.ProcessMessages;
+    Assert.IsTrue(FForm.pnlBaseline.Parent = FForm.HistoryScroll, 'Сравнение — на прокручиваемой странице');
+    FForm.lvComparison.Items.Clear;
+    for I := 1 to 6 do
+      FForm.lvComparison.Items.Add.Caption := 'row' + IntToStr(I);
+    FForm.lvDeviations.Items.Clear;
+    for I := 1 to 8 do
+      FForm.lvDeviations.Items.Add.Caption := 'prog' + IntToStr(I);
+    FForm.LayoutHistory;
+    Application.ProcessMessages;
+    Assert.IsFalse(MHListCanScroll(FForm.lvComparison), 'Таблица сравнения без своей прокрутки');
+    Assert.IsFalse(MHListCanScroll(FForm.lvDeviations));
+    Assert.IsFalse(MHListCanScroll(FForm.ChangesList));
+    Assert.IsTrue(FForm.lvDeviations.Top >= FForm.lvComparison.Top + FForm.lvComparison.Height,
+      'Таблицы не наезжают друг на друга');
+    Assert.IsTrue(FForm.HistoryScroll.VertScrollBar.IsScrollBarVisible, 'Страница «История» прокручивается');
+    LBefore := FForm.HistoryScroll.VertScrollBar.Position;
+    LPoint := FForm.HistoryScroll.ClientToScreen(Point(FForm.HistoryScroll.ClientWidth div 2, 40));
+    LHandled := False;
+    FForm.OnMouseWheel(FForm, [], -WHEEL_DELTA, LPoint, LHandled);
+    Assert.IsTrue(FForm.HistoryScroll.VertScrollBar.Position > LBefore, 'Колесо прокручивает «Историю»');
+  finally
+    SetWindowPos(FForm.Handle, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE or SWP_NOSIZE or SWP_NOACTIVATE);
+    FForm.Hide;
+  end;
 end;
 
 procedure TMainFormSmokeTests.Disks_AttributesOfSelectedDisk;

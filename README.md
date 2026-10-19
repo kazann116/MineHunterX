@@ -37,7 +37,7 @@
 git clone <адрес этого репозитория>
 cd MineHunter
 powershell -ExecutionPolicy Bypass -File tools\build.ps1 -Config Release   # нужна Delphi 12 (RAD Studio 23.0)
-powershell -ExecutionPolicy Bypass -File tools\test.ps1  -Config Release   # 781 тест DUnitX
+powershell -ExecutionPolicy Bypass -File tools\test.ps1  -Config Release   # 783 теста DUnitX
 build\Win64\Release\MineHunter.App.exe
 ```
 
@@ -155,7 +155,7 @@ build\Win64\Release\MineHunter.App.exe
 
 | Критерий ТЗ | Требование | Результат |
 |---|---|---|
-| Автотесты (DUnitX, Debug и Release) | 100% | 781 из 781, утечек 0 |
+| Автотесты (DUnitX, Debug и Release) | 100% | 783 из 783, утечек 0 |
 | Синтетические сценарии угроз | 100% обнаружение | 12 из 12, включая майнер на видеокарте и вмешательство в защиту ([отчёт](docs/false-positive-report.md)) |
 | Ложные срабатывания на легальной нагрузке | отдельный отчёт | 0 из 22 (игры, компиляция, рендеринг на CPU и GPU, Folding@home, трансляция, обновления, антивирус, исключения разработчика…) |
 | Нагрузка в простое | ≤ 2% CPU | 0,16% CPU машины ([GUI-soak](docs/gui-soak-report.md)); с видеокартой и датчиками — 0,21% ([отчёт](docs/gui-soak-gpu-report.md)) |

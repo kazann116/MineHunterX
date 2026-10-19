@@ -10,12 +10,14 @@
   Таблицы, которые пересобираются целиком (Clear + Add), сохраняют состояние
   по ключам записей (MHSaveListState / MHRestoreListState): выделенная строка
   остаётся выделенной, а новые записи в начале не сдвигают просматриваемую часть.
+  Небольшие таблицы на прокручиваемых страницах показываются целиком
+  (MHFitListHeight): высота по числу строк, прокручивается вся страница.
 }
 
 interface
 
 uses
-  System.SysUtils, Vcl.ComCtrls;
+  System.SysUtils, Vcl.Controls, Vcl.ComCtrls;
 
 type
   /// Ключ строки: одна и та же запись до и после пересборки даёт один ключ.
@@ -50,6 +52,15 @@ function MHItemTextKey(AItem: TListItem; const ASubItems: array of Integer): str
 function MHListTopIndex(AList: TListView): Integer;
 procedure MHRestoreListTop(AList: TListView; AOldTop: Integer);
 
+/// Высота таблицы, при которой все строки (не меньше AMinRows) видны без собственной
+/// вертикальной прокрутки: рамка, заголовок, строки и, если столбцы шире таблицы,
+/// горизонтальная полоса.
+function MHListFitHeight(AList: TListView; AMinRows: Integer = 1): Integer;
+/// Задаёт таблице такую высоту (для таблиц, выровненных по верху или без выравнивания).
+procedure MHFitListHeight(AList: TListView; AMinRows: Integer = 1);
+/// Есть ли у таблицы что прокручивать по вертикали (видны не все строки).
+function MHListCanScroll(AList: TWinControl): Boolean;
+
 /// Выделяет строку AIndex, только если выделение действительно меняется:
 /// повторная установка ItemIndex прокручивает список к строке.
 procedure MHSetItemIndexQuiet(AList: TListView; AIndex: Integer);
@@ -57,7 +68,71 @@ procedure MHSetItemIndexQuiet(AList: TListView; AIndex: Integer);
 implementation
 
 uses
-  Winapi.Windows, Winapi.CommCtrl;
+  Winapi.Windows, Winapi.CommCtrl, System.Math, System.Classes, Vcl.Graphics;
+
+/// Высота строки, если строк ещё нет: по шрифту, как у элемента Windows.
+function DefaultRowHeight(AList: TListView): Integer;
+begin
+  Result := Abs(AList.Font.Height) + MulDiv(6, AList.CurrentPPI, 96);
+end;
+
+function MHListFitHeight(AList: TListView; AMinRows: Integer): Integer;
+var
+  LRect: TRect;
+  LHeader: HWND;
+  LRowHeight, LHeaderHeight, LColumns, LClientWidth, LBorder, I: Integer;
+  LStyle: NativeInt;
+begin
+  LRowHeight := 0;
+  if AList.HandleAllocated and (AList.Items.Count > 0) and
+     ListView_GetItemRect(AList.Handle, 0, LRect, LVIR_BOUNDS) then
+    LRowHeight := LRect.Bottom - LRect.Top;
+  if LRowHeight <= 0 then
+    LRowHeight := DefaultRowHeight(AList);
+  LHeaderHeight := 0;
+  if AList.ShowColumnHeaders then
+  begin
+    if AList.HandleAllocated then
+    begin
+      LHeader := ListView_GetHeader(AList.Handle);
+      if (LHeader <> 0) and GetWindowRect(LHeader, LRect) then
+        LHeaderHeight := LRect.Bottom - LRect.Top;
+    end;
+    if LHeaderHeight <= 0 then
+      LHeaderHeight := LRowHeight + MulDiv(4, AList.CurrentPPI, 96);
+  end;
+  // Рамка — без полос прокрутки, которые есть сейчас: после подгонки вертикальной не будет.
+  LBorder := AList.Height - AList.ClientHeight;
+  LClientWidth := AList.ClientWidth;
+  if AList.HandleAllocated then
+  begin
+    LStyle := GetWindowLong(AList.Handle, GWL_STYLE);
+    if LStyle and WS_HSCROLL <> 0 then
+      Dec(LBorder, GetSystemMetrics(SM_CYHSCROLL));
+    if LStyle and WS_VSCROLL <> 0 then
+      Inc(LClientWidth, GetSystemMetrics(SM_CXVSCROLL));
+  end;
+  LColumns := 0;
+  for I := 0 to AList.Columns.Count - 1 do
+    Inc(LColumns, Max(0, AList.Columns[I].Width));
+  Result := LBorder + LHeaderHeight + Max(AList.Items.Count, AMinRows) * LRowHeight + 2;
+  if LColumns > LClientWidth then
+    Inc(Result, GetSystemMetrics(SM_CYHSCROLL));
+end;
+
+procedure MHFitListHeight(AList: TListView; AMinRows: Integer);
+var
+  LHeight: Integer;
+begin
+  LHeight := MHListFitHeight(AList, AMinRows);
+  if AList.Height <> LHeight then
+    AList.Height := LHeight;
+end;
+
+function MHListCanScroll(AList: TWinControl): Boolean;
+begin
+  Result := AList.HandleAllocated and (GetWindowLong(AList.Handle, GWL_STYLE) and WS_VSCROLL <> 0);
+end;
 
 function MHListTopIndex(AList: TListView): Integer;
 begin

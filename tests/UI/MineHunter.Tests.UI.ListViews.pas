@@ -31,6 +31,7 @@ type
     [Test] procedure SelectedRecordGone_NoSelection;
     [Test] procedure ScrolledUpAfterSelectingBelow_StaysUp;
     [Test] procedure ItemTextKey_UsesCaptionAndColumns;
+    [Test] procedure FitHeight_AllRowsVisibleWithoutOwnScroll;
   end;
 
 implementation
@@ -185,6 +186,32 @@ begin
   Assert.AreEqual('msedge.exe'#9'1016', MHItemTextKey(LItem, [0]));
   Assert.AreEqual('msedge.exe'#9'1016'#9, MHItemTextKey(LItem, [0, 5]), 'Нет столбца — пустая часть');
   Assert.AreEqual('msedge.exe', MHItemTextKey(LItem, []));
+end;
+
+procedure TListStateTests.FitHeight_AllRowsVisibleWithoutOwnScroll;
+var
+  LEmptyHeight: Integer;
+begin
+  FList.Align := alNone;
+  FList.SetBounds(0, 0, 400, 60);
+  Fill(Names(1, 25));
+  Application.ProcessMessages;
+  Assert.IsTrue(MHListCanScroll(FList), 'До подгонки строки не помещаются');
+  MHFitListHeight(FList);
+  Application.ProcessMessages;
+  Assert.IsFalse(MHListCanScroll(FList), 'После подгонки своей прокрутки нет');
+  Assert.IsTrue(ListView_GetCountPerPage(FList.Handle) >= 25, 'Видны все строки');
+  // Столбцы шире таблицы — учитывается горизонтальная полоса.
+  FList.Columns[1].Width := 600;
+  MHFitListHeight(FList);
+  Application.ProcessMessages;
+  Assert.IsFalse(MHListCanScroll(FList), 'С горизонтальной полосой строки тоже видны все');
+  // Пустая таблица — заголовок и место под AMinRows строк.
+  Fill(nil);
+  MHFitListHeight(FList, 1);
+  LEmptyHeight := FList.Height;
+  MHFitListHeight(FList, 3);
+  Assert.IsTrue(FList.Height > LEmptyHeight);
 end;
 
 initialization

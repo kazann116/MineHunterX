@@ -9,7 +9,8 @@
   открыть расположение, в карантин, «это мой файл»).
 
   Элементы создаются в коде на переданной вкладке; страница не владеет
-  сервисами. Все обращения к интерфейсу — в главном потоке: поток проверки
+  сервисами. Каждая вкладка прокручивается целиком, как «Обзор»: таблицы
+  показываются полностью (высота по числу строк, MHFitListHeight). Все обращения к интерфейсу — в главном потоке: поток проверки
   передаёт прогресс и итог через TThread.Queue и отменяется при закрытии.
 }
 
@@ -17,7 +18,7 @@ interface
 
 uses
   System.SysUtils, System.Classes, System.SyncObjs, Vcl.Controls, Vcl.StdCtrls, Vcl.ExtCtrls,
-  Vcl.ComCtrls,
+  Vcl.ComCtrls, Vcl.Forms,
   System.Generics.Collections,
   MineHunter.Core.Types, MineHunter.Core.FileScan, MineHunter.App.Bootstrap, MineHunter.App.Chart;
 
@@ -64,6 +65,8 @@ type
     FLastSnapshot: TMHSnapshot;
     FAttrs: TListView;
     FAttrCaption: TLabel;
+    FDiskScroll, FNetScroll, FGpuScroll: TScrollBox;
+    FDiskPanel, FVolRow: TPanel;
     procedure AddPoint(const AKey: string; AKind: TMHMetricKind; AValue: Double; ATime: TDateTime);
     procedure ShowChart(AChart: TMHLineChart; AList: TListView; const AKeys: TArray<string>;
       const ATitle: string);
@@ -74,6 +77,8 @@ type
     procedure UpdateNetwork(const ASnapshot: TMHSnapshot);
     procedure UpdateGpus(const ASnapshot: TMHSnapshot);
     procedure UpdateAttributes;
+    function NewScroll(AParent: TWinControl): TScrollBox;
+    procedure ScrollResize(Sender: TObject);
     function NewList(AParent: TWinControl; AAlign: TAlign; AHeight: Integer;
       const AColumns: array of string; const AWidths: array of Integer): TListView;
     function NewCaption(AParent: TWinControl; const AText: string): TLabel;
@@ -99,6 +104,10 @@ type
     procedure UpdateSnapshot(const ASnapshot: TMHSnapshot);
     /// Накопление истории для графиков устройств (на каждом цикле, даже если страница скрыта).
     procedure RecordHistory(const ASnapshot: TMHSnapshot);
+    /// Высота таблиц по числу строк (после каждого обновления содержимого).
+    procedure LayoutLists;
+    property DiskScroll: TScrollBox read FDiskScroll;
+    property NetScroll: TScrollBox read FNetScroll;
     property NetView: TListView read FNet;
     property GpuView: TListView read FGpu;
     property Tabs: TPageControl read FTabs;
@@ -145,6 +154,8 @@ uses
 const
   /// Точек истории на устройство: 10 минут при опросе раз в 2 с.
   HISTORY_POINTS = 300;
+  /// Высота графика сети и видеокарт под таблицей.
+  CHART_HEIGHT = 320;
   TOTAL_KEY = 'total';
 
 const
@@ -180,7 +191,10 @@ begin
   FGpuTab := TTabSheet.Create(Self);
   FGpuTab.PageControl := FTabs;
   FGpuTab.Caption := MHL('Видеокарты', 'Graphics cards');
-  LHost := FDiskTab;
+  FDiskScroll := NewScroll(FDiskTab);
+  FNetScroll := NewScroll(FNetTab);
+  FGpuScroll := NewScroll(FGpuTab);
+  LHost := FDiskScroll;
 
   LTop := TPanel.Create(Self);
   LTop.Parent := LHost;
@@ -203,6 +217,7 @@ begin
   LDiskPanel.Align := alTop;
   LDiskPanel.Height := 160;
   LDiskPanel.BevelOuter := bvNone;
+  FDiskPanel := LDiskPanel;
   FDiskChart := TMHLineChart.Create(Self);
   FDiskChart.Parent := LDiskPanel;
   FDiskChart.Align := alRight;
@@ -226,6 +241,7 @@ begin
   LVolRow.Align := alTop;
   LVolRow.Height := 210;
   LVolRow.BevelOuter := bvNone;
+  FVolRow := LVolRow;
   LAttrPanel := TPanel.Create(Self);
   LAttrPanel.Parent := LVolRow;
   LAttrPanel.Align := alRight;
@@ -298,7 +314,8 @@ begin
 
   LButtons := TPanel.Create(Self);
   LButtons.Parent := LHost;
-  LButtons.Align := alBottom;
+  LButtons.Top := 10000;
+  LButtons.Align := alTop;
   LButtons.Height := 40;
   LButtons.BevelOuter := bvNone;
   FBtnOpen := TButton.Create(Self);
@@ -316,15 +333,17 @@ begin
   FBtnAllow.SetBounds(384, 6, 180, 28);
   FBtnAllow.Caption := MHL('Это мой файл…', 'This is my file…');
   FBtnAllow.OnClick := AllowClick;
-  FHitsView := NewList(LHost, alClient, 0,
+  FHitsView := NewList(LHost, alTop, 0,
     [MHL('Оценка', 'Score'), MHL('Уровень', 'Level'), MHL('Что найдено', 'What was found'), MHL('Файл', 'File'),
      MHL('Размер', 'Size')], [55, 140, 330, 480, 80]);
+  // Кнопки действий — под результатами проверки.
+  LButtons.Top := FHitsView.Top + FHitsView.Height + 1;
   FHitsView.OnSelectItem := HitSelect;
   FDisks.OnSelectItem := DeviceSelect;
 
   // Вкладка «Сеть».
   LNetPanel := TPanel.Create(Self);
-  LNetPanel.Parent := FNetTab;
+  LNetPanel.Parent := FNetScroll;
   LNetPanel.Align := alTop;
   LNetPanel.Height := 30;
   LNetPanel.BevelOuter := bvNone;
@@ -338,14 +357,16 @@ begin
       'Each network adapter separately and "Total". Speed is in bits per second, as in Task Manager. ' +
       'Select an adapter to see receive and send over 10 minutes.');
   end;
-  FNet := NewList(FNetTab, alTop, 300,
+  FNet := NewList(FNetScroll, alTop, 0,
     [MHL('Адаптер', 'Adapter'), MHL('Тип', 'Type'), MHL('Состояние', 'State'), MHL('Скорость канала', 'Link speed'),
      MHL('Приём', 'Receive'), MHL('Передача', 'Send'), MHL('Устройство', 'Device')],
     [170, 140, 110, 110, 95, 95, 360]);
   FNet.OnSelectItem := DeviceSelect;
   FNetChart := TMHLineChart.Create(Self);
-  FNetChart.Parent := FNetTab;
-  FNetChart.Align := alClient;
+  FNetChart.Parent := FNetScroll;
+  FNetChart.Height := CHART_HEIGHT;
+  FNetChart.Top := 10000;
+  FNetChart.Align := alTop;
   FNetChart.Formatter :=
     function(AValue: Double): string
     begin
@@ -354,7 +375,7 @@ begin
 
   // Вкладка «Видеокарты».
   LGpuPanel := TPanel.Create(Self);
-  LGpuPanel.Parent := FGpuTab;
+  LGpuPanel.Parent := FGpuScroll;
   LGpuPanel.Align := alTop;
   LGpuPanel.Height := 30;
   LGpuPanel.BevelOuter := bvNone;
@@ -366,21 +387,61 @@ begin
     Caption := MHL('Каждая видеокарта отдельно и «Всего». Выберите видеокарту — график загрузки за 10 минут.',
       'Each graphics card separately and "Total". Select a card to see its load over 10 minutes.');
   end;
-  FGpu := NewList(FGpuTab, alTop, 200,
+  FGpu := NewList(FGpuScroll, alTop, 0,
     [MHL('Видеокарта', 'Graphics card'), MHL('Загрузка', 'Load'), MHL('Вычисления', 'Compute'),
      MHL('Видеопамять', 'Video memory'), MHL('Температура', 'Temperature'), MHL('Мощность', 'Power')],
     [300, 90, 100, 110, 110, 90]);
   FGpu.OnSelectItem := DeviceSelect;
   FGpuChart := TMHLineChart.Create(Self);
-  FGpuChart.Parent := FGpuTab;
-  FGpuChart.Align := alClient;
+  FGpuChart.Parent := FGpuScroll;
+  FGpuChart.Height := CHART_HEIGHT;
+  FGpuChart.Top := 10000;
+  FGpuChart.Align := alTop;
   FGpuChart.SetFixedRange(0, 100);
   FGpuChart.Formatter :=
     function(AValue: Double): string
     begin
       Result := FormatFloat('0', AValue) + ' %';
     end;
+  FDiskScroll.OnResize := ScrollResize;
+  FNetScroll.OnResize := ScrollResize;
+  FGpuScroll.OnResize := ScrollResize;
+  LayoutLists;
   UpdateButtons;
+end;
+
+function TMHDisksPage.NewScroll(AParent: TWinControl): TScrollBox;
+begin
+  Result := TScrollBox.Create(Self);
+  Result.Parent := AParent;
+  Result.Align := alClient;
+  Result.BorderStyle := bsNone;
+  Result.HorzScrollBar.Visible := False;
+  Result.VertScrollBar.Tracking := True;
+end;
+
+procedure TMHDisksPage.ScrollResize(Sender: TObject);
+begin
+  // Ширина влияет на горизонтальную полосу таблиц, а значит, и на их высоту.
+  LayoutLists;
+end;
+
+procedure TMHDisksPage.LayoutLists;
+const
+  CAPTION_HEIGHT = 24;
+  MIN_DISK_PANEL = 160;
+begin
+  if FHitsView = nil then
+    Exit;
+  FDiskPanel.Height := Max(MIN_DISK_PANEL, MHListFitHeight(FDisks, 2));
+  FVolRow.Height := CAPTION_HEIGHT + Max(MHListFitHeight(FVolumes, 2), MHListFitHeight(FAttrs, 2));
+  MHFitListHeight(FIo, 3);
+  MHFitListHeight(FHitsView, 3);
+  MHFitListHeight(FNet, 2);
+  MHFitListHeight(FGpu, 2);
+  // График под таблицей — до низа вкладки, но не ниже CHART_HEIGHT.
+  FNetChart.Height := Max(CHART_HEIGHT, FNetScroll.ClientHeight - (FNet.Top + FNet.Height) - 2);
+  FGpuChart.Height := Max(CHART_HEIGHT, FGpuScroll.ClientHeight - (FGpu.Top + FGpu.Height) - 2);
 end;
 
 destructor TMHDisksPage.Destroy;
@@ -672,6 +733,7 @@ begin
   UpdateAttributes;
   UpdateNetwork(ASnapshot);
   UpdateGpus(ASnapshot);
+  LayoutLists;
   ShowChart(FDiskChart, FDisks, FDiskKeys, MHL('Занятость диска (10 мин)', 'Disk busy (10 min)'));
   ShowChart(FNetChart, FNet, FNetKeys, MHL('Приём + передача (10 мин)', 'Receive + send (10 min)'));
   ShowChart(FGpuChart, FGpu, FGpuKeys, MHL('Загрузка видеокарты (10 мин)', 'GPU load (10 min)'));
@@ -774,6 +836,7 @@ begin
   begin
     ShowChart(FDiskChart, FDisks, FDiskKeys, MHL('Занятость диска (10 мин)', 'Disk busy (10 min)'));
     UpdateAttributes;
+    LayoutLists;
   end
   else if Sender = FNet then
     ShowChart(FNetChart, FNet, FNetKeys, MHL('Приём + передача (10 мин)', 'Receive + send (10 min)'))
@@ -1219,6 +1282,7 @@ begin
   finally
     FHitsView.Items.EndUpdate;
   end;
+  LayoutLists;
   UpdateButtons;
 end;
 

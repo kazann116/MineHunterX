@@ -266,6 +266,11 @@ type
     FChangesPanel: TPanel;
     FLblEnergy: TLabel;
     FChangesList: TListView;
+    /// «История» прокручивается целиком, как «Обзор»: графики (FHistoryRow) на первый
+    /// экран, под ними сравнение с нормой, затем электроэнергия и «Что изменилось»;
+    /// таблицы показываются полностью.
+    FHistoryScroll: TScrollBox;
+    FHistoryRow: TPanel;
     FHistoryResultEnergy: TMHEnergyEstimate;
     FHistoryResultChanges: TArray<TMHInventoryItem>;
     FHistoryResultInventoryStart: TDateTime;
@@ -313,6 +318,7 @@ type
     procedure CompleteCheck(const ASnapshot: TMHSnapshot; const AFindings: TMHFindings);
     procedure DefaultShowReport(AReport: TMHCheckReport);
     procedure ApplyChanges;
+    procedure HistoryScrollResize(Sender: TObject);
     procedure PriceExit(Sender: TObject);
     procedure PriceKeyPress(Sender: TObject; var Key: Char);
     procedure CreateTray;
@@ -443,6 +449,9 @@ type
     /// Показ отчёта проверки (по умолчанию — окно с текстом). Тесты подменяют.
     property ShowCheckReport: TProc<TMHCheckReport> read FShowReport write FShowReport;
     property ChangesList: TListView read FChangesList;
+    property HistoryScroll: TScrollBox read FHistoryScroll;
+    /// Высота таблиц «Истории» по числу строк и раскладка страницы.
+    procedure LayoutHistory;
     property EnergyLabel: TLabel read FLblEnergy;
     property PriceEdit: TEdit read FEdPrice;
     /// Применяет цену электроэнергии из поля ввода (False — некорректное значение).
@@ -731,10 +740,12 @@ var
   LControl: TWinControl;
   LBox: TScrollBox;
 begin
-  // Колесо над таблицей, списком или многострочным полем прокручивает их самих.
+  // Колесо над таблицей, списком или многострочным полем прокручивает их самих;
+  // таблица, показанная целиком (прокручивать нечего), отдаёт колесо странице.
   LControl := FindVCLWindow(MousePos);
-  if (LControl = nil) or (LControl is TCustomListView) or (LControl is TCustomMemo) or
-     (LControl is TCustomListBox) or ((LControl is TCustomComboBox) and TCustomComboBox(LControl).DroppedDown) then
+  if (LControl = nil) or ((LControl is TCustomListView) and MHListCanScroll(LControl)) or
+     (LControl is TCustomMemo) or (LControl is TCustomListBox) or
+     ((LControl is TCustomComboBox) and TCustomComboBox(LControl).DroppedDown) then
     Exit;
   // Иначе — ближайшая прокручиваемая страница («Обзор», «Настройки»).
   while (LControl <> nil) and not (LControl is TScrollBox) do
@@ -2423,6 +2434,40 @@ begin
   finally
     lvDeviations.Items.EndUpdate;
   end;
+  LayoutHistory;
+end;
+
+procedure TMainForm.LayoutHistory;
+const
+  /// Наименьшая высота графика истории.
+  MIN_CHART_HEIGHT = 96;
+var
+  LGap, LCharts, LChanges: Integer;
+begin
+  if (FHistoryRow = nil) or (FChangesList = nil) then
+    Exit;
+  LGap := MulDiv(6, CurrentPPI, 96);
+  // Сравнение с нормой — таблицы целиком.
+  MHFitListHeight(lvComparison, 1);
+  MHFitListHeight(lvDeviations, 1);
+  lvDeviations.SetBounds(lvComparison.Left, lvComparison.Top + lvComparison.Height + LGap, lvComparison.Width,
+    lvDeviations.Height);
+  pnlBaseline.Height :=lvDeviations.Top + lvDeviations.Height + LGap;
+  // «Что изменилось» — целиком.
+  MHFitListHeight(FChangesList, 3);
+  LChanges := FChangesList.Top + FChangesList.Height + LGap;
+  FChangesPanel.Height := LChanges;
+  // Графики заполняют первый экран над сравнением, но не мельче MIN_CHART_HEIGHT.
+  LCharts := Max(Length(FHistoryCharts) * MulDiv(MIN_CHART_HEIGHT, CurrentPPI, 96),
+    FHistoryScroll.ClientHeight - pnlBaseline.Height);
+  FHistoryRow.Height := LCharts;
+  pnlBaseline.Top := FHistoryRow.Top + FHistoryRow.Height + 1;
+  FChangesPanel.Top := pnlBaseline.Top + pnlBaseline.Height + 1;
+end;
+
+procedure TMainForm.HistoryScrollResize(Sender: TObject);
+begin
+  LayoutHistory;
 end;
 
 procedure TMainForm.btnRebuildBaselineClick(Sender: TObject);
@@ -3206,16 +3251,35 @@ begin
   FBtnCheckNow.ShowHint := True;
   FBtnCheckNow.OnClick := CheckNowClick;
 
-  // «Что изменилось» и электроэнергия — колонка справа от графиков на странице «История»
-  // (графики сохраняют высоту).
+  // «История» — прокручиваемая страница: графики, под ними сравнение с нормой, затем
+  // электроэнергия и «Что изменилось». Панель периода остаётся сверху и не прокручивается.
+  FHistoryScroll := TScrollBox.Create(Self);
+  FHistoryScroll.Parent := tsHistory;
+  FHistoryScroll.Align := alClient;
+  FHistoryScroll.BorderStyle := bsNone;
+  FHistoryScroll.HorzScrollBar.Visible := False;
+  FHistoryScroll.VertScrollBar.Tracking := True;
+  FHistoryRow := TPanel.Create(Self);
+  FHistoryRow.Parent := FHistoryScroll;
+  FHistoryRow.Align := alTop;
+  FHistoryRow.BevelOuter := bvNone;
+  pnlHistoryCharts.Parent := FHistoryRow;
+  pnlHistoryCharts.Align := alClient;
+  pnlBaseline.Parent := FHistoryScroll;
+  pnlBaseline.Align := alTop;
+  pnlBaseline.Top := FHistoryRow.Top + FHistoryRow.Height + 1;
+  lvDeviations.Anchors := [akLeft, akTop, akRight];
+
+  // Электроэнергия и «Что изменилось» — под сравнением с нормой, на всю ширину.
   FChangesPanel := TPanel.Create(Self);
-  FChangesPanel.Parent := pnlBaseline.Parent;
+  FChangesPanel.Parent := FHistoryScroll;
   FChangesPanel.BevelOuter := bvNone;
-  FChangesPanel.Width := 440;
-  FChangesPanel.Align := alRight;
+  FChangesPanel.SetBounds(0, 0, 800, 240);
+  FChangesPanel.Top := pnlBaseline.Top + pnlBaseline.Height + 1;
+  FChangesPanel.Align := alTop;
   FLblEnergy := TLabel.Create(Self);
   FLblEnergy.Parent := FChangesPanel;
-  FLblEnergy.SetBounds(8, 4, FChangesPanel.Width - 16, 64);
+  FLblEnergy.SetBounds(8, 4, FChangesPanel.Width - 16, 34);
   FLblEnergy.Anchors := [akLeft, akTop, akRight];
   FLblEnergy.AutoSize := False;
   FLblEnergy.WordWrap := True;
@@ -3224,7 +3288,7 @@ begin
   with TLabel.Create(Self) do
   begin
     Parent := FChangesPanel;
-    SetBounds(8, 74, FChangesPanel.Width - 16, 17);
+    SetBounds(8, 42, FChangesPanel.Width - 16, 17);
     Caption := MHTr('Что изменилось за 7 дней');
     Font.Style := [fsBold];
     Hint := MHL('Впервые замеченные записи автозапуска, признаки вмешательства в защиту и программы. ' +
@@ -3235,8 +3299,8 @@ begin
   end;
   FChangesList := TListView.Create(Self);
   FChangesList.Parent := FChangesPanel;
-  FChangesList.SetBounds(8, 94, FChangesPanel.Width - 16, Max(60, FChangesPanel.Height - 100));
-  FChangesList.Anchors := [akLeft, akTop, akRight, akBottom];
+  FChangesList.SetBounds(8, 62, FChangesPanel.Width - 16, 120);
+  FChangesList.Anchors := [akLeft, akTop, akRight];
   FChangesList.ViewStyle := vsReport;
   FChangesList.ReadOnly := True;
   FChangesList.RowSelect := True;
@@ -3258,8 +3322,11 @@ begin
   with FChangesList.Columns.Add do
   begin
     Caption := MHTr('Где');
-    Width := 300;
+    Width := 520;
   end;
+
+  FHistoryScroll.OnResize := HistoryScrollResize;
+  LayoutHistory;
 
   // Цена электроэнергии — в настройках работы в фоне.
   FBackgroundBox.Height := FBackgroundBox.Height + 36;
@@ -3496,6 +3563,7 @@ begin
   finally
     FChangesList.Items.EndUpdate;
   end;
+  LayoutHistory;
   if Length(FHistoryResultChanges) > 0 then
     FChangesList.Hint := ''
   else if FHistoryResultInventoryStart > 0 then
