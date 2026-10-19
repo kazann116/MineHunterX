@@ -13,7 +13,7 @@ uses
   MineHunter.App.DashboardView, MineHunter.App.Tiles, MineHunter.Core.Quarantine,
   MineHunter.App.Notifier, MineHunter.Core.Inventory, MineHunter.Core.Energy, MineHunter.App.DisksPage,
   MineHunter.App.ListViews, MineHunter.App.LaunchesPage, MineHunter.Analysis.Acknowledge,
-  MineHunter.Core.CheckReport, MineHunter.Core.Updates;
+  MineHunter.Core.CheckReport, MineHunter.Core.Updates, MineHunter.App.FileActions;
 
 type
   TMHPage = (pgDashboard, pgProcesses, pgFindings, pgDisks, pgLaunches, pgHistory, pgSettings);
@@ -281,6 +281,8 @@ type
     FAckList: TListView;
     FAckRemove: TButton;
     FAckKeys: TArray<string>;
+    FProcessActions: TMHFileActions;
+    FChangesActions: TMHFileActions;
     FBtnOpenData: TButton;
     FBtnChangeData: TButton;
     FBtnDefaultData: TButton;
@@ -309,6 +311,7 @@ type
     procedure AckSelect(Sender: TObject; Item: TListItem; Selected: Boolean);
     procedure CreateAcknowledgeControls;
     procedure CreateDataFolderControls;
+    procedure CreateFileActions;
     procedure LayoutSettings;
     procedure UpdateDataFolderControls;
     procedure OpenDataFolderClick(Sender: TObject);
@@ -430,6 +433,11 @@ type
     /// Перезапуск после выбора новой папки (по умолчанию — запуск программы заново и выход).
     property RestartAction: TProc read FRestartAction write FRestartAction;
     property ChangeDataButton: TButton read FBtnChangeData;
+    /// Сведения выбранной строки «Процессов» и «Что изменилось» для действий с файлом.
+    function ProcessTarget(out ATarget: TMHFileTarget): Boolean;
+    function ChangeTarget(out ATarget: TMHFileTarget): Boolean;
+    property ProcessActions: TMHFileActions read FProcessActions;
+    property ChangesActions: TMHFileActions read FChangesActions;
     property DefaultDataButton: TButton read FBtnDefaultData;
     property AckBox: TGroupBox read FAckBox;
     property QuarantineList: TListView read FQuarantineList;
@@ -521,7 +529,8 @@ uses
   MineHunter.Collectors.Processes, MineHunter.Collectors.System, MineHunter.Core.Paths,
   MineHunter.Core.SelfAutostart, MineHunter.Collectors.Processes.WinApi,
   MineHunter.App.Lang, MineHunter.App.Theme, MineHunter.Core.Updates.WinApi, Winapi.ShellAPI,
-  System.IOUtils, MineHunter.Core.Lang, MineHunter.Collectors.NetAdapters, MineHunter.Core.DataDir;
+  System.IOUtils, MineHunter.Core.Lang, MineHunter.Collectors.NetAdapters, MineHunter.Core.DataDir,
+  MineHunter.Core.Launches, MineHunter.Collectors.ProcessEvents.WinApi;
 
 function PercentText(AValue: Double): string; forward;
 
@@ -628,6 +637,7 @@ begin
   CreateAcknowledgeControls;
   CreateDataFolderControls;
   LayoutSettings;
+  CreateFileActions;
   cbHistoryPeriod.Items.Clear;
   cbHistoryPeriod.Items.Add(MHTr('1 час'));
   cbHistoryPeriod.Items.Add(MHTr('6 часов'));
@@ -815,6 +825,81 @@ begin
     MHL('Вернуть данные в стандартную папку (%LOCALAPPDATA%\MineHunterX).',
       'Move the data back to the standard folder (%LOCALAPPDATA%\MineHunterX).'), DefaultDataFolderClick);
   UpdateDataFolderControls;
+end;
+
+procedure TMainForm.CreateFileActions;
+var
+  LConfirm: TMHFileConfirm;
+begin
+  // Подтверждение — через ConfirmAction в момент вызова (тесты подменяют его позже).
+  LConfirm :=
+    function(const AQuestion: string): Boolean
+    begin
+      Result := FConfirm(AQuestion);
+    end;
+  FProcessActions := TMHFileActions.Create(Self, lvProcesses, ProcessTarget, LConfirm);
+  FChangesActions := TMHFileActions.Create(Self, FChangesList, ChangeTarget, LConfirm);
+  if FLaunchesPage <> nil then
+    FLaunchesPage.Confirm := LConfirm;
+end;
+
+function TMainForm.ProcessTarget(out ATarget: TMHFileTarget): Boolean;
+var
+  LInfo: TMHProcessInfo;
+begin
+  Result := (lvProcesses.ItemIndex >= 0) and (lvProcesses.ItemIndex < FProcessModel.Count);
+  if not Result then
+    Exit;
+  LInfo := FProcessModel[lvProcesses.ItemIndex];
+  ATarget := Default(TMHFileTarget);
+  ATarget.Title := LInfo.Name;
+  ATarget.Path := LInfo.ImagePath;
+  ATarget.Sha256 := LInfo.Sha256;
+  ATarget.CommandLine := LInfo.CommandLine;
+  // Командная строка есть не у всех процессов снимка — читаем у живого процесса.
+  if (ATarget.CommandLine = '') and LInfo.Id.HasCreateTime then
+    ATarget.CommandLine := MHReadProcessCommandLine(LInfo.Id.Pid, LInfo.Id.CreateTime);
+  ATarget.Details := ['PID: ' + IntToStr(LInfo.Id.Pid),
+    MHL('Подпись: ', 'Signature: ') + MHSignatureToString(LInfo.Signature)];
+end;
+
+function TMainForm.ChangeTarget(out ATarget: TMHFileTarget): Boolean;
+var
+  LItem: TMHInventoryItem;
+  LHistory: IMHLaunchHistory;
+  LLaunches: TArray<TMHLaunchRecord>;
+  LNow: TDateTime;
+begin
+  Result := (FChangesList.Selected <> nil) and (FChangesList.Selected.Index <= High(FHistoryResultChanges));
+  if not Result then
+    Exit;
+  LItem := FHistoryResultChanges[FChangesList.Selected.Index];
+  ATarget := Default(TMHFileTarget);
+  ATarget.Title := LItem.Name;
+  ATarget.Path := LItem.ImagePath;
+  ATarget.Details := [MHL('Что изменилось: ', 'What changed: ') + MHInventoryKindTitle(LItem.Kind),
+    MHL('Впервые замечено: ', 'First seen: ') + FormatDateTime('dd.mm.yyyy hh:nn',
+      TTimeZone.Local.ToLocalTime(LItem.FirstSeenUtc))];
+  if LItem.Details <> '' then
+    ATarget.Details := ATarget.Details + [MHL('Где: ', 'Where: ') + LItem.Details];
+  // Параметры программы — из журнала запусков (последний запуск этого файла за 30 дней).
+  if (LItem.ImagePath <> '') and Supports(FServices.MetricHistory, IMHLaunchHistory, LHistory) then
+  begin
+    LNow := FServices.Clock.NowUtc;
+    try
+      LLaunches := LHistory.LoadLaunches(LNow - 30, LNow + 1 / HoursPerDay, LItem.ImagePath, 20);
+    except
+      LLaunches := nil;
+    end;
+    for var LLaunch in LLaunches do
+      if SameText(LLaunch.ImagePath, LItem.ImagePath) and (LLaunch.CommandLine <> '') then
+      begin
+        ATarget.CommandLine := LLaunch.CommandLine;
+        ATarget.Details := ATarget.Details + [MHL('Параметры — последнего запуска: ', 'Arguments — of the last launch: ') +
+          FormatDateTime('dd.mm.yyyy hh:nn:ss', TTimeZone.Local.ToLocalTime(LLaunch.StartUtc))];
+        Break;
+      end;
+  end;
 end;
 
 procedure TMainForm.UpdateDataFolderControls;

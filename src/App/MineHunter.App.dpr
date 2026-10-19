@@ -49,6 +49,7 @@ uses
   MineHunter.App.Notifier in 'MineHunter.App.Notifier.pas',
   MineHunter.App.DisksPage in 'MineHunter.App.DisksPage.pas',
   MineHunter.App.ListViews in 'MineHunter.App.ListViews.pas',
+  MineHunter.App.FileActions in 'MineHunter.App.FileActions.pas',
   MineHunter.App.LaunchesPage in 'MineHunter.App.LaunchesPage.pas',
   MineHunter.Collectors.Gpu in '..\Core\Collectors\MineHunter.Collectors.Gpu.pas',
   MineHunter.Collectors.Gpu.WinApi in '..\Core\Collectors\MineHunter.Collectors.Gpu.WinApi.pas',

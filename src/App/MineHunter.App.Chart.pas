@@ -8,6 +8,8 @@
   - Размеры масштабируются по текущему DPI монитора.
   - SummaryText дублирует содержимое графика текстом (последнее, минимум,
     максимум), чтобы информация не передавалась только изображением.
+  - Необязательная вторая линия (например, приём и передача сети) — своим
+    цветом, с подписями обеих линий в заголовке; шкала общая.
   Расчёты вынесены в чистые функции и покрыты тестами.
 }
 
@@ -52,21 +54,30 @@ type
     FFormatter: TMHValueFormatter;
     FGapFactor: Double;
     FFromUtc, FToUtc: TDateTime;
+    FSecondPoints: TArray<TMHMetric>;
+    FSecondColor: TColor;
+    FFirstLegend, FSecondLegend: string;
     procedure SetTitle(const AValue: string);
     procedure SetLineColor(AValue: TColor);
     function Fmt(AValue: Double): string;
+    function LastValueText(const APoints: TArray<TMHMetric>): string;
     function S(AValue: Integer): Integer;
   protected
     procedure Paint; override;
   public
     constructor Create(AOwner: TComponent); override;
     procedure SetPoints(const APoints: TArray<TMHMetric>);
+    /// Вторая линия со своим цветом; подписи обеих линий выводятся в заголовке.
+    /// APoints = nil — только основная линия.
+    procedure SetSecondSeries(const APoints: TArray<TMHMetric>; const AFirstLegend, ASecondLegend: string);
     /// Фиксированная шкала (например, 0..100 для процентов).
     procedure SetFixedRange(AMin, AMax: Double);
     /// Явный интервал оси времени; 0..0 — по данным.
     procedure SetTimeWindow(AFromUtc, AToUtc: TDateTime);
     function SummaryText: string;
     property Points: TArray<TMHMetric> read FPoints;
+    property SecondPoints: TArray<TMHMetric> read FSecondPoints;
+    property SecondColor: TColor read FSecondColor write FSecondColor;
     property Title: string read FTitle write SetTitle;
     property LineColor: TColor read FLineColor write SetLineColor;
     property Formatter: TMHValueFormatter read FFormatter write FFormatter;
@@ -255,6 +266,7 @@ begin
   DoubleBuffered := True;
   ParentFont := True;
   FLineColor := TColor($00B06A1F); // синий, контрастный на светлом фоне
+  FSecondColor := TColor($001E7FE8); // оранжевый — различим с синим и при нарушениях цветовосприятия
   FGapFactor := 3;
   Width := 300;
   Height := 140;
@@ -290,6 +302,26 @@ begin
   FPoints := APoints;
   Hint := SummaryText;
   Invalidate;
+end;
+
+procedure TMHLineChart.SetSecondSeries(const APoints: TArray<TMHMetric>; const AFirstLegend,
+  ASecondLegend: string);
+begin
+  FSecondPoints := APoints;
+  FFirstLegend := AFirstLegend;
+  FSecondLegend := ASecondLegend;
+  Hint := SummaryText;
+  Invalidate;
+end;
+
+function TMHLineChart.LastValueText(const APoints: TArray<TMHMetric>): string;
+var
+  I: Integer;
+begin
+  Result := MHL('нет данных', 'no data');
+  for I := High(APoints) downto 0 do
+    if APoints[I].HasValue then
+      Exit(Fmt(APoints[I].Value));
 end;
 
 procedure TMHLineChart.SetFixedRange(AMin, AMax: Double);
@@ -343,6 +375,9 @@ begin
     end;
   Result := Format('%s: сейчас %s, минимум %s, максимум %s',
     [FTitle, LLast, Fmt(LMin), Fmt(LMax)]);
+  if Length(FSecondPoints) > 0 then
+    Result := Result + Format(' (%s); %s: сейчас %s', [FFirstLegend, FSecondLegend,
+      LastValueText(FSecondPoints)]);
 end;
 
 procedure TMHLineChart.Paint;
@@ -357,6 +392,7 @@ var
   I, J, LTextH, LLabelW: Integer;
   LValue: Double;
   LText: string;
+  LLegend: TArray<string>;
 
   function XOf(ATime: TDateTime): Integer;
   begin
@@ -387,16 +423,41 @@ begin
   Canvas.Font.Style := [fsBold];
   Canvas.TextOut(LRect.Left + S(6), LRect.Top + S(4), FTitle);
   Canvas.Font.Style := [];
-  LText := MHL('нет данных', 'no data');
-  for I := High(FPoints) downto 0 do
-    if FPoints[I].HasValue then
+  if Length(FSecondPoints) > 0 then
+  begin
+    // «■ Приём 152 кбит/с   ■ Передача 8 кбит/с» — справа, метки цветом линий.
+    LLegend := [FFirstLegend + ' ' + LastValueText(FPoints), FSecondLegend + ' ' +
+      LastValueText(FSecondPoints)];
+    J := LRect.Right - S(6);
+    for I := High(LLegend) downto 0 do
     begin
-      LText := Fmt(FPoints[I].Value);
-      Break;
+      J := J - Canvas.TextWidth(LLegend[I]);
+      Canvas.TextOut(J, LRect.Top + S(4), LLegend[I]);
+      J := J - S(16);
+      if I = 0 then
+        Canvas.Brush.Color := FLineColor
+      else
+        Canvas.Brush.Color := FSecondColor;
+      Canvas.FillRect(Rect(J + S(2), LRect.Top + S(4) + LTextH div 2 - S(2), J + S(12),
+        LRect.Top + S(4) + LTextH div 2 + S(2)));
+      Canvas.Brush.Color := MHThemeColor(clWindow);
+      J := J - S(12);
     end;
-  Canvas.TextOut(LRect.Right - S(6) - Canvas.TextWidth(LText), LRect.Top + S(4), LText);
+  end
+  else
+  begin
+    LText := MHL('нет данных', 'no data');
+    for I := High(FPoints) downto 0 do
+      if FPoints[I].HasValue then
+      begin
+        LText := Fmt(FPoints[I].Value);
+        Break;
+      end;
+    Canvas.TextOut(LRect.Right - S(6) - Canvas.TextWidth(LText), LRect.Top + S(4), LText);
+  end;
 
-  LHasData := MHComputeRange(FPoints, LRange);
+  // Шкала — общая для обеих линий.
+  LHasData := MHComputeRange(FPoints + FSecondPoints, LRange);
   if FUseFixedRange then
   begin
     LRange.Min := FFixedMin;
@@ -460,6 +521,21 @@ begin
     SetLength(LPts, Length(LSegment));
     for I := 0 to High(LSegment) do
       LPts[I] := Point(XOf(FPoints[LSegment[I]].TimestampUtc), YOf(FPoints[LSegment[I]].Value));
+    if Length(LPts) = 1 then
+      Canvas.Ellipse(LPts[0].X - S(2), LPts[0].Y - S(2), LPts[0].X + S(3), LPts[0].Y + S(3))
+    else
+      Canvas.Polyline(LPts);
+  end;
+  if Length(FSecondPoints) = 0 then
+    Exit;
+  Canvas.Pen.Color := FSecondColor;
+  Canvas.Brush.Color := FSecondColor;
+  LSegments := MHSplitSegments(FSecondPoints, FGapFactor);
+  for LSegment in LSegments do
+  begin
+    SetLength(LPts, Length(LSegment));
+    for I := 0 to High(LSegment) do
+      LPts[I] := Point(XOf(FSecondPoints[LSegment[I]].TimestampUtc), YOf(FSecondPoints[LSegment[I]].Value));
     if Length(LPts) = 1 then
       Canvas.Ellipse(LPts[0].X - S(2), LPts[0].Y - S(2), LPts[0].X + S(3), LPts[0].Y + S(3))
     else

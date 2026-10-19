@@ -72,6 +72,7 @@ uses
   MineHunter.App.Notifier in '..\src\App\MineHunter.App.Notifier.pas',
   MineHunter.App.DisksPage in '..\src\App\MineHunter.App.DisksPage.pas',
   MineHunter.App.ListViews in '..\src\App\MineHunter.App.ListViews.pas',
+  MineHunter.App.FileActions in '..\src\App\MineHunter.App.FileActions.pas',
   MineHunter.App.LaunchesPage in '..\src\App\MineHunter.App.LaunchesPage.pas',
   MineHunter.Tests.Background in 'Unit\MineHunter.Tests.Background.pas',
   MineHunter.Collectors.Gpu in '..\src\Core\Collectors\MineHunter.Collectors.Gpu.pas',
@@ -141,7 +142,8 @@ uses
   MineHunter.Tests.Chart in 'Unit\MineHunter.Tests.Chart.pas',
   MineHunter.Tests.Collectors in 'Integration\MineHunter.Tests.Collectors.pas',
   MineHunter.Tests.UI.Smoke in 'UI\MineHunter.Tests.UI.Smoke.pas',
-  MineHunter.Tests.UI.ListViews in 'UI\MineHunter.Tests.UI.ListViews.pas';
+  MineHunter.Tests.UI.ListViews in 'UI\MineHunter.Tests.UI.ListViews.pas',
+  MineHunter.Tests.UI.FileActions in 'UI\MineHunter.Tests.UI.FileActions.pas';
 
 var
   LRunner: ITestRunner;

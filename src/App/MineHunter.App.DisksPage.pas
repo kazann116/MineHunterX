@@ -157,6 +157,8 @@ const
   /// Высота графика сети и видеокарт под таблицей.
   CHART_HEIGHT = 320;
   TOTAL_KEY = 'total';
+  /// Ряд передачи сетевого адаптера (приём — основной ряд).
+  TX_SUFFIX = ':tx';
 
 const
   THREAD_MODE_BACKGROUND_BEGIN = $00010000;
@@ -353,9 +355,9 @@ begin
     SetBounds(8, 8, 1000, 15);
     ShowAccelChar := False;
     Caption := MHL('Каждый сетевой адаптер отдельно и «Всего». Скорость — в битах в секунду, как в диспетчере задач. ' +
-      'Выберите адаптер — график приёма и передачи за 10 минут.',
+      'Выберите адаптер — график приёма (синяя линия) и передачи (оранжевая) за 10 минут.',
       'Each network adapter separately and "Total". Speed is in bits per second, as in Task Manager. ' +
-      'Select an adapter to see receive and send over 10 minutes.');
+      'Select an adapter to see receive (blue line) and send (orange) over 10 minutes.');
   end;
   FNet := NewList(FNetScroll, alTop, 0,
     [MHL('Адаптер', 'Adapter'), MHL('Тип', 'Type'), MHL('Состояние', 'State'), MHL('Скорость канала', 'Link speed'),
@@ -735,7 +737,7 @@ begin
   UpdateGpus(ASnapshot);
   LayoutLists;
   ShowChart(FDiskChart, FDisks, FDiskKeys, MHL('Занятость диска (10 мин)', 'Disk busy (10 min)'));
-  ShowChart(FNetChart, FNet, FNetKeys, MHL('Приём + передача (10 мин)', 'Receive + send (10 min)'));
+  ShowChart(FNetChart, FNet, FNetKeys, MHL('Сеть (10 мин)', 'Network (10 min)'));
   ShowChart(FGpuChart, FGpu, FGpuKeys, MHL('Загрузка видеокарты (10 мин)', 'GPU load (10 min)'));
 end;
 
@@ -757,7 +759,7 @@ var
   LNet: TMHNetAdapterInfo;
   LGpu: TMHGpuAdapterInfo;
   LTime: TDateTime;
-  LMax, LSum: Double;
+  LMax, LSum, LSumTx: Double;
   LAny: Boolean;
 begin
   LTime := ASnapshot.TimestampUtc;
@@ -772,17 +774,24 @@ begin
     end;
   if LAny then
     AddPoint('disk:' + TOTAL_KEY, mkDiskActivePercent, LMax, LTime);
+  // Приём — основной ряд устройства, передача — ряд «…:tx» (две линии на графике).
   LSum := 0;
+  LSumTx := 0;
   LAny := False;
   for LNet in ASnapshot.NetAdapters do
     if LNet.HasRate then
     begin
-      AddPoint('net:' + IntToStr(LNet.Index), mkNetworkBytesPerSec, LNet.ReceiveBytesPerSec + LNet.SendBytesPerSec, LTime);
-      LSum := LSum + LNet.ReceiveBytesPerSec + LNet.SendBytesPerSec;
+      AddPoint('net:' + IntToStr(LNet.Index), mkNetworkBytesPerSec, LNet.ReceiveBytesPerSec, LTime);
+      AddPoint('net:' + IntToStr(LNet.Index) + TX_SUFFIX, mkNetworkBytesPerSec, LNet.SendBytesPerSec, LTime);
+      LSum := LSum + LNet.ReceiveBytesPerSec;
+      LSumTx := LSumTx + LNet.SendBytesPerSec;
       LAny := True;
     end;
   if LAny then
+  begin
     AddPoint('net:' + TOTAL_KEY, mkNetworkBytesPerSec, LSum, LTime);
+    AddPoint('net:' + TOTAL_KEY + TX_SUFFIX, mkNetworkBytesPerSec, LSumTx, LTime);
+  end;
   LMax := 0;
   LAny := False;
   for LGpu in ASnapshot.GpuAdapters do
@@ -820,6 +829,13 @@ begin
     AChart.SetPoints(LBuffer.ToArray)
   else
     AChart.SetPoints(nil);
+  if AChart = FNetChart then
+  begin
+    if FHistory.TryGetValue(LKey + TX_SUFFIX, LBuffer) then
+      AChart.SetSecondSeries(LBuffer.ToArray, MHL('Приём', 'Receive'), MHL('Передача', 'Send'))
+    else
+      AChart.SetSecondSeries(nil, '', '');
+  end;
   LName := AList.Items[LIndex].Caption;
   // У диска в первом столбце только номер — добавляем модель.
   if (AList = FDisks) and (LKey <> 'disk:' + TOTAL_KEY) and (AList.Items[LIndex].SubItems.Count > 0) then
@@ -839,7 +855,7 @@ begin
     LayoutLists;
   end
   else if Sender = FNet then
-    ShowChart(FNetChart, FNet, FNetKeys, MHL('Приём + передача (10 мин)', 'Receive + send (10 min)'))
+    ShowChart(FNetChart, FNet, FNetKeys, MHL('Сеть (10 мин)', 'Network (10 min)'))
   else if Sender = FGpu then
     ShowChart(FGpuChart, FGpu, FGpuKeys, MHL('Загрузка видеокарты (10 мин)', 'GPU load (10 min)'));
 end;

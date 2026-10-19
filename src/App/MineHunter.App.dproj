@@ -120,6 +120,7 @@
         <DCCReference Include="MineHunter.App.Notifier.pas"/>
         <DCCReference Include="MineHunter.App.DisksPage.pas"/>
         <DCCReference Include="MineHunter.App.ListViews.pas"/>
+        <DCCReference Include="MineHunter.App.FileActions.pas"/>
         <DCCReference Include="MineHunter.App.LaunchesPage.pas"/>
         <DCCReference Include="..\Core\Collectors\MineHunter.Collectors.Gpu.pas"/>
         <DCCReference Include="..\Core\Collectors\MineHunter.Collectors.Gpu.WinApi.pas"/>

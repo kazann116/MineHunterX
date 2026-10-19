@@ -71,6 +71,7 @@ type
     [Test] procedure Disks_AttributesOfSelectedDisk;
     [Test] procedure Pages_TablesShownWholeAndWheelScrollsPage;
     [Test] procedure Settings_CheckedFindingsAfterAllowedPrograms_DataFolder;
+    [Test] procedure FileActions_LaunchesAndProcesses;
   end;
 
 implementation
@@ -89,7 +90,7 @@ uses
   MineHunter.Tests.Appearance, MineHunter.Tests.Disks, MineHunter.Tests.FileScan,
   MineHunter.Collectors.Disks, MineHunter.Core.FileScan, MineHunter.App.DisksPage,
   Winapi.CommCtrl, Winapi.Messages, Vcl.Forms, Vcl.Controls, System.Types, MineHunter.App.ListViews,
-  MineHunter.Tests.Fakes, MineHunter.Core.DataDir;
+  MineHunter.Tests.Fakes, MineHunter.Core.DataDir, MineHunter.App.FileActions;
 
 var
   // Подмена операций ОС для тестов действий (nil — настоящие операции).
@@ -1375,6 +1376,39 @@ begin
   Assert.AreEqual('app3.exe', FForm.LaunchesPage.List.Items[0].SubItems[0]);
 end;
 
+procedure TMainFormSmokeTests.FileActions_LaunchesAndProcesses;
+var
+  LRecord: TMHLaunchRecord;
+  LTarget: TMHFileTarget;
+  LText: string;
+begin
+  // «Запуски»: путь, параметры, кто запустил — в подробностях.
+  LRecord := Default(TMHLaunchRecord);
+  LRecord.Pid := 4242;
+  LRecord.Name := 'setup.exe';
+  LRecord.ImagePath := 'C:\Users\User\Downloads\setup.exe';
+  LRecord.CommandLine := '"C:\Users\User\Downloads\setup.exe" /S';
+  LRecord.ParentPid := 100;
+  LRecord.ParentName := 'explorer.exe';
+  LRecord.StartUtc := FServices.Clock.NowUtc;
+  LTarget := FForm.LaunchesPage.TargetOf(LRecord);
+  LText := MHFileDetailsText(LTarget);
+  Assert.IsTrue(LText.Contains('Параметры запуска: /S'), LText);
+  Assert.IsTrue(LText.Contains('Кто запустил: explorer.exe (PID 100)'), LText);
+  Assert.IsTrue(FForm.LaunchesPage.List.PopupMenu <> nil, 'Меню действий в «Запусках»');
+  // «Процессы»: выбранная строка — путь, PID и подпись.
+  FServices.Scanner.ScanOnce;
+  FForm.NavigateTo(pgProcesses);
+  Application.ProcessMessages;
+  Assert.IsTrue(FForm.lvProcesses.Items.Count > 0);
+  FForm.lvProcesses.ItemIndex := 0;
+  Assert.IsTrue(FForm.ProcessTarget(LTarget));
+  Assert.IsNotEmpty(LTarget.Title);
+  Assert.IsTrue(string.Join(' ', LTarget.Details).Contains('PID'));
+  Assert.IsTrue(FForm.lvProcesses.PopupMenu = FForm.ProcessActions.Menu);
+  Assert.IsTrue(FForm.ChangesList.PopupMenu = FForm.ChangesActions.Menu, 'Меню в «Что изменилось»');
+end;
+
 procedure TMainFormSmokeTests.Settings_CheckedFindingsAfterAllowedPrograms_DataFolder;
 var
   LRoot, LTarget, LError, LAsked: string;
@@ -1603,6 +1637,11 @@ begin
   // График по умолчанию — «Всего»; выбор строки — график этого устройства.
   Assert.AreEqual(5, Integer(Length(LPage.NetChart.Points)));
   Assert.IsTrue(LPage.NetChart.Title.Contains('Всего'));
+  // Две линии: приём (сумма 5000 + 500) и передача (100 + 100) — отдельно.
+  Assert.AreEqual(5, Integer(Length(LPage.NetChart.SecondPoints)), 'Вторая линия — передача');
+  Assert.AreEqual(5500.0, LPage.NetChart.Points[4].Value, 0.01);
+  Assert.AreEqual(200.0, LPage.NetChart.SecondPoints[4].Value, 0.01);
+  Assert.IsTrue(LPage.NetChart.SummaryText.Contains('Передача'), LPage.NetChart.SummaryText);
   LPage.GpuView.Items[1].Selected := True;
   Assert.IsTrue(LPage.GpuChart.Title.Contains('GPU B'), LPage.GpuChart.Title);
   Assert.AreEqual(5.0, LPage.GpuChart.Points[0].Value, 0.01);

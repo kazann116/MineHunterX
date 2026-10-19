@@ -13,7 +13,7 @@ interface
 uses
   System.SysUtils, System.Classes, System.Generics.Collections, Vcl.Controls, Vcl.StdCtrls, Vcl.ExtCtrls,
   Vcl.ComCtrls,
-  MineHunter.Core.Types, MineHunter.App.Bootstrap;
+  MineHunter.Core.Types, MineHunter.App.Bootstrap, MineHunter.App.FileActions;
 
 type
   TMHLaunchesPage = class(TComponent)
@@ -32,6 +32,9 @@ type
     FLastReloadUtc: TDateTime;
     FEtw: Boolean;
     FHasSource: Boolean;
+    FActions: TMHFileActions;
+    FConfirm: TMHFileConfirm;
+    function SelectedTarget(out ATarget: TMHFileTarget): Boolean;
     procedure RefreshClick(Sender: TObject);
     procedure FilterChange(Sender: TObject);
     function PeriodHours: Integer;
@@ -48,6 +51,12 @@ type
     property FilterEdit: TEdit read FFilter;
     property PeriodCombo: TComboBox read FPeriod;
     property Rows: TArray<TMHLaunchRecord> read FRows;
+    /// Действия со строкой: подробности, папка, VirusTotal, копирование.
+    property Actions: TMHFileActions read FActions;
+    /// Подтверждение обращений вовне (VirusTotal); задаёт главное окно.
+    property Confirm: TMHFileConfirm read FConfirm write FConfirm;
+    /// Сведения выбранной строки для действий с файлом.
+    function TargetOf(const ARecord: TMHLaunchRecord): TMHFileTarget;
   end;
 
 implementation
@@ -134,6 +143,39 @@ begin
       Caption := LCaptions[I];
       Width := LWidths[I];
     end;
+  FActions := TMHFileActions.Create(Self, FList, SelectedTarget,
+    function(const AQuestion: string): Boolean
+    begin
+      Result := Assigned(FConfirm) and FConfirm(AQuestion);
+    end);
+end;
+
+function TMHLaunchesPage.TargetOf(const ARecord: TMHLaunchRecord): TMHFileTarget;
+var
+  LDuration, LParent: string;
+begin
+  Result := Default(TMHFileTarget);
+  Result.Title := ARecord.Name;
+  Result.Path := ARecord.ImagePath;
+  Result.CommandLine := ARecord.CommandLine;
+  LParent := ARecord.ParentName;
+  if ARecord.ParentPid <> 0 then
+    LParent := Trim(LParent + Format(' (PID %d)', [ARecord.ParentPid]));
+  LDuration := MHLaunchDurationText(ARecord);
+  if LDuration = '' then
+    LDuration := MHL('работает', 'running');
+  Result.Details := [
+    MHL('Запуск: ', 'Started: ') + FormatDateTime('dd.mm.yyyy hh:nn:ss', TTimeZone.Local.ToLocalTime(ARecord.StartUtc)),
+    'PID: ' + IntToStr(ARecord.Pid),
+    MHL('Кто запустил: ', 'Launched by: ') + LParent,
+    MHL('Работала: ', 'Ran for: ') + LDuration];
+end;
+
+function TMHLaunchesPage.SelectedTarget(out ATarget: TMHFileTarget): Boolean;
+begin
+  Result := (FList.Selected <> nil) and (FList.Selected.Index <= High(FRows));
+  if Result then
+    ATarget := TargetOf(FRows[FList.Selected.Index]);
 end;
 
 destructor TMHLaunchesPage.Destroy;
