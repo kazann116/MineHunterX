@@ -93,6 +93,7 @@ type
     [TearDown] procedure TearDown;
     [Test] procedure Cells_ConsistentWithBlockAtPoint;
     [Test] procedure ManyBlocks_Aggregated;
+    [Test] procedure ManyBlocks_PerCellIsMinimal;
     [Test] procedure Click_RaisesBlockOffset;
     [Test] procedure SelectedOffset_Highlights;
     [Test] procedure EntropyColor_ScaleMonotonicAndDistinctEnds;
@@ -113,6 +114,8 @@ type
     [Test] procedure ByteAtPoint_UnevenWidth_EveryByteReachable;
     [Test] procedure Scale_LogarithmicAndLinear;
     [Test] procedure Hint_ByteCountPercent;
+    [Test] procedure Hint_SpaceIsPrintable;
+    [Test] procedure BarRect_PlotWithoutWidthOrHeight_Empty;
     [Test] procedure Paint_NormalEmptyTiny;
   end;
 
@@ -877,6 +880,37 @@ begin
   RenderAndFree(FMap);
 end;
 
+procedure TEntropyMapTests.ManyBlocks_PerCellIsMinimal;
+var
+  LLow, LHigh, LMid, LCapacity: Integer;
+begin
+  // Ёмкость сетки при самой мелкой клетке — наибольшее число блоков, которые ещё
+  // не сводятся (до неё клетка только уменьшается, блоков в клетке — 1).
+  LLow := 1;
+  LHigh := 200000;
+  SetBlocks(LHigh);
+  Assert.IsTrue(FMap.BlocksPerCell > 1);
+  while LHigh - LLow > 1 do
+  begin
+    LMid := (LLow + LHigh) div 2;
+    SetBlocks(LMid);
+    if FMap.BlocksPerCell = 1 then
+      LLow := LMid
+    else
+      LHigh := LMid;
+  end;
+  LCapacity := LLow;
+  SetBlocks(LCapacity);
+  Assert.AreEqual(LCapacity, FMap.CellCount, 'Все клетки заняты');
+  // Ровно вдвое больше блоков — по два в клетке, клеток столько же.
+  SetBlocks(2 * LCapacity);
+  Assert.AreEqual(2, FMap.BlocksPerCell, 'Наименьшее число блоков в клетке');
+  Assert.AreEqual(LCapacity, FMap.CellCount);
+  SetBlocks(2 * LCapacity + 1);
+  Assert.AreEqual(3, FMap.BlocksPerCell);
+  Assert.IsTrue(FMap.CellCount <= LCapacity);
+end;
+
 procedure TEntropyMapTests.Click_RaisesBlockOffset;
 begin
   SetBlocks(100);
@@ -1116,6 +1150,40 @@ begin
   Assert.Contains(LHint, '0x00');
   Assert.IsFalse(LHint.Contains(''''), 'Непечатный байт — без символа');
   Assert.AreEqual('', FHistogram.HintTextAt(0, 0));
+end;
+
+procedure THistogramTests.Hint_SpaceIsPrintable;
+var
+  LCounts: array[0..255] of Int64;
+  I: Integer;
+  R: TRect;
+begin
+  for I := 0 to 255 do
+    LCounts[I] := 10;
+  FHistogram.SetHistogram(LCounts);
+  R := FHistogram.BarRect($20);
+  Assert.Contains(FHistogram.HintTextAt(Center(R).X, Center(R).Y), '0x20 ('' '')', 'Пробел — печатный символ');
+  R := FHistogram.BarRect($1F);
+  Assert.DoesNotContain(FHistogram.HintTextAt(Center(R).X, Center(R).Y), '(''', 'Управляющий символ не показывается');
+  R := FHistogram.BarRect($7F);
+  Assert.DoesNotContain(FHistogram.HintTextAt(Center(R).X, Center(R).Y), '(''');
+end;
+
+procedure THistogramTests.BarRect_PlotWithoutWidthOrHeight_Empty;
+var
+  LCounts: array[0..255] of Int64;
+  I: Integer;
+begin
+  for I := 0 to 255 do
+    LCounts[I] := I + 1;
+  FHistogram.SetHistogram(LCounts);
+  // Нет ширины при достаточной высоте и нет высоты при достаточной ширине — столбцов нет.
+  FHistogram.SetBounds(0, 0, 2, 160);
+  Assert.IsTrue(FHistogram.BarRect(10) = Rect(0, 0, 0, 0), 'Нет ширины');
+  FHistogram.SetBounds(0, 0, 520, 2);
+  Assert.IsTrue(FHistogram.BarRect(10) = Rect(0, 0, 0, 0), 'Нет высоты');
+  FHistogram.SetBounds(0, 0, 520, 160);
+  Assert.IsFalse(FHistogram.BarRect(10).IsEmpty);
 end;
 
 procedure THistogramTests.Paint_NormalEmptyTiny;

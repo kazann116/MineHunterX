@@ -9,7 +9,10 @@
 
 Итог — build/binarylab-mutation.json. Запуск:
   python tools/binarylab_mutation.py [число мутантов, по умолчанию 60] [начальное число]
-  python tools/binarylab_mutation.py --survivors   — повторить только выживших прошлого прогона
+  python tools/binarylab_mutation.py --ui [число] [начальное число] — интерфейс: элементы
+    (App.BinaryLab.Controls) и страница (App.BinaryLabPage); запускаются тесты BinaryLab, в том
+    числе элементов, и сценарии страницы из UI Smoke; итог — build/binarylab-mutation-ui.json
+  python tools/binarylab_mutation.py --survivors [--ui] — повторить только выживших прошлого прогона
     (после новых тестов); итог — build/binarylab-mutation-survivors.json
 """
 import json
@@ -63,12 +66,23 @@ def code_spans(line):
     return spans
 
 
-def candidate_sites():
+UI_FILES = [os.path.join(ROOT, 'src', 'App', 'MineHunter.App.BinaryLab.Controls.pas'),
+            os.path.join(ROOT, 'src', 'App', 'MineHunter.App.BinaryLabPage.pas')]
+SMOKE_TESTS = ['BinaryLab_PageAndMenus', 'BinaryLab_AnalyzeNavigateFindExportCompare',
+               'BinaryLab_ButtonsDialogsAndDoubleClicks', 'BinaryLab_PageMethods_WithoutDataAreSafe',
+               'BinaryLab_ErrorsCancelAndCloseWhileBusy', 'BinaryLab_DoubleClickEdgeCases']
+
+
+def source_files(ui):
+    if ui:
+        return UI_FILES
+    return [os.path.join(CORE, n) for n in sorted(os.listdir(CORE)) if n.endswith('.pas')]
+
+
+def candidate_sites(ui=False):
     sites = []
-    for name in sorted(os.listdir(CORE)):
-        if not name.endswith('.pas'):
-            continue
-        path = os.path.join(CORE, name)
+    for path in source_files(ui):
+        name = os.path.basename(path)
         lines = open(path, encoding='utf-8-sig').read().split('\n')
         try:
             begin = next(i for i, l in enumerate(lines) if l.strip() == 'implementation')
@@ -107,15 +121,19 @@ def run(cmd, timeout, env=None, cwd=None):
 
 
 def main():
-    survivors_mode = len(sys.argv) > 1 and sys.argv[1] == '--survivors'
-    count = int(sys.argv[1]) if len(sys.argv) > 1 and not survivors_mode else 60
-    seed = int(sys.argv[2]) if len(sys.argv) > 2 else 2026
+    ui = '--ui' in sys.argv
+    args = [a for a in sys.argv[1:] if a != '--ui']
+    survivors_mode = bool(args) and args[0] == '--survivors'
+    count = int(args[0]) if args and not survivors_mode else 60
+    seed = int(args[1]) if len(args) > 1 else 2026
+    prefix = 'binarylab-mutation-ui' if ui else 'binarylab-mutation'
     previous = []
     if survivors_mode:
-        data = json.load(open(os.path.join(ROOT, 'build', 'binarylab-mutation.json'), encoding='utf-8'))
+        data = json.load(open(os.path.join(ROOT, 'build', prefix + '.json'), encoding='utf-8'))
         previous = [r for r in data['results'] if r['status'] == 'выжил']
         seed = data['seed']
-    sites = candidate_sites()
+    sites = candidate_sites(ui)
+    paths = {os.path.basename(p): p for p in source_files(ui)}
     rng = random.Random(seed)
     # Равномерно по модулям: каждому модулю — доля мутантов.
     by_unit = {}
@@ -136,7 +154,7 @@ def main():
     if survivors_mode:
         chosen = [(r['unit'], r['line'] - 1, None, None, r['mutated'], r['mutation']) for r in previous]
     for index, (unit, no, a, b, replacement, title) in enumerate(chosen, 1):
-        src_path = os.path.join(CORE, unit)
+        src_path = paths[unit]
         lines = open(src_path, encoding='utf-8-sig', newline='').read().split('\r\n')
         original = lines[no]
         if a is None:
@@ -169,14 +187,26 @@ def main():
             entry['status'] = 'не компилируется'
         else:
             exe = os.path.join(ROOT, 'build', 'tmp', 'mutation-out', 'MineHunter.Tests.exe')
-            code, out, timed_out = run([exe, '--exitbehavior:Continue', '--consolemode:Quiet', '--include:BinaryLab',
-                                        '--exclude:UI'], 300, cwd=os.path.dirname(exe))
-            failed = re.search(r'Tests Failed\s*:\s*(\d+)', out)
-            errored = re.search(r'Tests Errored\s*:\s*(\d+)', out)
+            if ui:
+                # Тесты BinaryLab (включая элементы интерфейса) и сценарии страницы из UI Smoke.
+                code, out, timed_out = run([exe, '--exitbehavior:Continue', '--consolemode:Quiet', '--include:BinaryLab'],
+                                           600, cwd=os.path.dirname(exe))
+                if not timed_out:
+                    code2, out2, timed_out = run([exe, '--exitbehavior:Continue', '--consolemode:Quiet', '--run:' + ','.join(
+                        'MineHunter.Tests.UI.Smoke.TMainFormSmokeTests.' + t for t in SMOKE_TESTS)], 600,
+                        cwd=os.path.dirname(exe))
+                    out += out2
+                    code = code or code2
+            else:
+                code, out, timed_out = run([exe, '--exitbehavior:Continue', '--consolemode:Quiet', '--include:BinaryLab',
+                                            '--exclude:UI'], 300, cwd=os.path.dirname(exe))
+            failed_all = [int(x) for x in re.findall(r'Tests Failed\s*:\s*(\d+)', out)]
+            errored_all = [int(x) for x in re.findall(r'Tests Errored\s*:\s*(\d+)', out)]
+            failed = sum(failed_all) if failed_all else None
+            errored = sum(errored_all) if errored_all else 0
             if timed_out:
                 entry['status'] = 'убит (зависание)'
-            elif code != 0 or (failed and int(failed.group(1)) > 0) or (errored and int(errored.group(1)) > 0) \
-                    or not failed:
+            elif code != 0 or failed is None or failed > 0 or errored > 0:
                 names = re.findall(r'^\s+(MineHunter\.Tests\.[\w.]+)\s*$', out, re.M)
                 entry['status'] = 'убит'
                 entry['killed_by'] = names[:5]
@@ -189,7 +219,7 @@ def main():
     summary = {'seed': seed, 'mutants': len(results), 'compiled': len(valid), 'killed': len(killed),
                'survived': len(valid) - len(killed),
                'score_percent': round(100.0 * len(killed) / len(valid), 1) if valid else 0.0, 'results': results}
-    name = 'binarylab-mutation-survivors.json' if survivors_mode else 'binarylab-mutation.json'
+    name = prefix + ('-survivors.json' if survivors_mode else '.json')
     with open(os.path.join(ROOT, 'build', name), 'w', encoding='utf-8') as f:
         json.dump(summary, f, ensure_ascii=False, indent=1)
     print('mutants=%d compiled=%d killed=%d survived=%d score=%.1f%%' % (

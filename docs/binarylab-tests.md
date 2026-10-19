@@ -64,8 +64,8 @@
 | `BinaryLab.Report` | `MHBinaryReportToJson` | пустой отчёт (не PE) — корректный JSON; данные с разметкой сохраняются как текст | `Json_RoundTripStructure` | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 3/3, строк Assert выполнено в Release 3/3 | TBinaryLabMutationTests.Json_OnlyNonZeroStringCategories, TBinaryLabReportTests.Json_RoundTripStructure |
 | `BinaryLab.Report` | `MHSaveBinaryDiff` | расширение без учёта регистра; недостающие папки создаются; недопустимое имя → исключение | `DiffTitles_AndSaveDiff` | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 4/4, строк Assert выполнено в Release 4/4 | TBinaryLabApiTests.DiffTitles_AndSaveDiff |
 | `BinaryLab.Report` | `MHSaveBinaryReport` | выбор формата по расширению; имя файла кириллицей | `Save_ByExtension` | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 1/1, строк Assert выполнено в Release 1/1 | TBinaryLabReportTests.Save_ByExtension |
-| `BinaryLab.Source` | `GetName` | путь файла как имя источника | `FileSource_ReadsAndKeepsFileUnchanged` | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 1/1, строк Assert выполнено в Release 1/1 | TBinaryLabApiTests.Sections_FlagsFindAndRva, TBinaryLabBasicsTests.FileSource_ReadsAndKeepsFileUnchanged, TBinaryLabDiffTests.Modified_Pe_SectionsImportsExportsResourcesBlocks, TBinaryLabDiffTests.NonPe_StringsCompared и ещё 9 |
-| `BinaryLab.Source` | `GetSize` | пустой источник — 0; размер файла | `Reader_EmptySource`, `FileSource_ReadsAndKeepsFileUnchanged` | Debug 2/2, Release 2/2, отдельно Debug 2/2, отдельно Release 2/2, строк Assert выполнено в Debug 2/2, строк Assert выполнено в Release 2/2 | TBinaryLabAnalyzerTests.SuspiciousPe_FullPipeline, TBinaryLabAnomalyTests.CleanProgram_NoThreatVerdict, TBinaryLabAnomalyTests.DamagedHeader_NonPeData, TBinaryLabAnomalyTests.DotNet_NoImportsIsNormal и ещё 37 |
+| `BinaryLab.Source` | `GetName` | путь файла как имя источника | `FileSource_ReadsAndKeepsFileUnchanged` | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 1/1, строк Assert выполнено в Release 1/1 | TBinaryLabApiTests.Sections_FlagsFindAndRva, TBinaryLabBasicsTests.FileSource_ReadsAndKeepsFileUnchanged, TBinaryLabDiffTests.Modified_Pe_SectionsImportsExportsResourcesBlocks, TBinaryLabDiffTests.NonPe_StringsCompared и ещё 10 |
+| `BinaryLab.Source` | `GetSize` | пустой источник — 0; размер файла | `Reader_EmptySource`, `FileSource_ReadsAndKeepsFileUnchanged` | Debug 2/2, Release 2/2, отдельно Debug 2/2, отдельно Release 2/2, строк Assert выполнено в Debug 2/2, строк Assert выполнено в Release 2/2 | TBinaryLabAnalyzerTests.SuspiciousPe_FullPipeline, TBinaryLabAnomalyTests.CleanProgram_NoThreatVerdict, TBinaryLabAnomalyTests.DamagedHeader_NonPeData, TBinaryLabAnomalyTests.DotNet_NoImportsIsNormal и ещё 38 |
 | `BinaryLab.Source` | `InRange` | диапазон длиннее остатка; отрицательная длина | `Reader_BoundsAreChecked` | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 3/3, строк Assert выполнено в Release 3/3 | TBinaryLabBasicsTests.Reader_BoundsAreChecked |
 | `BinaryLab.Source` | `MHCheckCancel` | nil; ложь; истина → EMHBinaryLabCancelled | `CheckCancel_NilFalseTrue` | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 2/2, строк Assert выполнено в Release 2/2 | TBinaryLabApiTests.CheckCancel_NilFalseTrue |
 | `BinaryLab.Source` | `MHFindBytes` | граница блока 1 МБ; регистр; лимит; пустой шаблон и данные; начало за концом и отрицательное; nil; отмена | `FindBytes_FoundCaseLimitAndBoundary`, `FindBytes_EdgeAndErrorCases` | Debug 2/2, Release 2/2, отдельно Debug 2/2, отдельно Release 2/2, строк Assert выполнено в Debug 17/17, строк Assert выполнено в Release 17/17 | TBinaryLabApiTests.FindBytes_EdgeAndErrorCases, TBinaryLabApiTests.FindBytes_FoundCaseLimitAndBoundary |
@@ -110,27 +110,27 @@
 | `BinaryLab.Types` | `Normalized` | все пределы сверху и снизу; 0 — автоматический размер блока | `Options_NormalizedLimitsBothSides`, `Options_Normalized` | Debug 2/2, Release 2/2, отдельно Debug 2/2, отдельно Release 2/2, строк Assert выполнено в Debug 9/9, строк Assert выполнено в Release 9/9 | TBinaryLabApiTests.Options_NormalizedLimitsBothSides, TBinaryLabBasicsTests.Options_Normalized |
 | `BinaryLab.Types` | `SectionOfRva` | сразу за секцией; заголовки; предельный адрес; нет секций | `Sections_FlagsFindAndRva` | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 7/7, строк Assert выполнено в Release 7/7 | TBinaryLabApiTests.Sections_FlagsFindAndRva |
 | `BinaryLab.Verdicts` | `Clear` | после очистки — 0 | `Store_MatchByPathAndHash` | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 1/1, строк Assert выполнено в Release 1/1 | TBinaryLabApiTests.EnumTitlesAndNames_AllValuesDistinct, TBinaryLabVerdictTests.Store_MatchByPathAndHash, TMainFormSmokeTests.Pages_TablesShownWholeAndWheelScrollsPage |
-| `BinaryLab.Verdicts` | `Count` | замена вердикта не увеличивает число; вытеснение | `Store_MatchByPathAndHash`, `Store_EvictsOldest` | Debug 2/2, Release 2/2, отдельно Debug 2/2, отдельно Release 2/2, строк Assert выполнено в Debug 5/5, строк Assert выполнено в Release 5/5 | TBinaryLabMutationTests.Json_OnlyNonZeroStringCategories, TBinaryLabReportTests.Diff_JsonAndHtml, TBinaryLabReportTests.Json_RoundTripStructure, TBinaryLabVerdictTests.Store_ConcurrentAccess и ещё 31 |
+| `BinaryLab.Verdicts` | `Count` | замена вердикта не увеличивает число; вытеснение | `Store_MatchByPathAndHash`, `Store_EvictsOldest` | Debug 2/2, Release 2/2, отдельно Debug 2/2, отдельно Release 2/2, строк Assert выполнено в Debug 5/5, строк Assert выполнено в Release 5/5 | TBinaryLabMutationTests.Json_OnlyNonZeroStringCategories, TBinaryLabReportTests.Diff_JsonAndHtml, TBinaryLabReportTests.Json_RoundTripStructure, TBinaryLabVerdictTests.Store_ConcurrentAccess и ещё 32 |
 | `BinaryLab.Verdicts` | `MHVerdictFromReport` | сведения и слабые признаки не передаются; предел суммы 40; доверенная подпись; пустой отчёт | `FromReport_WeightsSignalsAndCap` | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 7/7, строк Assert выполнено в Release 7/7 | TBinaryLabVerdictTests.FromReport_WeightsSignalsAndCap |
 | `BinaryLab.Verdicts` | `Put` | пустой путь не сохраняется; повтор заменяет; больше предела вытесняет старые; параллельный доступ | `Store_MatchByPathAndHash`, `Store_EvictsOldest`, `Store_ConcurrentAccess` | Debug 3/3, Release 3/3, отдельно Debug 3/3, отдельно Release 3/3, строк Assert выполнено в Debug 8/8, строк Assert выполнено в Release 8/8 | TBinaryLabEmbeddedTests.Embedded_ChunkBoundaries, TBinaryLabEmbeddedTests.Embedded_LocateAndMaxScanBytes, TBinaryLabStringsTests.Strings_ChunkBoundary_FoundOnce, TBinaryLabStringsTests.Strings_MaxScanBytesRespected и ещё 5 |
 | `BinaryLab.Verdicts` | `TryGet` | другой SHA-256 → False; пустой хеш запроса; пустой путь; регистр пути | `Store_MatchByPathAndHash`, `Store_EvictsOldest` | Debug 2/2, Release 2/2, отдельно Debug 2/2, отдельно Release 2/2, строк Assert выполнено в Debug 8/8, строк Assert выполнено в Release 8/8 | TBinaryLabVerdictTests.Store_ConcurrentAccess, TBinaryLabVerdictTests.Store_EvictsOldest, TBinaryLabVerdictTests.Store_MatchByPathAndHash, TMainFormSmokeTests.BinaryLab_AnalyzeNavigateFindExportCompare |
 | `App.BinaryLab.Controls` | `AddHighlight` | до создания окна; поиск подсветки вне диапазонов | `Highlights_LookupAndHint`, `BeforeHandle_Safe` | Debug 2/2, Release 2/2, отдельно Debug 2/2, отдельно Release 2/2, строк Assert выполнено в Debug 5/5, строк Assert выполнено в Release 5/5 | TBinaryLabDarkThemeTests.AllControls_PaintInDarkTheme, THexViewTests.BeforeHandle_Safe, THexViewTests.Highlights_LookupAndHint, THexViewTests.Paint_NormalAndTiny |
 | `App.BinaryLab.Controls` | `BarFraction` | пустая гистограмма; нулевой и максимальный столбец; шкалы | `Histogram_BarFractionEdges` | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 9/9, строк Assert выполнено в Release 9/9 | TBinaryLabApiTests.Histogram_BarFractionEdges, THistogramTests.Scale_LogarithmicAndLinear |
-| `App.BinaryLab.Controls` | `BarRect` | крошечный размер окна | `Paint_NormalEmptyTiny` | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 1/1, строк Assert выполнено в Release 1/1 | THistogramTests.ByteAtPoint_MatchesBars, THistogramTests.ByteAtPoint_UnevenWidth_EveryByteReachable, THistogramTests.Hint_ByteCountPercent, THistogramTests.Paint_NormalEmptyTiny |
+| `App.BinaryLab.Controls` | `BarRect` | крошечный размер окна; нет только ширины или только высоты | `Paint_NormalEmptyTiny`, `BarRect_PlotWithoutWidthOrHeight_Empty` | Debug 2/2, Release 2/2, отдельно Debug 2/2, отдельно Release 2/2, строк Assert выполнено в Debug 4/4, строк Assert выполнено в Release 4/4 | THistogramTests.BarRect_PlotWithoutWidthOrHeight_Empty, THistogramTests.ByteAtPoint_MatchesBars, THistogramTests.ByteAtPoint_UnevenWidth_EveryByteReachable, THistogramTests.Hint_ByteCountPercent и ещё 2 |
 | `App.BinaryLab.Controls` | `BlockAtPoint` | точка вне карты; блоков больше, чем клеток | `Cells_ConsistentWithBlockAtPoint`, `ManyBlocks_Aggregated` | Debug 2/2, Release 2/2, отдельно Debug 2/2, отдельно Release 2/2, строк Assert выполнено в Debug 5/5, строк Assert выполнено в Release 5/5 | TEntropyMapTests.Cells_ConsistentWithBlockAtPoint, TEntropyMapTests.ManyBlocks_Aggregated, TEntropyMapTests.Paint_CellColourAndEmptyAndTiny |
 | `App.BinaryLab.Controls` | `BlockCount` | до данных и после пустых данных — 0 | `EntropyMap_BlockCountEmptyAndData` | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 4/4, строк Assert выполнено в Release 4/4 | TBinaryLabApiTests.EntropyMap_BlockCountEmptyAndData, TMainFormSmokeTests.BinaryLab_AnalyzeNavigateFindExportCompare |
-| `App.BinaryLab.Controls` | `BlocksPerCell` | блоков больше, чем клеток | `ManyBlocks_Aggregated` | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 2/2, строк Assert выполнено в Release 2/2 | TEntropyMapTests.Cells_ConsistentWithBlockAtPoint, TEntropyMapTests.ManyBlocks_Aggregated |
+| `App.BinaryLab.Controls` | `BlocksPerCell` | блоков больше, чем клеток; ровно вдвое больше ёмкости | `ManyBlocks_Aggregated`, `ManyBlocks_PerCellIsMinimal` | Debug 2/2, Release 2/2, отдельно Debug 2/2, отдельно Release 2/2, строк Assert выполнено в Debug 5/5, строк Assert выполнено в Release 5/5 | TEntropyMapTests.Cells_ConsistentWithBlockAtPoint, TEntropyMapTests.ManyBlocks_Aggregated, TEntropyMapTests.ManyBlocks_PerCellIsMinimal |
 | `App.BinaryLab.Controls` | `ByteAtPoint` | неровная ширина — каждый байт достижим; точка вне графика | `ByteAtPoint_UnevenWidth_EveryByteReachable`, `ByteAtPoint_MatchesBars` | Debug 2/2, Release 2/2, отдельно Debug 2/2, отдельно Release 2/2, строк Assert выполнено в Debug 6/6, строк Assert выполнено в Release 6/6 | THistogramTests.ByteAtPoint_MatchesBars, THistogramTests.ByteAtPoint_UnevenWidth_EveryByteReachable, THistogramTests.Paint_NormalEmptyTiny |
-| `App.BinaryLab.Controls` | `CellCount` | блоков больше, чем клеток | `ManyBlocks_Aggregated` | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 2/2, строк Assert выполнено в Release 2/2 | TEntropyMapTests.Cells_ConsistentWithBlockAtPoint, TEntropyMapTests.ManyBlocks_Aggregated, TEntropyMapTests.Paint_CellColourAndEmptyAndTiny |
+| `App.BinaryLab.Controls` | `CellCount` | блоков больше, чем клеток; ёмкость заполнена целиком | `ManyBlocks_Aggregated`, `ManyBlocks_PerCellIsMinimal` | Debug 2/2, Release 2/2, отдельно Debug 2/2, отдельно Release 2/2, строк Assert выполнено в Debug 5/5, строк Assert выполнено в Release 5/5 | TEntropyMapTests.Cells_ConsistentWithBlockAtPoint, TEntropyMapTests.ManyBlocks_Aggregated, TEntropyMapTests.ManyBlocks_PerCellIsMinimal, TEntropyMapTests.Paint_CellColourAndEmptyAndTiny |
 | `App.BinaryLab.Controls` | `CellRect` | крайние клетки и агрегирование | `Cells_ConsistentWithBlockAtPoint`, `ManyBlocks_Aggregated` | Debug 2/2, Release 2/2, отдельно Debug 2/2, отдельно Release 2/2, строк Assert выполнено в Debug 11/11, строк Assert выполнено в Release 11/11 | TEntropyMapTests.Cells_ConsistentWithBlockAtPoint, TEntropyMapTests.Click_RaisesBlockOffset, TEntropyMapTests.Hint_RangeEntropyAndBand, TEntropyMapTests.ManyBlocks_Aggregated и ещё 2 |
 | `App.BinaryLab.Controls` | `ClearHighlights` | после очистки подсветки нет | `Highlights_LookupAndHint` | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 2/2, строк Assert выполнено в Release 2/2 | THexViewTests.Highlights_LookupAndHint |
 | `App.BinaryLab.Controls` | `ContentWidth` | точки правее данных | `OffsetAtPoint_OutsideColumns_False` | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 1/1, строк Assert выполнено в Release 1/1 | THexViewTests.OffsetAtPoint_OutsideColumns_False, THexViewTests.Rows_CountAndVisible |
 | `App.BinaryLab.Controls` | `EntropyColor` | концы шкалы различны, монотонность | `EntropyColor_ScaleMonotonicAndDistinctEnds` | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 7/7, строк Assert выполнено в Release 7/7 | TEntropyMapTests.EntropyColor_ScaleMonotonicAndDistinctEnds, TEntropyMapTests.Paint_CellColourAndEmptyAndTiny |
 | `App.BinaryLab.Controls` | `FindNext` | не найдено — позиция прежняя; переход в начало; регистр; без источника | `FindNext_FindsWrapsAndKeepsPositionWhenMissing`, `FindNext_IgnoreCase`, `NilSource_Safe` | Debug 3/3, Release 3/3, отдельно Debug 3/3, отдельно Release 3/3, строк Assert выполнено в Debug 9/9, строк Assert выполнено в Release 9/9 | THexViewTests.BeforeHandle_Safe, THexViewTests.FindNext_FindsWrapsAndKeepsPositionWhenMissing, THexViewTests.FindNext_IgnoreCase, THexViewTests.NilSource_Safe |
-| `App.BinaryLab.Controls` | `GotoOffset` | смещение уже на экране; за концом; без окна | `Goto_VisibleOffset_DoesNotScroll`, `Goto_ScrollsIntoViewAndSelects`, `BeforeHandle_Safe` | Debug 3/3, Release 3/3, отдельно Debug 3/3, отдельно Release 3/3, строк Assert выполнено в Debug 11/11, строк Assert выполнено в Release 11/11 | TBinaryLabDarkThemeTests.AllControls_PaintInDarkTheme, THexViewTests.BeforeHandle_Safe, THexViewTests.BigVirtualSource_ScrollsToEndAndReadsOnlyPage, THexViewTests.FindNext_FindsWrapsAndKeepsPositionWhenMissing и ещё 6 |
+| `App.BinaryLab.Controls` | `GotoOffset` | смещение уже на экране; за концом; без окна | `Goto_VisibleOffset_DoesNotScroll`, `Goto_ScrollsIntoViewAndSelects`, `BeforeHandle_Safe` | Debug 3/3, Release 3/3, отдельно Debug 3/3, отдельно Release 3/3, строк Assert выполнено в Debug 11/11, строк Assert выполнено в Release 11/11 | TBinaryLabDarkThemeTests.AllControls_PaintInDarkTheme, THexViewTests.BeforeHandle_Safe, THexViewTests.BigVirtualSource_ScrollsToEndAndReadsOnlyPage, THexViewTests.FindNext_FindsWrapsAndKeepsPositionWhenMissing и ещё 7 |
 | `App.BinaryLab.Controls` | `HighlightAt` | смещение вне подсветки → False | `Highlights_LookupAndHint` | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 6/6, строк Assert выполнено в Release 6/6 | THexViewTests.Highlights_LookupAndHint |
 | `App.BinaryLab.Controls` | `HighlightCount` | после очистки — 0 | `Highlights_LookupAndHint` | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 2/2, строк Assert выполнено в Release 2/2 | THexViewTests.Highlights_LookupAndHint |
-| `App.BinaryLab.Controls` | `HintTextAt` | точка вне данных | `Hint_RangeEntropyAndBand`, `Hint_ByteCountPercent` | Debug 2/2, Release 2/2, отдельно Debug 2/2, отдельно Release 2/2, строк Assert выполнено в Debug 12/12, строк Assert выполнено в Release 12/12 | TEntropyMapTests.Hint_RangeEntropyAndBand, TEntropyMapTests.ManyBlocks_Aggregated, TEntropyMapTests.Paint_CellColourAndEmptyAndTiny, THexViewTests.BigVirtualSource_ScrollsToEndAndReadsOnlyPage и ещё 7 |
+| `App.BinaryLab.Controls` | `HintTextAt` | точка вне данных; пробел и управляющие байты | `Hint_RangeEntropyAndBand`, `Hint_ByteCountPercent`, `Hint_SpaceIsPrintable` | Debug 3/3, Release 3/3, отдельно Debug 3/3, отдельно Release 3/3, строк Assert выполнено в Debug 15/15, строк Assert выполнено в Release 15/15 | TEntropyMapTests.Hint_RangeEntropyAndBand, TEntropyMapTests.ManyBlocks_Aggregated, TEntropyMapTests.Paint_CellColourAndEmptyAndTiny, THexViewTests.BigVirtualSource_ScrollsToEndAndReadsOnlyPage и ещё 8 |
 | `App.BinaryLab.Controls` | `InvalidateData` | сброс кэша после прокрутки | `BinaryLab_ButtonsDialogsAndDoubleClicks` | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 2/2, строк Assert выполнено в Release 2/2 | TMainFormSmokeTests.BinaryLab_ButtonsDialogsAndDoubleClicks |
 | `App.BinaryLab.Controls` | `MHBlendColor` | доли 0, 1 и 0,5 | `BinaryLab_ButtonsDialogsAndDoubleClicks` | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 4/4, строк Assert выполнено в Release 4/4 | TMainFormSmokeTests.BinaryLab_ButtonsDialogsAndDoubleClicks |
 | `App.BinaryLab.Controls` | `OffsetAtPoint` | точки вне колонок; без источника; без окна | `OffsetAtPoint_OutsideColumns_False`, `NilSource_Safe`, `BeforeHandle_Safe` | Debug 3/3, Release 3/3, отдельно Debug 3/3, отдельно Release 3/3, строк Assert выполнено в Debug 7/7, строк Assert выполнено в Release 7/7 | THexViewTests.BeforeHandle_Safe, THexViewTests.BigVirtualSource_ScrollsToEndAndReadsOnlyPage, THexViewTests.NilSource_Safe, THexViewTests.OffsetAtPoint_InverseOfPointOfOffset и ещё 1 |
@@ -141,19 +141,19 @@
 | `App.BinaryLab.Controls` | `RowCount` | без источника — 0 | `NilSource_Safe` | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 1/1, строк Assert выполнено в Release 1/1 | THexViewTests.BigVirtualSource_ScrollsToEndAndReadsOnlyPage, THexViewTests.NilSource_Safe, THexViewTests.Rows_CountAndVisible, THexViewTests.ScrollBarMessages_Scroll и ещё 1 |
 | `App.BinaryLab.Controls` | `ScrollRows` | не выше начала | `BinaryLab_ButtonsDialogsAndDoubleClicks` | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 3/3, строк Assert выполнено в Release 3/3 | TMainFormSmokeTests.BinaryLab_ButtonsDialogsAndDoubleClicks |
 | `App.BinaryLab.Controls` | `SetBands` | полоса в подсказке | `Hint_RangeEntropyAndBand` | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 2/2, строк Assert выполнено в Release 2/2 | TEntropyMapTests.Hint_RangeEntropyAndBand |
-| `App.BinaryLab.Controls` | `SetData` | пустые данные; крошечное окно | `Paint_CellColourAndEmptyAndTiny` | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 7/7, строк Assert выполнено в Release 7/7 | TBinaryLabApiTests.EntropyMap_BlockCountEmptyAndData, TBinaryLabDarkThemeTests.AllControls_PaintInDarkTheme, TEntropyMapTests.Cells_ConsistentWithBlockAtPoint, TEntropyMapTests.Click_RaisesBlockOffset и ещё 19 |
-| `App.BinaryLab.Controls` | `SetHistogram` | пустой массив; меньше 256 значений | `Histogram_BarFractionEdges`, `Paint_NormalEmptyTiny` | Debug 2/2, Release 2/2, отдельно Debug 2/2, отдельно Release 2/2, строк Assert выполнено в Debug 7/7, строк Assert выполнено в Release 7/7 | TBinaryLabApiTests.Histogram_BarFractionEdges, TBinaryLabDarkThemeTests.AllControls_PaintInDarkTheme, THistogramTests.ByteAtPoint_MatchesBars, THistogramTests.ByteAtPoint_UnevenWidth_EveryByteReachable и ещё 3 |
+| `App.BinaryLab.Controls` | `SetData` | пустые данные; крошечное окно | `Paint_CellColourAndEmptyAndTiny` | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 7/7, строк Assert выполнено в Release 7/7 | TBinaryLabApiTests.EntropyMap_BlockCountEmptyAndData, TBinaryLabDarkThemeTests.AllControls_PaintInDarkTheme, TEntropyMapTests.Cells_ConsistentWithBlockAtPoint, TEntropyMapTests.Click_RaisesBlockOffset и ещё 20 |
+| `App.BinaryLab.Controls` | `SetHistogram` | пустой массив; меньше 256 значений | `Histogram_BarFractionEdges`, `Paint_NormalEmptyTiny` | Debug 2/2, Release 2/2, отдельно Debug 2/2, отдельно Release 2/2, строк Assert выполнено в Debug 7/7, строк Assert выполнено в Release 7/7 | TBinaryLabApiTests.Histogram_BarFractionEdges, TBinaryLabDarkThemeTests.AllControls_PaintInDarkTheme, THistogramTests.BarRect_PlotWithoutWidthOrHeight_Empty, THistogramTests.ByteAtPoint_MatchesBars и ещё 5 |
 | `App.BinaryLab.Controls` | `SetRanges` | нулевой размер файла | `ZeroFileSize_Safe` | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 3/3, строк Assert выполнено в Release 3/3 | TBinaryLabDarkThemeTests.AllControls_PaintInDarkTheme, TRangeStripTests.ZeroFileSize_Safe |
 | `App.BinaryLab.Controls` | `VisibleRows` | огромный виртуальный файл | `BigVirtualSource_ScrollsToEndAndReadsOnlyPage` | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 6/6, строк Assert выполнено в Release 6/6 | THexViewTests.BigVirtualSource_ScrollsToEndAndReadsOnlyPage, THexViewTests.FindNext_FindsWrapsAndKeepsPositionWhenMissing, THexViewTests.Goto_ScrollsIntoViewAndSelects, THexViewTests.HugeSource_ScrollBarScaled и ещё 7 |
-| `App.BinaryLabPage` | `Busy` | после ошибки, отмены и закрытия окна — False | `BinaryLab_ErrorsCancelAndCloseWhileBusy`, `BinaryLab_PageMethods_WithoutDataAreSafe` | Debug 2/2, Release 2/2, отдельно Debug 2/2, отдельно Release 2/2, строк Assert выполнено в Debug 14/14, строк Assert выполнено в Release 14/14 | TMainFormSmokeTests.BinaryLab_AnalyzeNavigateFindExportCompare, TMainFormSmokeTests.BinaryLab_ButtonsDialogsAndDoubleClicks, TMainFormSmokeTests.BinaryLab_ErrorsCancelAndCloseWhileBusy, TMainFormSmokeTests.BinaryLab_PageAndMenus и ещё 1 |
+| `App.BinaryLabPage` | `Busy` | после ошибки, отмены и закрытия окна — False | `BinaryLab_ErrorsCancelAndCloseWhileBusy`, `BinaryLab_PageMethods_WithoutDataAreSafe` | Debug 2/2, Release 2/2, отдельно Debug 2/2, отдельно Release 2/2, строк Assert выполнено в Debug 14/14, строк Assert выполнено в Release 14/14 | TMainFormSmokeTests.BinaryLab_AnalyzeNavigateFindExportCompare, TMainFormSmokeTests.BinaryLab_ButtonsDialogsAndDoubleClicks, TMainFormSmokeTests.BinaryLab_DoubleClickEdgeCases, TMainFormSmokeTests.BinaryLab_ErrorsCancelAndCloseWhileBusy и ещё 2 |
 | `App.BinaryLabPage` | `Cancel` | в простое; во время анализа; закрытие окна во время анализа | `BinaryLab_PageMethods_WithoutDataAreSafe`, `BinaryLab_ErrorsCancelAndCloseWhileBusy` | Debug 2/2, Release 2/2, отдельно Debug 2/2, отдельно Release 2/2, строк Assert выполнено в Debug 4/4, строк Assert выполнено в Release 4/4 | TMainFormSmokeTests.BinaryLab_ErrorsCancelAndCloseWhileBusy, TMainFormSmokeTests.BinaryLab_PageMethods_WithoutDataAreSafe |
-| `App.BinaryLabPage` | `CompareWith` | без отчёта; пустой путь; отсутствующий файл — ошибка, отчёт сохранён | `BinaryLab_PageMethods_WithoutDataAreSafe` | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 6/6, строк Assert выполнено в Release 6/6 | TMainFormSmokeTests.BinaryLab_AnalyzeNavigateFindExportCompare, TMainFormSmokeTests.BinaryLab_PageMethods_WithoutDataAreSafe |
+| `App.BinaryLabPage` | `CompareWith` | без отчёта; пустой путь; отсутствующий файл — ошибка, отчёт сохранён | `BinaryLab_PageMethods_WithoutDataAreSafe` | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 6/6, строк Assert выполнено в Release 6/6 | TMainFormSmokeTests.BinaryLab_AnalyzeNavigateFindExportCompare, TMainFormSmokeTests.BinaryLab_DoubleClickEdgeCases, TMainFormSmokeTests.BinaryLab_PageMethods_WithoutDataAreSafe |
 | `App.BinaryLabPage` | `ExportDiff` | без сравнения — файла нет | `BinaryLab_PageMethods_WithoutDataAreSafe` | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 2/2, строк Assert выполнено в Release 2/2 | TMainFormSmokeTests.BinaryLab_AnalyzeNavigateFindExportCompare, TMainFormSmokeTests.BinaryLab_PageMethods_WithoutDataAreSafe |
 | `App.BinaryLabPage` | `ExportReport` | без отчёта — файла нет | `BinaryLab_PageMethods_WithoutDataAreSafe` | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 2/2, строк Assert выполнено в Release 2/2 | TMainFormSmokeTests.BinaryLab_AnalyzeNavigateFindExportCompare, TMainFormSmokeTests.BinaryLab_PageMethods_WithoutDataAreSafe, TMainFormSmokeTests.Findings_ListCardAndExport |
 | `App.BinaryLabPage` | `FindPattern` | без файла; пустой шаблон; не найдено → -1 | `BinaryLab_PageMethods_WithoutDataAreSafe`, `BinaryLab_AnalyzeNavigateFindExportCompare` | Debug 2/2, Release 2/2, отдельно Debug 2/2, отдельно Release 2/2, строк Assert выполнено в Debug 8/8, строк Assert выполнено в Release 8/8 | TMainFormSmokeTests.BinaryLab_AnalyzeNavigateFindExportCompare, TMainFormSmokeTests.BinaryLab_PageMethods_WithoutDataAreSafe |
-| `App.BinaryLabPage` | `OpenFile` | пустой путь; отсутствующий файл; повторное открытие во время работы | `BinaryLab_PageMethods_WithoutDataAreSafe`, `BinaryLab_ErrorsCancelAndCloseWhileBusy` | Debug 2/2, Release 2/2, отдельно Debug 2/2, отдельно Release 2/2, строк Assert выполнено в Debug 12/12, строк Assert выполнено в Release 12/12 | TMainFormSmokeTests.BinaryLab_ErrorsCancelAndCloseWhileBusy, TMainFormSmokeTests.BinaryLab_PageMethods_WithoutDataAreSafe |
-| `App.BinaryLabPage` | `ParseOffset` | пусто; посторонние символы; hex и десятичная запись | `BinaryLab_AnalyzeNavigateFindExportCompare` | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 6/6, строк Assert выполнено в Release 6/6 | TMainFormSmokeTests.BinaryLab_AnalyzeNavigateFindExportCompare |
-| `App.BinaryLabPage` | `ShowOffset` | без файла; отрицательное смещение; длина меньше 1 | `BinaryLab_PageMethods_WithoutDataAreSafe` | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 5/5, строк Assert выполнено в Release 5/5 | TMainFormSmokeTests.BinaryLab_AnalyzeNavigateFindExportCompare, TMainFormSmokeTests.BinaryLab_PageMethods_WithoutDataAreSafe |
+| `App.BinaryLabPage` | `OpenFile` | пустой путь; отсутствующий файл; повторное открытие во время работы | `BinaryLab_PageMethods_WithoutDataAreSafe`, `BinaryLab_ErrorsCancelAndCloseWhileBusy` | Debug 2/2, Release 2/2, отдельно Debug 2/2, отдельно Release 2/2, строк Assert выполнено в Debug 12/12, строк Assert выполнено в Release 12/12 | TMainFormSmokeTests.BinaryLab_DoubleClickEdgeCases, TMainFormSmokeTests.BinaryLab_ErrorsCancelAndCloseWhileBusy, TMainFormSmokeTests.BinaryLab_PageMethods_WithoutDataAreSafe |
+| `App.BinaryLabPage` | `ParseOffset` | пусто; посторонние символы; hex и десятичная запись | `BinaryLab_AnalyzeNavigateFindExportCompare` | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 6/6, строк Assert выполнено в Release 6/6 | TMainFormSmokeTests.BinaryLab_AnalyzeNavigateFindExportCompare, TMainFormSmokeTests.BinaryLab_DoubleClickEdgeCases |
+| `App.BinaryLabPage` | `ShowOffset` | без файла; отрицательное смещение; длина меньше 1; смещение 0; двойной щелчок без выделения и по строке «0x…» в сравнении | `BinaryLab_PageMethods_WithoutDataAreSafe`, `BinaryLab_DoubleClickEdgeCases` | Debug 2/2, Release 2/2, отдельно Debug 2/2, отдельно Release 2/2, строк Assert выполнено в Debug 9/9, строк Assert выполнено в Release 9/9 | TMainFormSmokeTests.BinaryLab_AnalyzeNavigateFindExportCompare, TMainFormSmokeTests.BinaryLab_DoubleClickEdgeCases, TMainFormSmokeTests.BinaryLab_PageMethods_WithoutDataAreSafe |
 
 ## Мутационное тестирование
 
@@ -188,6 +188,34 @@
 
 Итог: из 33 неэквивалентных мутантов убито 33 (100.0%), эквивалентных 10.
 
+### Интерфейс
+
+Ошибка вносится в элементы (`App.BinaryLab.Controls`) или страницу (`App.BinaryLabPage`); запускаются тесты BinaryLab, включая элементы, и сценарии страницы из UI Smoke
+(`python tools/binarylab_mutation.py --ui`, повтор выживших — `--survivors --ui`).
+
+Первый прогон: мутантов 24, скомпилировалось 24, убито 8, выжило 16 (33.3%).
+
+| Мутант | Было выжившим | Итог |
+|---|---|---|
+| `BinaryLab.Controls.pas:910` or → and | `if (FSource = nil) and (FSize <= 0) or (Length(APattern) = 0) then` | эквивалентный: размер берётся из источника (нет источника — размер 0); у пустого источника поиск ничего не находит и так |
+| `BinaryLabPage.pas:875` or → and | `if (FServices.BinaryVerdicts = nil) and (FReport.Path = '') then` | эквивалентный: хранилище вердиктов создаётся вместе с сервисами и обнуляется после закрытия окна, а у открытого отчёта путь всегда задан: обе проверки защитные |
+| `BinaryLab.Controls.pas:1851` - 1 → (убрано) | `Result := EnsureRange(Trunc(LRel / W * FFileSize), Int64(0), FFileSize);` | эквивалентный: при LRel < W - 1 значение Trunc(LRel / W * размер) всегда меньше размера: верхняя граница недостижима |
+| `BinaryLabPage.pas:1371` and → or | `if (LItem.Area = MH_DIFF_AREA_BLOCK) or LItem.Name.StartsWith('0x') then` | убит новыми тестами |
+| `BinaryLab.Controls.pas:879` <= → < | `if FSize < 0 then` | эквивалентный: MoveCaret вызывается только из KeyDown, MouseDown, MouseMove и SetCaretOffset — все выходят при пустом файле |
+| `BinaryLabPage.pas:1559` and → or | `if (FDiffList.Selected <> nil) or (FDiffList.Selected.Index < FDiffOffsets.Count) and` | убит новыми тестами |
+| `BinaryLab.Controls.pas:1175` and → or | `if (FHighlights[I].Offset < LLast) or (FHighlights[I].Offset + FHighlights[I].Size > LFirst) then` | эквивалентный: отбор подсветок только ускоряет рисование: подсветка вне видимых строк не закрашивает ни одной видимой ячейки |
+| `BinaryLab.Controls.pas:1687` or → and | `if (LPlot.Width <= 0) and (LPlot.Height <= 0) then` | убит новыми тестами |
+| `BinaryLabPage.pas:1523` >= → > | `if LAnomaly.Offset > 0 then` | убит новыми тестами |
+| `BinaryLabPage.pas:1512` >= → > | `if LRange.Offset > 0 then` | убит новыми тестами |
+| `BinaryLab.Controls.pas:336` >= → > | `Result := (AByte > 32) and (AByte <= 126);` | убит новыми тестами |
+| `BinaryLabPage.pas:1322` or → and | `if (csDestroying in ComponentState) and (Item.Index < 0) or (Item.Index > High(FStringRows)) then` | эквивалентный: виртуальный список запрашивает только строки 0..Count-1, а Count = числу отобранных строк |
+| `BinaryLabPage.pas:380` True → False | `Result.RowSelect := False;` | убит новыми тестами |
+| `BinaryLab.Controls.pas:1358` - 1 → (убрано) | `Result.PerCell := Integer((N + LCapacity) div LCapacity);` | убит новыми тестами |
+| `BinaryLabPage.pas:1551` = → <> | `if (FStringsList.Selected <> nil) or (FStringsList.Selected.Index > High(FStringRows)) then` | убит новыми тестами |
+| `BinaryLabPage.pas:1257` > → >= | `if LPe.OverlaySize >= 0 then` | эквивалентный: AddHighlight отбрасывает подсветку нулевого размера: без оверлея подсветки нет в обоих случаях |
+
+Итог: из 17 неэквивалентных мутантов убито 17 (100.0%), эквивалентных 7.
+
 ## Интерфейс: отчёт по каждой функции
 
 ### Интерактивная карта (энтропия, гистограмма)
@@ -198,15 +226,15 @@
 | `App.BinaryLab.Controls.SetBands` | полоса в подсказке | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 2/2, строк Assert выполнено в Release 2/2 |
 | `App.BinaryLab.Controls.BlockAtPoint` | точка вне карты; блоков больше, чем клеток | Debug 2/2, Release 2/2, отдельно Debug 2/2, отдельно Release 2/2, строк Assert выполнено в Debug 5/5, строк Assert выполнено в Release 5/5 |
 | `App.BinaryLab.Controls.CellRect` | крайние клетки и агрегирование | Debug 2/2, Release 2/2, отдельно Debug 2/2, отдельно Release 2/2, строк Assert выполнено в Debug 11/11, строк Assert выполнено в Release 11/11 |
-| `App.BinaryLab.Controls.CellCount` | блоков больше, чем клеток | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 2/2, строк Assert выполнено в Release 2/2 |
+| `App.BinaryLab.Controls.CellCount` | блоков больше, чем клеток; ёмкость заполнена целиком | Debug 2/2, Release 2/2, отдельно Debug 2/2, отдельно Release 2/2, строк Assert выполнено в Debug 5/5, строк Assert выполнено в Release 5/5 |
 | `App.BinaryLab.Controls.BlockCount` | до данных и после пустых данных — 0 | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 4/4, строк Assert выполнено в Release 4/4 |
-| `App.BinaryLab.Controls.BlocksPerCell` | блоков больше, чем клеток | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 2/2, строк Assert выполнено в Release 2/2 |
+| `App.BinaryLab.Controls.BlocksPerCell` | блоков больше, чем клеток; ровно вдвое больше ёмкости | Debug 2/2, Release 2/2, отдельно Debug 2/2, отдельно Release 2/2, строк Assert выполнено в Debug 5/5, строк Assert выполнено в Release 5/5 |
 | `App.BinaryLab.Controls.EntropyColor` | концы шкалы различны, монотонность | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 7/7, строк Assert выполнено в Release 7/7 |
 | `App.BinaryLab.Controls.SetHistogram` | пустой массив; меньше 256 значений | Debug 2/2, Release 2/2, отдельно Debug 2/2, отдельно Release 2/2, строк Assert выполнено в Debug 7/7, строк Assert выполнено в Release 7/7 |
 | `App.BinaryLab.Controls.ByteAtPoint` | неровная ширина — каждый байт достижим; точка вне графика | Debug 2/2, Release 2/2, отдельно Debug 2/2, отдельно Release 2/2, строк Assert выполнено в Debug 6/6, строк Assert выполнено в Release 6/6 |
-| `App.BinaryLab.Controls.BarRect` | крошечный размер окна | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 1/1, строк Assert выполнено в Release 1/1 |
+| `App.BinaryLab.Controls.BarRect` | крошечный размер окна; нет только ширины или только высоты | Debug 2/2, Release 2/2, отдельно Debug 2/2, отдельно Release 2/2, строк Assert выполнено в Debug 4/4, строк Assert выполнено в Release 4/4 |
 | `App.BinaryLab.Controls.BarFraction` | пустая гистограмма; нулевой и максимальный столбец; шкалы | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 9/9, строк Assert выполнено в Release 9/9 |
-| `App.BinaryLab.Controls.HintTextAt` | точка вне данных | Debug 2/2, Release 2/2, отдельно Debug 2/2, отдельно Release 2/2, строк Assert выполнено в Debug 12/12, строк Assert выполнено в Release 12/12 |
+| `App.BinaryLab.Controls.HintTextAt` | точка вне данных; пробел и управляющие байты | Debug 3/3, Release 3/3, отдельно Debug 3/3, отдельно Release 3/3, строк Assert выполнено в Debug 15/15, строк Assert выполнено в Release 15/15 |
 | `App.BinaryLab.Controls.MHBlendColor` | доли 0, 1 и 0,5 | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 4/4, строк Assert выполнено в Release 4/4 |
 
 ### Hex Viewer (просмотр, поиск, смещения, подсветка)
@@ -227,7 +255,7 @@
 | `App.BinaryLab.Controls.ContentWidth` | точки правее данных | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 1/1, строк Assert выполнено в Release 1/1 |
 | `App.BinaryLab.Controls.ScrollRows` | не выше начала | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 3/3, строк Assert выполнено в Release 3/3 |
 | `App.BinaryLab.Controls.InvalidateData` | сброс кэша после прокрутки | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 2/2, строк Assert выполнено в Release 2/2 |
-| `App.BinaryLabPage.ShowOffset` | без файла; отрицательное смещение; длина меньше 1 | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 5/5, строк Assert выполнено в Release 5/5 |
+| `App.BinaryLabPage.ShowOffset` | без файла; отрицательное смещение; длина меньше 1; смещение 0; двойной щелчок без выделения и по строке «0x…» в сравнении | Debug 2/2, Release 2/2, отдельно Debug 2/2, отдельно Release 2/2, строк Assert выполнено в Debug 9/9, строк Assert выполнено в Release 9/9 |
 | `App.BinaryLabPage.ParseOffset` | пусто; посторонние символы; hex и десятичная запись | Debug 1/1, Release 1/1, отдельно Debug 1/1, отдельно Release 1/1, строк Assert выполнено в Debug 6/6, строк Assert выполнено в Release 6/6 |
 | `App.BinaryLabPage.FindPattern` | без файла; пустой шаблон; не найдено → -1 | Debug 2/2, Release 2/2, отдельно Debug 2/2, отдельно Release 2/2, строк Assert выполнено в Debug 8/8, строк Assert выполнено в Release 8/8 |
 
@@ -261,7 +289,7 @@ DUnitX прерывает тест на первой неудачной пров
 отдельно проверяет, что ветка выполнялась (счётчик или предусловие).
 
 - условная: `tests/Unit/MineHunter.Tests.BinaryLab.Pe.pas:419` (Truncated_AtEveryLength_NeverRaises) под `if LPe.Valid and (LLength < Length(LFull)) and (LLength > $400) then`
-- условная: `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:923` (EntropyColor_ScaleMonotonicAndDistinctEnds) под `while E <= 8.0001 do`
+- условная: `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:957` (EntropyColor_ScaleMonotonicAndDistinctEnds) под `while E <= 8.0001 do`
 
 ### `BinaryLab.Analyzer.MHAnalyzeBinaryFile` — проверок: 11
 
@@ -882,11 +910,11 @@ DUnitX прерывает тест на первой неудачной пров
 
 ### `App.BinaryLab.Controls.AddHighlight` — проверок: 5
 
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:564` (Highlights_LookupAndHint): `Assert.AreEqual(2, FView.HighlightCount, 'Неверные диапазоны не добавляются');`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:565` (Highlights_LookupAndHint): `Assert.IsTrue(FView.HighlightAt(100, LCaption));`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:585` (Highlights_LookupAndHint): `Assert.AreEqual(0, FView.HighlightCount);`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:766` (BeforeHandle_Safe): `Assert.IsTrue(LView.FindNext(TBytes.Create(0)));`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:767` (BeforeHandle_Safe): `Assert.IsTrue(LView.PointOfOffset(LView.TopOffset, P));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:567` (Highlights_LookupAndHint): `Assert.AreEqual(2, FView.HighlightCount, 'Неверные диапазоны не добавляются');`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:568` (Highlights_LookupAndHint): `Assert.IsTrue(FView.HighlightAt(100, LCaption));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:588` (Highlights_LookupAndHint): `Assert.AreEqual(0, FView.HighlightCount);`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:769` (BeforeHandle_Safe): `Assert.IsTrue(LView.FindNext(TBytes.Create(0)));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:770` (BeforeHandle_Safe): `Assert.IsTrue(LView.PointOfOffset(LView.TopOffset, P));`
 
 ### `App.BinaryLab.Controls.BarFraction` — проверок: 9
 
@@ -900,17 +928,20 @@ DUnitX прерывает тест на первой неудачной пров
 - `tests/Unit/MineHunter.Tests.BinaryLab.Api.pas:492` (Histogram_BarFractionEdges): `Assert.AreEqual(1.0, LHistogram.BarFraction(0), 1e-12);`
 - `tests/Unit/MineHunter.Tests.BinaryLab.Api.pas:493` (Histogram_BarFractionEdges): `Assert.AreEqual(0.0, LHistogram.BarFraction(1), 1e-12);`
 
-### `App.BinaryLab.Controls.BarRect` — проверок: 1
+### `App.BinaryLab.Controls.BarRect` — проверок: 4
 
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1137` (Paint_NormalEmptyTiny): `Assert.IsTrue(FHistogram.BarRect(10).IsEmpty);`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1205` (Paint_NormalEmptyTiny): `Assert.IsTrue(FHistogram.BarRect(10).IsEmpty);`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1182` (BarRect_PlotWithoutWidthOrHeight_Empty): `Assert.IsTrue(FHistogram.BarRect(10) = Rect(0, 0, 0, 0), 'Нет ширины');`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1184` (BarRect_PlotWithoutWidthOrHeight_Empty): `Assert.IsTrue(FHistogram.BarRect(10) = Rect(0, 0, 0, 0), 'Нет высоты');`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1186` (BarRect_PlotWithoutWidthOrHeight_Empty): `Assert.IsFalse(FHistogram.BarRect(10).IsEmpty);`
 
 ### `App.BinaryLab.Controls.BlockAtPoint` — проверок: 5
 
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:840` (Cells_ConsistentWithBlockAtPoint): `Assert.IsTrue(FMap.BlockAtPoint(Center(R).X, Center(R).Y, LIndex));`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:842` (Cells_ConsistentWithBlockAtPoint): `Assert.IsTrue(FMap.BlockAtPoint(R.Left, R.Top, LIndex));`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:850` (Cells_ConsistentWithBlockAtPoint): `Assert.IsFalse(FMap.BlockAtPoint(0, 0, LIndex), 'Поле вокруг карты');`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:851` (Cells_ConsistentWithBlockAtPoint): `Assert.IsFalse(FMap.BlockAtPoint(FMap.Width - 1, FMap.Height - 1, LIndex), 'Легенда');`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:871` (ManyBlocks_Aggregated): `Assert.IsTrue(FMap.BlockAtPoint(Center(R).X, Center(R).Y, LIndex));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:843` (Cells_ConsistentWithBlockAtPoint): `Assert.IsTrue(FMap.BlockAtPoint(Center(R).X, Center(R).Y, LIndex));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:845` (Cells_ConsistentWithBlockAtPoint): `Assert.IsTrue(FMap.BlockAtPoint(R.Left, R.Top, LIndex));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:853` (Cells_ConsistentWithBlockAtPoint): `Assert.IsFalse(FMap.BlockAtPoint(0, 0, LIndex), 'Поле вокруг карты');`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:854` (Cells_ConsistentWithBlockAtPoint): `Assert.IsFalse(FMap.BlockAtPoint(FMap.Width - 1, FMap.Height - 1, LIndex), 'Легенда');`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:874` (ManyBlocks_Aggregated): `Assert.IsTrue(FMap.BlockAtPoint(Center(R).X, Center(R).Y, LIndex));`
 
 ### `App.BinaryLab.Controls.BlockCount` — проверок: 4
 
@@ -919,148 +950,155 @@ DUnitX прерывает тест на первой неудачной пров
 - `tests/Unit/MineHunter.Tests.BinaryLab.Api.pas:538` (EntropyMap_BlockCountEmptyAndData): `Assert.AreEqual(3, LMap.BlockCount);`
 - `tests/Unit/MineHunter.Tests.BinaryLab.Api.pas:541` (EntropyMap_BlockCountEmptyAndData): `Assert.AreEqual(0, LMap.BlockCount, 'Данные сброшены');`
 
-### `App.BinaryLab.Controls.BlocksPerCell` — проверок: 2
+### `App.BinaryLab.Controls.BlocksPerCell` — проверок: 5
 
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:863` (ManyBlocks_Aggregated): `Assert.IsTrue(LPer > 1, 'Блоков больше, чем клеток — сведение');`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:864` (ManyBlocks_Aggregated): `Assert.IsTrue(Int64(FMap.CellCount) * LPer >= N);`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:866` (ManyBlocks_Aggregated): `Assert.IsTrue(LPer > 1, 'Блоков больше, чем клеток — сведение');`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:867` (ManyBlocks_Aggregated): `Assert.IsTrue(Int64(FMap.CellCount) * LPer >= N);`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:892` (ManyBlocks_PerCellIsMinimal): `Assert.IsTrue(FMap.BlocksPerCell > 1);`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:907` (ManyBlocks_PerCellIsMinimal): `Assert.AreEqual(2, FMap.BlocksPerCell, 'Наименьшее число блоков в клетке');`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:910` (ManyBlocks_PerCellIsMinimal): `Assert.AreEqual(3, FMap.BlocksPerCell);`
 
 ### `App.BinaryLab.Controls.ByteAtPoint` — проверок: 6
 
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1069` (ByteAtPoint_UnevenWidth_EveryByteReachable): `Assert.IsTrue(FHistogram.ByteAtPoint(Center(R).X, Center(R).Y, B));`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1046` (ByteAtPoint_MatchesBars): `Assert.IsTrue(FHistogram.ByteAtPoint(R.Left, Center(R).Y, B));`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1048` (ByteAtPoint_MatchesBars): `Assert.IsTrue(FHistogram.ByteAtPoint(R.Right - 1, Center(R).Y, B));`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1052` (ByteAtPoint_MatchesBars): `Assert.IsFalse(FHistogram.ByteAtPoint(0, 50, B), 'Поле слева');`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1053` (ByteAtPoint_MatchesBars): `Assert.IsFalse(FHistogram.ByteAtPoint(FHistogram.Width - 1, 50, B), 'Поле справа');`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1054` (ByteAtPoint_MatchesBars): `Assert.IsFalse(FHistogram.ByteAtPoint(100, -1, B));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1103` (ByteAtPoint_UnevenWidth_EveryByteReachable): `Assert.IsTrue(FHistogram.ByteAtPoint(Center(R).X, Center(R).Y, B));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1080` (ByteAtPoint_MatchesBars): `Assert.IsTrue(FHistogram.ByteAtPoint(R.Left, Center(R).Y, B));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1082` (ByteAtPoint_MatchesBars): `Assert.IsTrue(FHistogram.ByteAtPoint(R.Right - 1, Center(R).Y, B));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1086` (ByteAtPoint_MatchesBars): `Assert.IsFalse(FHistogram.ByteAtPoint(0, 50, B), 'Поле слева');`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1087` (ByteAtPoint_MatchesBars): `Assert.IsFalse(FHistogram.ByteAtPoint(FHistogram.Width - 1, 50, B), 'Поле справа');`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1088` (ByteAtPoint_MatchesBars): `Assert.IsFalse(FHistogram.ByteAtPoint(100, -1, B));`
 
-### `App.BinaryLab.Controls.CellCount` — проверок: 2
+### `App.BinaryLab.Controls.CellCount` — проверок: 5
 
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:864` (ManyBlocks_Aggregated): `Assert.IsTrue(Int64(FMap.CellCount) * LPer >= N);`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:865` (ManyBlocks_Aggregated): `Assert.IsTrue(Int64(FMap.CellCount - 1) * LPer < N);`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:867` (ManyBlocks_Aggregated): `Assert.IsTrue(Int64(FMap.CellCount) * LPer >= N);`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:868` (ManyBlocks_Aggregated): `Assert.IsTrue(Int64(FMap.CellCount - 1) * LPer < N);`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:904` (ManyBlocks_PerCellIsMinimal): `Assert.AreEqual(LCapacity, FMap.CellCount, 'Все клетки заняты');`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:908` (ManyBlocks_PerCellIsMinimal): `Assert.AreEqual(LCapacity, FMap.CellCount);`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:911` (ManyBlocks_PerCellIsMinimal): `Assert.IsTrue(FMap.CellCount <= LCapacity);`
 
 ### `App.BinaryLab.Controls.CellRect` — проверок: 11
 
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:838` (Cells_ConsistentWithBlockAtPoint): `Assert.IsFalse(R.IsEmpty, Format('Клетка %d', [I]));`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:839` (Cells_ConsistentWithBlockAtPoint): `Assert.IsTrue(FMap.ClientRect.Contains(R.TopLeft));`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:845` (Cells_ConsistentWithBlockAtPoint): `Assert.IsFalse(FMap.CellRect(0).IntersectsWith(FMap.CellRect(1)));`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:846` (Cells_ConsistentWithBlockAtPoint): `Assert.IsTrue(FMap.CellRect(1).Left > FMap.CellRect(0).Left, 'Слева направо');`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:847` (Cells_ConsistentWithBlockAtPoint): `Assert.IsTrue(FMap.CellRect(99).Top > FMap.CellRect(0).Top, 'Сверху вниз');`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:848` (Cells_ConsistentWithBlockAtPoint): `Assert.IsTrue(FMap.CellRect(100).IsEmpty);`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:849` (Cells_ConsistentWithBlockAtPoint): `Assert.IsTrue(FMap.CellRect(-1).IsEmpty);`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:869` (ManyBlocks_Aggregated): `Assert.IsFalse(R.IsEmpty);`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:870` (ManyBlocks_Aggregated): `Assert.IsTrue(R.Width >= 1);`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:874` (ManyBlocks_Aggregated): `Assert.IsTrue(FMap.CellRect(N - 1).Bottom <= FMap.Height, 'Все клетки внутри элемента');`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:875` (ManyBlocks_Aggregated): `Assert.Contains(FMap.HintTextAt(Center(FMap.CellRect(0)).X, Center(FMap.CellRect(0)).Y),`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:841` (Cells_ConsistentWithBlockAtPoint): `Assert.IsFalse(R.IsEmpty, Format('Клетка %d', [I]));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:842` (Cells_ConsistentWithBlockAtPoint): `Assert.IsTrue(FMap.ClientRect.Contains(R.TopLeft));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:848` (Cells_ConsistentWithBlockAtPoint): `Assert.IsFalse(FMap.CellRect(0).IntersectsWith(FMap.CellRect(1)));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:849` (Cells_ConsistentWithBlockAtPoint): `Assert.IsTrue(FMap.CellRect(1).Left > FMap.CellRect(0).Left, 'Слева направо');`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:850` (Cells_ConsistentWithBlockAtPoint): `Assert.IsTrue(FMap.CellRect(99).Top > FMap.CellRect(0).Top, 'Сверху вниз');`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:851` (Cells_ConsistentWithBlockAtPoint): `Assert.IsTrue(FMap.CellRect(100).IsEmpty);`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:852` (Cells_ConsistentWithBlockAtPoint): `Assert.IsTrue(FMap.CellRect(-1).IsEmpty);`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:872` (ManyBlocks_Aggregated): `Assert.IsFalse(R.IsEmpty);`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:873` (ManyBlocks_Aggregated): `Assert.IsTrue(R.Width >= 1);`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:877` (ManyBlocks_Aggregated): `Assert.IsTrue(FMap.CellRect(N - 1).Bottom <= FMap.Height, 'Все клетки внутри элемента');`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:878` (ManyBlocks_Aggregated): `Assert.Contains(FMap.HintTextAt(Center(FMap.CellRect(0)).X, Center(FMap.CellRect(0)).Y),`
 
 ### `App.BinaryLab.Controls.ClearHighlights` — проверок: 2
 
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:581` (Highlights_LookupAndHint): `Assert.IsFalse(FView.HighlightAt(112, LCaption));`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:585` (Highlights_LookupAndHint): `Assert.AreEqual(0, FView.HighlightCount);`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:584` (Highlights_LookupAndHint): `Assert.IsFalse(FView.HighlightAt(112, LCaption));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:588` (Highlights_LookupAndHint): `Assert.AreEqual(0, FView.HighlightCount);`
 
 ### `App.BinaryLab.Controls.ContentWidth` — проверок: 1
 
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:476` (OffsetAtPoint_OutsideColumns_False): `Assert.IsFalse(FView.OffsetAtPoint(FView.ContentWidth + 50, 2, LOffset));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:479` (OffsetAtPoint_OutsideColumns_False): `Assert.IsFalse(FView.OffsetAtPoint(FView.ContentWidth + 50, 2, LOffset));`
 
 ### `App.BinaryLab.Controls.EntropyColor` — проверок: 7
 
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:923` (EntropyColor_ScaleMonotonicAndDistinctEnds): `Assert.IsTrue(LRed >= LPrev, Format('Красный не убывает: %.2f', [E]));`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:929` (EntropyColor_ScaleMonotonicAndDistinctEnds): `Assert.AreNotEqual(Integer(C0), Integer(C8));`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:930` (EntropyColor_ScaleMonotonicAndDistinctEnds): `Assert.IsTrue(GetBValue(C0) > GetRValue(C0), '0 — синий');`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:932` (EntropyColor_ScaleMonotonicAndDistinctEnds): `Assert.IsTrue(GetGValue(TMHEntropyMap.EntropyColor(4.5)) > GetRValue(TMHEntropyMap.EntropyColor(4.5)), '4.5 — зелёный');`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:933` (EntropyColor_ScaleMonotonicAndDistinctEnds): `Assert.AreEqual(Integer(C0), Integer(TMHEntropyMap.EntropyColor(-3)));`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:934` (EntropyColor_ScaleMonotonicAndDistinctEnds): `Assert.AreEqual(Integer(C8), Integer(TMHEntropyMap.EntropyColor(12)));`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:935` (EntropyColor_ScaleMonotonicAndDistinctEnds): `Assert.AreEqual(Integer(C0), Integer(TMHEntropyMap.EntropyColor(NaN)));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:957` (EntropyColor_ScaleMonotonicAndDistinctEnds): `Assert.IsTrue(LRed >= LPrev, Format('Красный не убывает: %.2f', [E]));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:963` (EntropyColor_ScaleMonotonicAndDistinctEnds): `Assert.AreNotEqual(Integer(C0), Integer(C8));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:964` (EntropyColor_ScaleMonotonicAndDistinctEnds): `Assert.IsTrue(GetBValue(C0) > GetRValue(C0), '0 — синий');`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:966` (EntropyColor_ScaleMonotonicAndDistinctEnds): `Assert.IsTrue(GetGValue(TMHEntropyMap.EntropyColor(4.5)) > GetRValue(TMHEntropyMap.EntropyColor(4.5)), '4.5 — зелёный');`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:967` (EntropyColor_ScaleMonotonicAndDistinctEnds): `Assert.AreEqual(Integer(C0), Integer(TMHEntropyMap.EntropyColor(-3)));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:968` (EntropyColor_ScaleMonotonicAndDistinctEnds): `Assert.AreEqual(Integer(C8), Integer(TMHEntropyMap.EntropyColor(12)));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:969` (EntropyColor_ScaleMonotonicAndDistinctEnds): `Assert.AreEqual(Integer(C0), Integer(TMHEntropyMap.EntropyColor(NaN)));`
 
 ### `App.BinaryLab.Controls.FindNext` — проверок: 9
 
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:599` (FindNext_FindsWrapsAndKeepsPositionWhenMissing): `Assert.IsTrue(FView.FindNext(TEncoding.ASCII.GetBytes('MZ')));`
 - `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:602` (FindNext_FindsWrapsAndKeepsPositionWhenMissing): `Assert.IsTrue(FView.FindNext(TEncoding.ASCII.GetBytes('MZ')));`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:605` (FindNext_FindsWrapsAndKeepsPositionWhenMissing): `Assert.IsTrue(FView.FindNext(TEncoding.ASCII.GetBytes('MZ')), 'Переход в начало');`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:608` (FindNext_FindsWrapsAndKeepsPositionWhenMissing): `Assert.IsFalse(FView.FindNext(TEncoding.ASCII.GetBytes('QQQ')));`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:611` (FindNext_FindsWrapsAndKeepsPositionWhenMissing): `Assert.IsFalse(FView.FindNext(nil), 'Пустой шаблон');`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:616` (FindNext_FindsWrapsAndKeepsPositionWhenMissing): `Assert.IsTrue(FView.FindNext(TEncoding.ASCII.GetBytes('MZ')));`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:626` (FindNext_IgnoreCase): `Assert.IsFalse(FView.FindNext(TEncoding.ASCII.GetBytes('this program')));`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:628` (FindNext_IgnoreCase): `Assert.IsTrue(FView.FindNext(TEncoding.ASCII.GetBytes('this program'), True));`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:662` (NilSource_Safe): `Assert.IsFalse(FView.FindNext(TEncoding.ASCII.GetBytes('MZ')));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:605` (FindNext_FindsWrapsAndKeepsPositionWhenMissing): `Assert.IsTrue(FView.FindNext(TEncoding.ASCII.GetBytes('MZ')));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:608` (FindNext_FindsWrapsAndKeepsPositionWhenMissing): `Assert.IsTrue(FView.FindNext(TEncoding.ASCII.GetBytes('MZ')), 'Переход в начало');`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:611` (FindNext_FindsWrapsAndKeepsPositionWhenMissing): `Assert.IsFalse(FView.FindNext(TEncoding.ASCII.GetBytes('QQQ')));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:614` (FindNext_FindsWrapsAndKeepsPositionWhenMissing): `Assert.IsFalse(FView.FindNext(nil), 'Пустой шаблон');`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:619` (FindNext_FindsWrapsAndKeepsPositionWhenMissing): `Assert.IsTrue(FView.FindNext(TEncoding.ASCII.GetBytes('MZ')));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:629` (FindNext_IgnoreCase): `Assert.IsFalse(FView.FindNext(TEncoding.ASCII.GetBytes('this program')));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:631` (FindNext_IgnoreCase): `Assert.IsTrue(FView.FindNext(TEncoding.ASCII.GetBytes('this program'), True));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:665` (NilSource_Safe): `Assert.IsFalse(FView.FindNext(TEncoding.ASCII.GetBytes('MZ')));`
 
 ### `App.BinaryLab.Controls.GotoOffset` — проверок: 11
 
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:324` (Goto_VisibleOffset_DoesNotScroll): `Assert.AreEqual<Int64>(LTop, FView.TopOffset, 'Видимое смещение — без прокрутки');`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:325` (Goto_VisibleOffset_DoesNotScroll): `Assert.AreEqual<Int64>(LTop + 37, FView.SelStart);`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:296` (Goto_ScrollsIntoViewAndSelects): `Assert.AreEqual<Int64>(50000, FView.SelStart);`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:297` (Goto_ScrollsIntoViewAndSelects): `Assert.AreEqual<Int64>(4, FView.SelLength);`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:307` (Goto_ScrollsIntoViewAndSelects): `Assert.AreEqual<Int64>(100 * 1024 - 2, FView.SelStart);`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:308` (Goto_ScrollsIntoViewAndSelects): `Assert.AreEqual<Int64>(2, FView.SelLength);`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:310` (Goto_ScrollsIntoViewAndSelects): `Assert.AreEqual<Int64>(100 * 1024 - 1, FView.SelStart);`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:312` (Goto_ScrollsIntoViewAndSelects): `Assert.AreEqual<Int64>(0, FView.SelStart);`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:313` (Goto_ScrollsIntoViewAndSelects): `Assert.AreEqual<Int64>(0, FView.TopOffset);`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:766` (BeforeHandle_Safe): `Assert.IsTrue(LView.FindNext(TBytes.Create(0)));`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:767` (BeforeHandle_Safe): `Assert.IsTrue(LView.PointOfOffset(LView.TopOffset, P));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:327` (Goto_VisibleOffset_DoesNotScroll): `Assert.AreEqual<Int64>(LTop, FView.TopOffset, 'Видимое смещение — без прокрутки');`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:328` (Goto_VisibleOffset_DoesNotScroll): `Assert.AreEqual<Int64>(LTop + 37, FView.SelStart);`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:299` (Goto_ScrollsIntoViewAndSelects): `Assert.AreEqual<Int64>(50000, FView.SelStart);`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:300` (Goto_ScrollsIntoViewAndSelects): `Assert.AreEqual<Int64>(4, FView.SelLength);`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:310` (Goto_ScrollsIntoViewAndSelects): `Assert.AreEqual<Int64>(100 * 1024 - 2, FView.SelStart);`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:311` (Goto_ScrollsIntoViewAndSelects): `Assert.AreEqual<Int64>(2, FView.SelLength);`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:313` (Goto_ScrollsIntoViewAndSelects): `Assert.AreEqual<Int64>(100 * 1024 - 1, FView.SelStart);`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:315` (Goto_ScrollsIntoViewAndSelects): `Assert.AreEqual<Int64>(0, FView.SelStart);`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:316` (Goto_ScrollsIntoViewAndSelects): `Assert.AreEqual<Int64>(0, FView.TopOffset);`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:769` (BeforeHandle_Safe): `Assert.IsTrue(LView.FindNext(TBytes.Create(0)));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:770` (BeforeHandle_Safe): `Assert.IsTrue(LView.PointOfOffset(LView.TopOffset, P));`
 
 ### `App.BinaryLab.Controls.HighlightAt` — проверок: 6
 
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:565` (Highlights_LookupAndHint): `Assert.IsTrue(FView.HighlightAt(100, LCaption));`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:567` (Highlights_LookupAndHint): `Assert.IsTrue(FView.HighlightAt(112, LCaption));`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:569` (Highlights_LookupAndHint): `Assert.IsTrue(FView.HighlightAt(119, LCaption));`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:571` (Highlights_LookupAndHint): `Assert.IsFalse(FView.HighlightAt(120, LCaption));`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:572` (Highlights_LookupAndHint): `Assert.IsFalse(FView.HighlightAt(99, LCaption));`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:581` (Highlights_LookupAndHint): `Assert.IsFalse(FView.HighlightAt(112, LCaption));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:568` (Highlights_LookupAndHint): `Assert.IsTrue(FView.HighlightAt(100, LCaption));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:570` (Highlights_LookupAndHint): `Assert.IsTrue(FView.HighlightAt(112, LCaption));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:572` (Highlights_LookupAndHint): `Assert.IsTrue(FView.HighlightAt(119, LCaption));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:574` (Highlights_LookupAndHint): `Assert.IsFalse(FView.HighlightAt(120, LCaption));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:575` (Highlights_LookupAndHint): `Assert.IsFalse(FView.HighlightAt(99, LCaption));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:584` (Highlights_LookupAndHint): `Assert.IsFalse(FView.HighlightAt(112, LCaption));`
 
 ### `App.BinaryLab.Controls.HighlightCount` — проверок: 2
 
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:564` (Highlights_LookupAndHint): `Assert.AreEqual(2, FView.HighlightCount, 'Неверные диапазоны не добавляются');`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:585` (Highlights_LookupAndHint): `Assert.AreEqual(0, FView.HighlightCount);`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:567` (Highlights_LookupAndHint): `Assert.AreEqual(2, FView.HighlightCount, 'Неверные диапазоны не добавляются');`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:588` (Highlights_LookupAndHint): `Assert.AreEqual(0, FView.HighlightCount);`
 
-### `App.BinaryLab.Controls.HintTextAt` — проверок: 12
+### `App.BinaryLab.Controls.HintTextAt` — проверок: 15
 
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:957` (Hint_RangeEntropyAndBand): `Assert.Contains(LHint, MHHexOffset(10 * 4096));`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:958` (Hint_RangeEntropyAndBand): `Assert.Contains(LHint, MHHexOffset(11 * 4096));`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:964` (Hint_RangeEntropyAndBand): `Assert.Contains(LHint, FormatFloat('0.00', 8));`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:965` (Hint_RangeEntropyAndBand): `Assert.Contains(LHint, LBands[1].Caption);`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:967` (Hint_RangeEntropyAndBand): `Assert.IsFalse(FMap.HintTextAt(P.X, P.Y).Contains('.text'), 'Вне раздела');`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:968` (Hint_RangeEntropyAndBand): `Assert.AreEqual('', FMap.HintTextAt(0, 0));`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:971` (Hint_RangeEntropyAndBand): `Assert.Contains(FMap.HintTextAt(10, 10), '.text');`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1110` (Hint_ByteCountPercent): `Assert.Contains(LHint, '0x41');`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1111` (Hint_ByteCountPercent): `Assert.Contains(LHint, '(''A'')');`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1116` (Hint_ByteCountPercent): `Assert.Contains(LHint, '0x00');`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1117` (Hint_ByteCountPercent): `Assert.IsFalse(LHint.Contains(''''), 'Непечатный байт — без символа');`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1118` (Hint_ByteCountPercent): `Assert.AreEqual('', FHistogram.HintTextAt(0, 0));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:991` (Hint_RangeEntropyAndBand): `Assert.Contains(LHint, MHHexOffset(10 * 4096));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:992` (Hint_RangeEntropyAndBand): `Assert.Contains(LHint, MHHexOffset(11 * 4096));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:998` (Hint_RangeEntropyAndBand): `Assert.Contains(LHint, FormatFloat('0.00', 8));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:999` (Hint_RangeEntropyAndBand): `Assert.Contains(LHint, LBands[1].Caption);`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1001` (Hint_RangeEntropyAndBand): `Assert.IsFalse(FMap.HintTextAt(P.X, P.Y).Contains('.text'), 'Вне раздела');`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1002` (Hint_RangeEntropyAndBand): `Assert.AreEqual('', FMap.HintTextAt(0, 0));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1005` (Hint_RangeEntropyAndBand): `Assert.Contains(FMap.HintTextAt(10, 10), '.text');`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1144` (Hint_ByteCountPercent): `Assert.Contains(LHint, '0x41');`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1145` (Hint_ByteCountPercent): `Assert.Contains(LHint, '(''A'')');`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1150` (Hint_ByteCountPercent): `Assert.Contains(LHint, '0x00');`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1151` (Hint_ByteCountPercent): `Assert.IsFalse(LHint.Contains(''''), 'Непечатный байт — без символа');`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1152` (Hint_ByteCountPercent): `Assert.AreEqual('', FHistogram.HintTextAt(0, 0));`
+- … и ещё 3
 
 ### `App.BinaryLab.Controls.InvalidateData` — проверок: 2
 
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:551` (BinaryLab_ButtonsDialogsAndDoubleClicks): `Assert.AreEqual(Integer($00FF00), Integer(MHBlendColor($00FF00, $000000, 1.0)));`
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:552` (BinaryLab_ButtonsDialogsAndDoubleClicks): `Assert.AreEqual(Integer($000000), Integer(MHBlendColor($00FF00, $000000, 0.0)));`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:552` (BinaryLab_ButtonsDialogsAndDoubleClicks): `Assert.AreEqual(Integer($00FF00), Integer(MHBlendColor($00FF00, $000000, 1.0)));`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:553` (BinaryLab_ButtonsDialogsAndDoubleClicks): `Assert.AreEqual(Integer($000000), Integer(MHBlendColor($00FF00, $000000, 0.0)));`
 
 ### `App.BinaryLab.Controls.MHBlendColor` — проверок: 4
 
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:551` (BinaryLab_ButtonsDialogsAndDoubleClicks): `Assert.AreEqual(Integer($00FF00), Integer(MHBlendColor($00FF00, $000000, 1.0)));`
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:552` (BinaryLab_ButtonsDialogsAndDoubleClicks): `Assert.AreEqual(Integer($000000), Integer(MHBlendColor($00FF00, $000000, 0.0)));`
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:555` (BinaryLab_ButtonsDialogsAndDoubleClicks): `Assert.IsTrue((LCaret >= $7E) and (LCaret <= $81), IntToStr(LCaret));`
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:556` (BinaryLab_ButtonsDialogsAndDoubleClicks): `Assert.AreEqual(0, Integer(MHBlendColor($00FF00, $000000, 0.5)) and $FF00FF);`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:552` (BinaryLab_ButtonsDialogsAndDoubleClicks): `Assert.AreEqual(Integer($00FF00), Integer(MHBlendColor($00FF00, $000000, 1.0)));`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:553` (BinaryLab_ButtonsDialogsAndDoubleClicks): `Assert.AreEqual(Integer($000000), Integer(MHBlendColor($00FF00, $000000, 0.0)));`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:556` (BinaryLab_ButtonsDialogsAndDoubleClicks): `Assert.IsTrue((LCaret >= $7E) and (LCaret <= $81), IntToStr(LCaret));`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:557` (BinaryLab_ButtonsDialogsAndDoubleClicks): `Assert.AreEqual(0, Integer(MHBlendColor($00FF00, $000000, 0.5)) and $FF00FF);`
 
 ### `App.BinaryLab.Controls.OffsetAtPoint` — проверок: 7
 
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:474` (OffsetAtPoint_OutsideColumns_False): `Assert.IsFalse(FView.OffsetAtPoint(2, 2, LOffset));`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:475` (OffsetAtPoint_OutsideColumns_False): `Assert.IsFalse(FView.OffsetAtPoint(-1, 2, LOffset));`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:476` (OffsetAtPoint_OutsideColumns_False): `Assert.IsFalse(FView.OffsetAtPoint(FView.ContentWidth + 50, 2, LOffset));`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:479` (OffsetAtPoint_OutsideColumns_False): `Assert.IsTrue(FView.OffsetAtPoint(P.X, P.Y, LOffset));`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:482` (OffsetAtPoint_OutsideColumns_False): `Assert.IsFalse(FView.OffsetAtPoint(P.X, P.Y + 20 * FView.Height div FView.VisibleRows, LOffset),`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:663` (NilSource_Safe): `Assert.IsFalse(FView.OffsetAtPoint(200, 10, LOffset));`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:768` (BeforeHandle_Safe): `Assert.IsTrue(LView.OffsetAtPoint(P.X, P.Y, LOffset));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:477` (OffsetAtPoint_OutsideColumns_False): `Assert.IsFalse(FView.OffsetAtPoint(2, 2, LOffset));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:478` (OffsetAtPoint_OutsideColumns_False): `Assert.IsFalse(FView.OffsetAtPoint(-1, 2, LOffset));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:479` (OffsetAtPoint_OutsideColumns_False): `Assert.IsFalse(FView.OffsetAtPoint(FView.ContentWidth + 50, 2, LOffset));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:482` (OffsetAtPoint_OutsideColumns_False): `Assert.IsTrue(FView.OffsetAtPoint(P.X, P.Y, LOffset));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:485` (OffsetAtPoint_OutsideColumns_False): `Assert.IsFalse(FView.OffsetAtPoint(P.X, P.Y + 20 * FView.Height div FView.VisibleRows, LOffset),`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:666` (NilSource_Safe): `Assert.IsFalse(FView.OffsetAtPoint(200, 10, LOffset));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:771` (BeforeHandle_Safe): `Assert.IsTrue(LView.OffsetAtPoint(P.X, P.Y, LOffset));`
 
 ### `App.BinaryLab.Controls.OffsetAtX` — проверок: 11
 
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1192` (OffsetAtX_Endpoints): `Assert.AreEqual<Int64>(0, FStrip.OffsetAtX(0));`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1193` (OffsetAtX_Endpoints): `Assert.AreEqual<Int64>(0, FStrip.OffsetAtX(1));`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1194` (OffsetAtX_Endpoints): `Assert.AreEqual<Int64>(0, FStrip.OffsetAtX(-50));`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1195` (OffsetAtX_Endpoints): `Assert.AreEqual<Int64>(99999, FStrip.OffsetAtX(FStrip.Width - 2));`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1196` (OffsetAtX_Endpoints): `Assert.AreEqual<Int64>(99999, FStrip.OffsetAtX(FStrip.Width + 100));`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1198` (OffsetAtX_Endpoints): `Assert.IsTrue(Abs(LOffset - 50000) < 1000, 'Середина полосы — середина файла');`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1203` (OffsetAtX_Endpoints): `Assert.IsTrue(LOffset >= LPrev, 'Смещение растёт слева направо');`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1206` (OffsetAtX_Endpoints): `Assert.Contains(FStrip.HintTextAt(FStrip.Width div 2, 10), '0x0000');`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1253` (ZeroFileSize_Safe): `Assert.AreEqual<Int64>(0, FStrip.OffsetAtX(100));`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1261` (ZeroFileSize_Safe): `Assert.AreEqual<Int64>(0, FStrip.OffsetAtX(0));`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1265` (ZeroFileSize_Safe): `Assert.AreEqual<Int64>(0, FStrip.OffsetAtX(0), 'Нулевая ширина');`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1260` (OffsetAtX_Endpoints): `Assert.AreEqual<Int64>(0, FStrip.OffsetAtX(0));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1261` (OffsetAtX_Endpoints): `Assert.AreEqual<Int64>(0, FStrip.OffsetAtX(1));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1262` (OffsetAtX_Endpoints): `Assert.AreEqual<Int64>(0, FStrip.OffsetAtX(-50));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1263` (OffsetAtX_Endpoints): `Assert.AreEqual<Int64>(99999, FStrip.OffsetAtX(FStrip.Width - 2));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1264` (OffsetAtX_Endpoints): `Assert.AreEqual<Int64>(99999, FStrip.OffsetAtX(FStrip.Width + 100));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1266` (OffsetAtX_Endpoints): `Assert.IsTrue(Abs(LOffset - 50000) < 1000, 'Середина полосы — середина файла');`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1271` (OffsetAtX_Endpoints): `Assert.IsTrue(LOffset >= LPrev, 'Смещение растёт слева направо');`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1274` (OffsetAtX_Endpoints): `Assert.Contains(FStrip.HintTextAt(FStrip.Width div 2, 10), '0x0000');`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1321` (ZeroFileSize_Safe): `Assert.AreEqual<Int64>(0, FStrip.OffsetAtX(100));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1329` (ZeroFileSize_Safe): `Assert.AreEqual<Int64>(0, FStrip.OffsetAtX(0));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1333` (ZeroFileSize_Safe): `Assert.AreEqual<Int64>(0, FStrip.OffsetAtX(0), 'Нулевая ширина');`
 
 ### `App.BinaryLab.Controls.OffsetDigits` — проверок: 5
 
@@ -1072,43 +1110,43 @@ DUnitX прерывает тест на первой неудачной пров
 
 ### `App.BinaryLab.Controls.PointOfOffset` — проверок: 5
 
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:457` (OffsetAtPoint_InverseOfPointOfOffset): `Assert.IsTrue(FView.PointOfOffset(LOffset, P, LAscii), Format('Точка для %d', [LOffset]));`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:462` (OffsetAtPoint_InverseOfPointOfOffset): `Assert.IsFalse(FView.PointOfOffset(LTop - 1, P));`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:463` (OffsetAtPoint_InverseOfPointOfOffset): `Assert.IsFalse(FView.PointOfOffset(LTop + Int64(FView.VisibleRows) * 16, P));`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:464` (OffsetAtPoint_InverseOfPointOfOffset): `Assert.IsFalse(FView.PointOfOffset(-1, P));`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:664` (NilSource_Safe): `Assert.IsFalse(FView.PointOfOffset(0, P));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:460` (OffsetAtPoint_InverseOfPointOfOffset): `Assert.IsTrue(FView.PointOfOffset(LOffset, P, LAscii), Format('Точка для %d', [LOffset]));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:465` (OffsetAtPoint_InverseOfPointOfOffset): `Assert.IsFalse(FView.PointOfOffset(LTop - 1, P));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:466` (OffsetAtPoint_InverseOfPointOfOffset): `Assert.IsFalse(FView.PointOfOffset(LTop + Int64(FView.VisibleRows) * 16, P));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:467` (OffsetAtPoint_InverseOfPointOfOffset): `Assert.IsFalse(FView.PointOfOffset(-1, P));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:667` (NilSource_Safe): `Assert.IsFalse(FView.PointOfOffset(0, P));`
 
 ### `App.BinaryLab.Controls.RangeAtX` — проверок: 4
 
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1217` (Click_OnRangeGivesStart_ElsewhereComputed): `Assert.IsTrue(X < FStrip.Width, 'Диапазон нарисован');`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1219` (Click_OnRangeGivesStart_ElsewhereComputed): `Assert.AreEqual(1, FClicks);`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1225` (Click_OnRangeGivesStart_ElsewhereComputed): `Assert.IsFalse(FStrip.RangeAtX(300, LIndex));`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1254` (ZeroFileSize_Safe): `Assert.IsFalse(FStrip.RangeAtX(100, LIndex));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1285` (Click_OnRangeGivesStart_ElsewhereComputed): `Assert.IsTrue(X < FStrip.Width, 'Диапазон нарисован');`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1287` (Click_OnRangeGivesStart_ElsewhereComputed): `Assert.AreEqual(1, FClicks);`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1293` (Click_OnRangeGivesStart_ElsewhereComputed): `Assert.IsFalse(FStrip.RangeAtX(300, LIndex));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1322` (ZeroFileSize_Safe): `Assert.IsFalse(FStrip.RangeAtX(100, LIndex));`
 
 ### `App.BinaryLab.Controls.RowCount` — проверок: 1
 
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:640` (NilSource_Safe): `Assert.AreEqual<Int64>(0, FView.RowCount);`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:643` (NilSource_Safe): `Assert.AreEqual<Int64>(0, FView.RowCount);`
 
 ### `App.BinaryLab.Controls.ScrollRows` — проверок: 3
 
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:547` (BinaryLab_ButtonsDialogsAndDoubleClicks): `Assert.AreEqual<Int64>(3 * LPage.HexView.BytesPerRow, LPage.HexView.TopOffset);`
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:549` (BinaryLab_ButtonsDialogsAndDoubleClicks): `Assert.AreEqual<Int64>(0, LPage.HexView.TopOffset, 'Не выше начала');`
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:551` (BinaryLab_ButtonsDialogsAndDoubleClicks): `Assert.AreEqual(Integer($00FF00), Integer(MHBlendColor($00FF00, $000000, 1.0)));`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:548` (BinaryLab_ButtonsDialogsAndDoubleClicks): `Assert.AreEqual<Int64>(3 * LPage.HexView.BytesPerRow, LPage.HexView.TopOffset);`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:550` (BinaryLab_ButtonsDialogsAndDoubleClicks): `Assert.AreEqual<Int64>(0, LPage.HexView.TopOffset, 'Не выше начала');`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:552` (BinaryLab_ButtonsDialogsAndDoubleClicks): `Assert.AreEqual(Integer($00FF00), Integer(MHBlendColor($00FF00, $000000, 1.0)));`
 
 ### `App.BinaryLab.Controls.SetBands` — проверок: 2
 
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:957` (Hint_RangeEntropyAndBand): `Assert.Contains(LHint, MHHexOffset(10 * 4096));`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:958` (Hint_RangeEntropyAndBand): `Assert.Contains(LHint, MHHexOffset(11 * 4096));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:991` (Hint_RangeEntropyAndBand): `Assert.Contains(LHint, MHHexOffset(10 * 4096));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:992` (Hint_RangeEntropyAndBand): `Assert.Contains(LHint, MHHexOffset(11 * 4096));`
 
 ### `App.BinaryLab.Controls.SetData` — проверок: 7
 
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:985` (Paint_CellColourAndEmptyAndTiny): `Assert.AreEqual(Integer(ColorToRGB(TMHEntropyMap.EntropyColor(0))), Integer(LBitmap.Canvas.Pixels[P.X, P.Y]));`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:987` (Paint_CellColourAndEmptyAndTiny): `Assert.AreEqual(Integer(ColorToRGB(TMHEntropyMap.EntropyColor(8))), Integer(LBitmap.Canvas.Pixels[P.X, P.Y]));`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:992` (Paint_CellColourAndEmptyAndTiny): `Assert.AreEqual(0, FMap.CellCount);`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:993` (Paint_CellColourAndEmptyAndTiny): `Assert.IsTrue(FMap.CellRect(0).IsEmpty);`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1000` (Paint_CellColourAndEmptyAndTiny): `Assert.AreEqual(1, FMap.CellCount);`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1005` (Paint_CellColourAndEmptyAndTiny): `Assert.AreEqual(0, FMap.CellCount);`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1006` (Paint_CellColourAndEmptyAndTiny): `Assert.IsFalse(FMap.BlockAtPoint(0, 0, LIndex));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1019` (Paint_CellColourAndEmptyAndTiny): `Assert.AreEqual(Integer(ColorToRGB(TMHEntropyMap.EntropyColor(0))), Integer(LBitmap.Canvas.Pixels[P.X, P.Y]));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1021` (Paint_CellColourAndEmptyAndTiny): `Assert.AreEqual(Integer(ColorToRGB(TMHEntropyMap.EntropyColor(8))), Integer(LBitmap.Canvas.Pixels[P.X, P.Y]));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1026` (Paint_CellColourAndEmptyAndTiny): `Assert.AreEqual(0, FMap.CellCount);`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1027` (Paint_CellColourAndEmptyAndTiny): `Assert.IsTrue(FMap.CellRect(0).IsEmpty);`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1034` (Paint_CellColourAndEmptyAndTiny): `Assert.AreEqual(1, FMap.CellCount);`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1039` (Paint_CellColourAndEmptyAndTiny): `Assert.AreEqual(0, FMap.CellCount);`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1040` (Paint_CellColourAndEmptyAndTiny): `Assert.IsFalse(FMap.BlockAtPoint(0, 0, LIndex));`
 
 ### `App.BinaryLab.Controls.SetHistogram` — проверок: 7
 
@@ -1117,107 +1155,111 @@ DUnitX прерывает тест на первой неудачной пров
 - `tests/Unit/MineHunter.Tests.BinaryLab.Api.pas:485` (Histogram_BarFractionEdges): `Assert.AreEqual(0.0, LHistogram.BarFraction(2), 1e-12, 'Нулевой счётчик — нет столбца');`
 - `tests/Unit/MineHunter.Tests.BinaryLab.Api.pas:492` (Histogram_BarFractionEdges): `Assert.AreEqual(1.0, LHistogram.BarFraction(0), 1e-12);`
 - `tests/Unit/MineHunter.Tests.BinaryLab.Api.pas:493` (Histogram_BarFractionEdges): `Assert.AreEqual(0.0, LHistogram.BarFraction(1), 1e-12);`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1136` (Paint_NormalEmptyTiny): `Assert.IsFalse(FHistogram.ByteAtPoint(0, 0, B));`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1144` (Paint_NormalEmptyTiny): `Assert.AreEqual<Int64>(0, FHistogram.Total);`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1204` (Paint_NormalEmptyTiny): `Assert.IsFalse(FHistogram.ByteAtPoint(0, 0, B));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1212` (Paint_NormalEmptyTiny): `Assert.AreEqual<Int64>(0, FHistogram.Total);`
 
 ### `App.BinaryLab.Controls.SetRanges` — проверок: 3
 
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1253` (ZeroFileSize_Safe): `Assert.AreEqual<Int64>(0, FStrip.OffsetAtX(100));`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1254` (ZeroFileSize_Safe): `Assert.IsFalse(FStrip.RangeAtX(100, LIndex));`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1265` (ZeroFileSize_Safe): `Assert.AreEqual<Int64>(0, FStrip.OffsetAtX(0), 'Нулевая ширина');`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1321` (ZeroFileSize_Safe): `Assert.AreEqual<Int64>(0, FStrip.OffsetAtX(100));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1322` (ZeroFileSize_Safe): `Assert.IsFalse(FStrip.RangeAtX(100, LIndex));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:1333` (ZeroFileSize_Safe): `Assert.AreEqual<Int64>(0, FStrip.OffsetAtX(0), 'Нулевая ширина');`
 
 ### `App.BinaryLab.Controls.VisibleRows` — проверок: 6
 
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:693` (BigVirtualSource_ScrollsToEndAndReadsOnlyPage): `Assert.AreEqual<Int64>((FView.RowCount - FView.VisibleRows) * 16, FView.TopOffset);`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:696` (BigVirtualSource_ScrollsToEndAndReadsOnlyPage): `Assert.IsTrue(FView.PointOfOffset(SIZE_6GB + 4, P));`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:697` (BigVirtualSource_ScrollsToEndAndReadsOnlyPage): `Assert.IsTrue(FView.OffsetAtPoint(P.X, P.Y, LOffset));`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:704` (BigVirtualSource_ScrollsToEndAndReadsOnlyPage): `Assert.IsTrue(LSource.MaxRead <= 64 * 1024, Format('Читается только видимая страница (%d байт)', [LSource.MaxRead]));`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:705` (BigVirtualSource_ScrollsToEndAndReadsOnlyPage): `Assert.IsTrue(LSource.Reads > 0);`
-- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:271` (BigVirtualSource_ScrollsToEndAndReadsOnlyPage): `Assert.IsTrue((LRow >= LTopRow) and (LRow < LTopRow + FView.VisibleRows),`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:696` (BigVirtualSource_ScrollsToEndAndReadsOnlyPage): `Assert.AreEqual<Int64>((FView.RowCount - FView.VisibleRows) * 16, FView.TopOffset);`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:699` (BigVirtualSource_ScrollsToEndAndReadsOnlyPage): `Assert.IsTrue(FView.PointOfOffset(SIZE_6GB + 4, P));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:700` (BigVirtualSource_ScrollsToEndAndReadsOnlyPage): `Assert.IsTrue(FView.OffsetAtPoint(P.X, P.Y, LOffset));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:707` (BigVirtualSource_ScrollsToEndAndReadsOnlyPage): `Assert.IsTrue(LSource.MaxRead <= 64 * 1024, Format('Читается только видимая страница (%d байт)', [LSource.MaxRead]));`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:708` (BigVirtualSource_ScrollsToEndAndReadsOnlyPage): `Assert.IsTrue(LSource.Reads > 0);`
+- `tests/UI/MineHunter.Tests.UI.BinaryLabControls.pas:274` (BigVirtualSource_ScrollsToEndAndReadsOnlyPage): `Assert.IsTrue((LRow >= LTopRow) and (LRow < LTopRow + FView.VisibleRows),`
 
 ### `App.BinaryLabPage.Busy` — проверок: 14
 
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:616` (BinaryLab_ErrorsCancelAndCloseWhileBusy): `Assert.IsTrue(WaitForBinaryLab(10000));`
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:625` (BinaryLab_ErrorsCancelAndCloseWhileBusy): `Assert.IsTrue(WaitForBinaryLab(30000));`
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:626` (BinaryLab_ErrorsCancelAndCloseWhileBusy): `Assert.IsFalse(LPage.Busy);`
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:629` (BinaryLab_ErrorsCancelAndCloseWhileBusy): `Assert.IsTrue(LPage.Busy);`
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:566` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.IsFalse(LPage.Busy);`
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:568` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.IsFalse(LPage.Busy, 'Отмена в простое');`
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:571` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.IsFalse(LPage.Busy, 'Пустой путь не открывается');`
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:573` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.IsFalse(LPage.Busy, 'Сравнивать не с чем');`
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:576` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.IsFalse(LPage.Busy, 'Поиск без файла');`
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:586` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.IsTrue(WaitForBinaryLab(30000));`
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:589` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.IsFalse(LPage.Busy, 'Пустой путь сравнения');`
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:591` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.IsFalse(LPage.Busy, 'Пустой шаблон');`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:742` (BinaryLab_ErrorsCancelAndCloseWhileBusy): `Assert.IsTrue(WaitForBinaryLab(10000));`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:751` (BinaryLab_ErrorsCancelAndCloseWhileBusy): `Assert.IsTrue(WaitForBinaryLab(30000));`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:752` (BinaryLab_ErrorsCancelAndCloseWhileBusy): `Assert.IsFalse(LPage.Busy);`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:755` (BinaryLab_ErrorsCancelAndCloseWhileBusy): `Assert.IsTrue(LPage.Busy);`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:567` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.IsFalse(LPage.Busy);`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:569` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.IsFalse(LPage.Busy, 'Отмена в простое');`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:572` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.IsFalse(LPage.Busy, 'Пустой путь не открывается');`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:574` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.IsFalse(LPage.Busy, 'Сравнивать не с чем');`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:577` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.IsFalse(LPage.Busy, 'Поиск без файла');`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:587` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.IsTrue(WaitForBinaryLab(30000));`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:590` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.IsFalse(LPage.Busy, 'Пустой путь сравнения');`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:592` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.IsFalse(LPage.Busy, 'Пустой шаблон');`
 - … и ещё 2
 
 ### `App.BinaryLabPage.Cancel` — проверок: 4
 
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:568` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.IsFalse(LPage.Busy, 'Отмена в простое');`
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:571` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.IsFalse(LPage.Busy, 'Пустой путь не открывается');`
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:625` (BinaryLab_ErrorsCancelAndCloseWhileBusy): `Assert.IsTrue(WaitForBinaryLab(30000));`
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:626` (BinaryLab_ErrorsCancelAndCloseWhileBusy): `Assert.IsFalse(LPage.Busy);`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:569` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.IsFalse(LPage.Busy, 'Отмена в простое');`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:572` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.IsFalse(LPage.Busy, 'Пустой путь не открывается');`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:751` (BinaryLab_ErrorsCancelAndCloseWhileBusy): `Assert.IsTrue(WaitForBinaryLab(30000));`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:752` (BinaryLab_ErrorsCancelAndCloseWhileBusy): `Assert.IsFalse(LPage.Busy);`
 
 ### `App.BinaryLabPage.CompareWith` — проверок: 6
 
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:573` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.IsFalse(LPage.Busy, 'Сравнивать не с чем');`
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:574` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.IsFalse(LPage.HasDiff);`
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:589` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.IsFalse(LPage.Busy, 'Пустой путь сравнения');`
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:591` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.IsFalse(LPage.Busy, 'Пустой шаблон');`
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:598` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.IsTrue(WaitForBinaryLab(30000));`
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:599` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.IsTrue(LPage.LastError <> '');`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:574` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.IsFalse(LPage.Busy, 'Сравнивать не с чем');`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:575` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.IsFalse(LPage.HasDiff);`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:590` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.IsFalse(LPage.Busy, 'Пустой путь сравнения');`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:592` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.IsFalse(LPage.Busy, 'Пустой шаблон');`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:599` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.IsTrue(WaitForBinaryLab(30000));`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:600` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.IsTrue(LPage.LastError <> '');`
 
 ### `App.BinaryLabPage.ExportDiff` — проверок: 2
 
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:582` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.IsFalse(TFile.Exists(LPath), 'Нет отчёта — нет файла');`
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:583` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.IsFalse(TFile.Exists(TPath.Combine(FTempDir, 'none-diff.html')));`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:583` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.IsFalse(TFile.Exists(LPath), 'Нет отчёта — нет файла');`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:584` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.IsFalse(TFile.Exists(TPath.Combine(FTempDir, 'none-diff.html')));`
 
 ### `App.BinaryLabPage.ExportReport` — проверок: 2
 
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:582` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.IsFalse(TFile.Exists(LPath), 'Нет отчёта — нет файла');`
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:583` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.IsFalse(TFile.Exists(TPath.Combine(FTempDir, 'none-diff.html')));`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:583` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.IsFalse(TFile.Exists(LPath), 'Нет отчёта — нет файла');`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:584` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.IsFalse(TFile.Exists(TPath.Combine(FTempDir, 'none-diff.html')));`
 
 ### `App.BinaryLabPage.FindPattern` — проверок: 8
 
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:576` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.IsFalse(LPage.Busy, 'Поиск без файла');`
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:578` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.AreEqual(TMHBinaryLabPage.TabOverview, LPage.Tabs.ActivePageIndex, 'Без файла Hex не открывается');`
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:591` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.IsFalse(LPage.Busy, 'Пустой шаблон');`
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:593` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.AreEqual(TMHBinaryLabPage.TabOverview, LPage.Tabs.ActivePageIndex, 'Отрицательное смещение');`
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:360` (BinaryLab_AnalyzeNavigateFindExportCompare): `Assert.IsTrue(WaitForBinaryLab(10000));`
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:361` (BinaryLab_AnalyzeNavigateFindExportCompare): `Assert.IsTrue(LPage.LastFindOffset > 0, 'Найдено без учёта регистра');`
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:364` (BinaryLab_AnalyzeNavigateFindExportCompare): `Assert.IsTrue(WaitForBinaryLab(10000));`
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:365` (BinaryLab_AnalyzeNavigateFindExportCompare): `Assert.AreEqual<Int64>(-1, LPage.LastFindOffset);`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:577` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.IsFalse(LPage.Busy, 'Поиск без файла');`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:579` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.AreEqual(TMHBinaryLabPage.TabOverview, LPage.Tabs.ActivePageIndex, 'Без файла Hex не открывается');`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:592` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.IsFalse(LPage.Busy, 'Пустой шаблон');`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:594` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.AreEqual(TMHBinaryLabPage.TabOverview, LPage.Tabs.ActivePageIndex, 'Отрицательное смещение');`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:361` (BinaryLab_AnalyzeNavigateFindExportCompare): `Assert.IsTrue(WaitForBinaryLab(10000));`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:362` (BinaryLab_AnalyzeNavigateFindExportCompare): `Assert.IsTrue(LPage.LastFindOffset > 0, 'Найдено без учёта регистра');`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:365` (BinaryLab_AnalyzeNavigateFindExportCompare): `Assert.IsTrue(WaitForBinaryLab(10000));`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:366` (BinaryLab_AnalyzeNavigateFindExportCompare): `Assert.AreEqual<Int64>(-1, LPage.LastFindOffset);`
 
 ### `App.BinaryLabPage.OpenFile` — проверок: 12
 
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:571` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.IsFalse(LPage.Busy, 'Пустой путь не открывается');`
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:573` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.IsFalse(LPage.Busy, 'Сравнивать не с чем');`
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:586` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.IsTrue(WaitForBinaryLab(30000));`
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:587` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.IsTrue(LPage.HasReport);`
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:605` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.IsTrue(WaitForBinaryLab(30000));`
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:606` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.IsTrue(LPage.Report.Path.EndsWith('edge3.exe'), LPage.Report.Path);`
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:616` (BinaryLab_ErrorsCancelAndCloseWhileBusy): `Assert.IsTrue(WaitForBinaryLab(10000));`
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:617` (BinaryLab_ErrorsCancelAndCloseWhileBusy): `Assert.IsTrue(LPage.LastError <> '', 'Ошибка открытия показана');`
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:625` (BinaryLab_ErrorsCancelAndCloseWhileBusy): `Assert.IsTrue(WaitForBinaryLab(30000));`
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:626` (BinaryLab_ErrorsCancelAndCloseWhileBusy): `Assert.IsFalse(LPage.Busy);`
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:629` (BinaryLab_ErrorsCancelAndCloseWhileBusy): `Assert.IsTrue(LPage.Busy);`
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:632` (BinaryLab_ErrorsCancelAndCloseWhileBusy): `Assert.Pass('Окно закрыто во время анализа без ошибок');`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:572` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.IsFalse(LPage.Busy, 'Пустой путь не открывается');`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:574` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.IsFalse(LPage.Busy, 'Сравнивать не с чем');`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:587` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.IsTrue(WaitForBinaryLab(30000));`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:588` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.IsTrue(LPage.HasReport);`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:606` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.IsTrue(WaitForBinaryLab(30000));`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:607` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.IsTrue(LPage.Report.Path.EndsWith('edge3.exe'), LPage.Report.Path);`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:742` (BinaryLab_ErrorsCancelAndCloseWhileBusy): `Assert.IsTrue(WaitForBinaryLab(10000));`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:743` (BinaryLab_ErrorsCancelAndCloseWhileBusy): `Assert.IsTrue(LPage.LastError <> '', 'Ошибка открытия показана');`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:751` (BinaryLab_ErrorsCancelAndCloseWhileBusy): `Assert.IsTrue(WaitForBinaryLab(30000));`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:752` (BinaryLab_ErrorsCancelAndCloseWhileBusy): `Assert.IsFalse(LPage.Busy);`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:755` (BinaryLab_ErrorsCancelAndCloseWhileBusy): `Assert.IsTrue(LPage.Busy);`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:758` (BinaryLab_ErrorsCancelAndCloseWhileBusy): `Assert.Pass('Окно закрыто во время анализа без ошибок');`
 
 ### `App.BinaryLabPage.ParseOffset` — проверок: 6
 
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:346` (BinaryLab_AnalyzeNavigateFindExportCompare): `Assert.IsTrue(TMHBinaryLabPage.ParseOffset('0x40', LOffset));`
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:348` (BinaryLab_AnalyzeNavigateFindExportCompare): `Assert.IsTrue(TMHBinaryLabPage.ParseOffset('1F4h', LOffset));`
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:350` (BinaryLab_AnalyzeNavigateFindExportCompare): `Assert.IsTrue(TMHBinaryLabPage.ParseOffset('128', LOffset));`
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:352` (BinaryLab_AnalyzeNavigateFindExportCompare): `Assert.IsTrue(TMHBinaryLabPage.ParseOffset('ff', LOffset), 'Буквы — шестнадцатеричное');`
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:353` (BinaryLab_AnalyzeNavigateFindExportCompare): `Assert.IsFalse(TMHBinaryLabPage.ParseOffset('', LOffset));`
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:354` (BinaryLab_AnalyzeNavigateFindExportCompare): `Assert.IsFalse(TMHBinaryLabPage.ParseOffset('12x', LOffset));`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:347` (BinaryLab_AnalyzeNavigateFindExportCompare): `Assert.IsTrue(TMHBinaryLabPage.ParseOffset('0x40', LOffset));`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:349` (BinaryLab_AnalyzeNavigateFindExportCompare): `Assert.IsTrue(TMHBinaryLabPage.ParseOffset('1F4h', LOffset));`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:351` (BinaryLab_AnalyzeNavigateFindExportCompare): `Assert.IsTrue(TMHBinaryLabPage.ParseOffset('128', LOffset));`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:353` (BinaryLab_AnalyzeNavigateFindExportCompare): `Assert.IsTrue(TMHBinaryLabPage.ParseOffset('ff', LOffset), 'Буквы — шестнадцатеричное');`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:354` (BinaryLab_AnalyzeNavigateFindExportCompare): `Assert.IsFalse(TMHBinaryLabPage.ParseOffset('', LOffset));`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:355` (BinaryLab_AnalyzeNavigateFindExportCompare): `Assert.IsFalse(TMHBinaryLabPage.ParseOffset('12x', LOffset));`
 
-### `App.BinaryLabPage.ShowOffset` — проверок: 5
+### `App.BinaryLabPage.ShowOffset` — проверок: 9
 
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:578` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.AreEqual(TMHBinaryLabPage.TabOverview, LPage.Tabs.ActivePageIndex, 'Без файла Hex не открывается');`
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:582` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.IsFalse(TFile.Exists(LPath), 'Нет отчёта — нет файла');`
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:593` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.AreEqual(TMHBinaryLabPage.TabOverview, LPage.Tabs.ActivePageIndex, 'Отрицательное смещение');`
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:595` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.AreEqual<Int64>(1, LPage.HexView.SelLength, 'Длина выделения не меньше 1');`
-- `tests/UI/MineHunter.Tests.UI.Smoke.pas:598` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.IsTrue(WaitForBinaryLab(30000));`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:579` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.AreEqual(TMHBinaryLabPage.TabOverview, LPage.Tabs.ActivePageIndex, 'Без файла Hex не открывается');`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:583` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.IsFalse(TFile.Exists(LPath), 'Нет отчёта — нет файла');`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:594` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.AreEqual(TMHBinaryLabPage.TabOverview, LPage.Tabs.ActivePageIndex, 'Отрицательное смещение');`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:596` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.AreEqual<Int64>(1, LPage.HexView.SelLength, 'Длина выделения не меньше 1');`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:599` (BinaryLab_PageMethods_WithoutDataAreSafe): `Assert.IsTrue(WaitForBinaryLab(30000));`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:660` (BinaryLab_DoubleClickEdgeCases): `Assert.AreEqual(TMHBinaryLabPage.TabHex, LPage.Tabs.ActivePageIndex);`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:661` (BinaryLab_DoubleClickEdgeCases): `Assert.AreEqual<Int64>(0, LPage.HexView.SelStart);`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:731` (BinaryLab_DoubleClickEdgeCases): `Assert.AreEqual(TMHBinaryLabPage.TabHex, LPage.Tabs.ActivePageIndex);`
+- `tests/UI/MineHunter.Tests.UI.Smoke.pas:732` (BinaryLab_DoubleClickEdgeCases): `Assert.AreEqual<Int64>(0, LPage.HexView.SelStart);`
 
-Функций: 120, проверок: 635 (под условием: 2), пропусков: 0. Прогоны: Debug — 988 тестов, пройдено 988, Release — 988 тестов, пройдено 988.
+Функций: 120, проверок: 651 (под условием: 2), пропусков: 0. Прогоны: Debug — 992 тестов, пройдено 992, Release — 992 тестов, пройдено 992.

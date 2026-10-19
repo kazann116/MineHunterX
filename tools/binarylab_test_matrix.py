@@ -144,6 +144,25 @@ EQUIVALENT_MUTANTS = {
         'строка на нечётном смещении через границу блока проверена тестом Strings_Utf16OddOffsetAcrossChunk',
 }
 
+# Эквивалентные мутанты интерфейса — с обоснованием.
+UI_EQUIVALENT_MUTANTS = {
+    ('MineHunter.App.BinaryLab.Controls.pas', 879, '<= → <'):
+        'MoveCaret вызывается только из KeyDown, MouseDown, MouseMove и SetCaretOffset — все выходят при пустом файле',
+    ('MineHunter.App.BinaryLab.Controls.pas', 910, 'or → and'):
+        'размер берётся из источника (нет источника — размер 0); у пустого источника поиск ничего не находит и так',
+    ('MineHunter.App.BinaryLab.Controls.pas', 1175, 'and → or'):
+        'отбор подсветок только ускоряет рисование: подсветка вне видимых строк не закрашивает ни одной видимой ячейки',
+    ('MineHunter.App.BinaryLab.Controls.pas', 1851, '- 1 → (убрано)'):
+        'при LRel < W - 1 значение Trunc(LRel / W * размер) всегда меньше размера: верхняя граница недостижима',
+    ('MineHunter.App.BinaryLabPage.pas', 875, 'or → and'):
+        'хранилище вердиктов создаётся вместе с сервисами и обнуляется после закрытия окна, '
+        'а у открытого отчёта путь всегда задан: обе проверки защитные',
+    ('MineHunter.App.BinaryLabPage.pas', 1257, '> → >='):
+        'AddHighlight отбрасывает подсветку нулевого размера: без оверлея подсветки нет в обоих случаях',
+    ('MineHunter.App.BinaryLabPage.pas', 1322, 'or → and'):
+        'виртуальный список запрашивает только строки 0..Count-1, а Count = числу отобранных строк',
+}
+
 RESULT_FILES = {'Debug': os.path.join(ROOT, 'build', 'tests-Debug.xml'),
                 'Release': os.path.join(ROOT, 'build', 'tests-Release.xml')}
 
@@ -281,22 +300,20 @@ def assertion_lines(lines, pattern, test):
     return result
 
 
-def mutation_section(missing):
-    """Мутационное тестирование: итог, выжившие → убиты новыми тестами или эквивалентны."""
+def mutation_block(missing, prefix, unit_prefix, equivalents, heading, intro):
+    """Итог одного мутационного прогона: выжившие → убиты новыми тестами или эквивалентны."""
     import json
-    path = os.path.join(ROOT, 'build', 'binarylab-mutation.json')
+    path = os.path.join(ROOT, 'build', prefix + '.json')
     if not os.path.exists(path):
+        missing.append('Нет итога мутационного прогона build/%s.json' % prefix)
         return []
     data = json.load(open(path, encoding='utf-8'))
-    again_path = os.path.join(ROOT, 'build', 'binarylab-mutation-survivors.json')
+    again_path = os.path.join(ROOT, 'build', prefix + '-survivors.json')
     again = {}
     if os.path.exists(again_path):
         for r in json.load(open(again_path, encoding='utf-8'))['results']:
             again[(r['unit'], r['line'], r['mutation'])] = r['status']
-    out = ['', '## Мутационное тестирование', '',
-           'В копию модуля ядра вносится одна ошибка, тесты собираются и запускаются (`python tools/binarylab_mutation.py`).',
-           'Мутант должен быть убит упавшим тестом. Выжившие повторены после новых тестов',
-           '(`--survivors`, `tests/Unit/MineHunter.Tests.BinaryLab.Mutation.pas`); эквивалентные — с обоснованием.', '',
+    out = ['', heading, ''] + intro + ['',
            'Первый прогон: мутантов %d, скомпилировалось %d, убито %d, выжило %d (%.1f%%).' % (
                data['mutants'], data['compiled'], data['killed'], data['survived'], data['score_percent']), '',
            '| Мутант | Было выжившим | Итог |', '|---|---|---|']
@@ -306,13 +323,13 @@ def mutation_section(missing):
         if r['status'] != 'выжил':
             continue
         key = (r['unit'], r['line'], r['mutation'])
-        name = '`%s:%d` %s' % (r['unit'].replace('MineHunter.BinaryLab.', ''), r['line'], r['mutation'])
+        name = '`%s:%d` %s' % (r['unit'].replace(unit_prefix, ''), r['line'], r['mutation'])
         if again.get(key, '').startswith('убит'):
             final_killed += 1
             result = 'убит новыми тестами'
-        elif key in EQUIVALENT_MUTANTS:
+        elif key in equivalents:
             equivalent += 1
-            result = 'эквивалентный: ' + EQUIVALENT_MUTANTS[key]
+            result = 'эквивалентный: ' + equivalents[key]
         else:
             result = '**выжил**'
             missing.append('Мутант %s:%d %s выжил и не признан эквивалентным' % key)
@@ -320,6 +337,23 @@ def mutation_section(missing):
     useful = data['compiled'] - equivalent
     out += ['', 'Итог: из %d неэквивалентных мутантов убито %d (%.1f%%), эквивалентных %d.' % (
         useful, final_killed, 100.0 * final_killed / useful if useful else 0, equivalent)]
+    return out
+
+
+def mutation_section(missing):
+    """Мутационное тестирование ядра и интерфейса."""
+    out = mutation_block(missing, 'binarylab-mutation', 'MineHunter.BinaryLab.', EQUIVALENT_MUTANTS,
+                         '## Мутационное тестирование',
+                         ['В копию модуля ядра вносится одна ошибка, тесты собираются и запускаются '
+                          '(`python tools/binarylab_mutation.py`).',
+                          'Мутант должен быть убит упавшим тестом. Выжившие повторены после новых тестов',
+                          '(`--survivors`, `tests/Unit/MineHunter.Tests.BinaryLab.Mutation.pas`); '
+                          'эквивалентные — с обоснованием.'])
+    out += mutation_block(missing, 'binarylab-mutation-ui', 'MineHunter.App.', UI_EQUIVALENT_MUTANTS,
+                          '### Интерфейс',
+                          ['Ошибка вносится в элементы (`App.BinaryLab.Controls`) или страницу (`App.BinaryLabPage`); '
+                           'запускаются тесты BinaryLab, включая элементы, и сценарии страницы из UI Smoke',
+                           '(`python tools/binarylab_mutation.py --ui`, повтор выживших — `--survivors --ui`).'])
     return out
 
 

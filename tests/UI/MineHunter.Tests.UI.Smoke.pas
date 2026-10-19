@@ -80,6 +80,7 @@ type
     [Test] procedure BinaryLab_ErrorsCancelAndCloseWhileBusy;
     [Test] procedure BinaryLab_ButtonsDialogsAndDoubleClicks;
     [Test] procedure BinaryLab_PageMethods_WithoutDataAreSafe;
+    [Test] procedure BinaryLab_DoubleClickEdgeCases;
   end;
 
 implementation
@@ -604,6 +605,131 @@ begin
   LPage.OpenFile(WriteSample('edge3.exe', False));
   Assert.IsTrue(WaitForBinaryLab(30000));
   Assert.IsTrue(LPage.Report.Path.EndsWith('edge3.exe'), LPage.Report.Path);
+end;
+
+procedure TMainFormSmokeTests.BinaryLab_DoubleClickEdgeCases;
+var
+  LPage: TMHBinaryLabPage;
+  LLeft, LRight, LText: string;
+  LBuilder: TTestPeBuilder;
+  LList: TListView;
+  LNode: TTreeNode;
+  LOffset: Int64;
+  LIndex, I: Integer;
+  LBytes: TBytes;
+begin
+  LPage := FForm.BinaryLabPage;
+  // Таблицы выделяют строку целиком.
+  for LList in TArray<TListView>.Create(LPage.InfoList, LPage.AnomalyList, LPage.DetailsList, LPage.RegionList,
+    LPage.StringsList, LPage.EmbeddedList, LPage.DiffList) do
+    Assert.IsTrue(LList.RowSelect);
+  LLeft := WriteSample('dbl-left.exe', False);
+  LPage.OpenFile(LLeft);
+  Assert.IsTrue(WaitForBinaryLab(30000));
+  Assert.IsTrue(LPage.HasReport);
+
+  // Строка: переход к её началу (а не остаток прежнего выделения).
+  LPage.HexView.GotoOffset(0, 1);
+  LPage.Tabs.ActivePageIndex := TMHBinaryLabPage.TabOverview;
+  Assert.IsTrue(LPage.StringsList.Items.Count > 0);
+  LPage.StringsList.Selected := LPage.StringsList.Items[0];
+  Assert.IsTrue(TMHBinaryLabPage.ParseOffset(LPage.StringsList.Items[0].Caption, LOffset));
+  LText := LPage.StringsList.Items[0].SubItems[2];
+  LPage.StringsList.OnDblClick(LPage.StringsList);
+  Assert.AreEqual(TMHBinaryLabPage.TabHex, LPage.Tabs.ActivePageIndex);
+  Assert.IsTrue(LOffset > 0);
+  Assert.AreEqual<Int64>(LOffset, LPage.HexView.SelStart);
+  Assert.AreEqual<Int64>(Length(LText), LPage.HexView.SelLength, 'Выделена строка ASCII целиком');
+
+  // Строка таблицы со смещением 0 (заголовки PE) ведёт в начало файла.
+  LNode := nil;
+  for I := 0 to LPage.StructureTree.Items.Count - 1 do
+    if LPage.StructureTree.Items[I].Text = MHL('Заголовок PE', 'PE header') then
+      LNode := LPage.StructureTree.Items[I];
+  Assert.IsNotNull(LNode);
+  LPage.StructureTree.Selected := LNode;
+  LIndex := -1;
+  for I := 0 to LPage.DetailsList.Items.Count - 1 do
+    if LPage.DetailsList.Items[I].Caption = MHL('Размер заголовков', 'Headers size') then
+      LIndex := I;
+  Assert.IsTrue(LIndex >= 0);
+  LPage.ShowOffset($80, 1);
+  LPage.Tabs.ActivePageIndex := TMHBinaryLabPage.TabOverview;
+  LPage.DetailsList.Selected := LPage.DetailsList.Items[LIndex];
+  LPage.DetailsList.OnDblClick(LPage.DetailsList);
+  Assert.AreEqual(TMHBinaryLabPage.TabHex, LPage.Tabs.ActivePageIndex);
+  Assert.AreEqual<Int64>(0, LPage.HexView.SelStart);
+
+  // Изменённая строка, похожая на смещение («0x10 …»), — не место в файле: перехода нет.
+  LBuilder := TTestPeBuilder.Create;
+  try
+    LBuilder.AddSection('.text', TestCodeBytes(6000), SCN_TEXT);
+    LBuilder.AddSection('.data', TestConcat([TestAscii('stratum+tcp://pool.supportxmr.com:3333'), TestBytes([0]),
+      TestAscii('powershell -enc SQBFAFgA'), TestBytes([0]), TestAscii('0x10 looks like an offset'),
+      TestBytes([0, 0])]), SCN_DATA);
+    LBuilder.AddImport('KERNEL32.dll', ['LoadLibraryA', 'GetProcAddress']);
+    LBuilder.Overlay := TestMinimalPe;
+    LRight := TPath.Combine(FTempDir, 'dbl-right.exe');
+    TFile.WriteAllBytes(LRight, LBuilder.Build);
+  finally
+    LBuilder.Free;
+  end;
+  LPage.CompareWith(LRight);
+  Assert.IsTrue(WaitForBinaryLab(30000));
+  Assert.IsTrue(LPage.HasDiff);
+  Assert.AreEqual(Integer(Length(LPage.Diff.Items)), LPage.DiffList.Items.Count);
+  LIndex := -1;
+  for I := 0 to High(LPage.Diff.Items) do
+    if (LPage.Diff.Items[I].Area = 'string') and LPage.Diff.Items[I].Name.StartsWith('0x') then
+      LIndex := I;
+  Assert.IsTrue(LIndex >= 0, 'Изменение строки «0x10 …»');
+  LPage.HexView.GotoOffset($80, 1);
+  LPage.Tabs.ActivePageIndex := TMHBinaryLabPage.TabDiff;
+  LPage.DiffList.Selected := LPage.DiffList.Items[LIndex];
+  LPage.DiffList.OnDblClick(LPage.DiffList);
+  Assert.AreEqual(TMHBinaryLabPage.TabDiff, LPage.Tabs.ActivePageIndex, 'Строка — без перехода');
+  Assert.AreEqual<Int64>($80, LPage.HexView.SelStart);
+
+  // Двойной щелчок без выделенной строки — ничего не происходит.
+  for LList in TArray<TListView>.Create(LPage.AnomalyList, LPage.DetailsList, LPage.RegionList,
+    LPage.StringsList, LPage.EmbeddedList, LPage.DiffList) do
+  begin
+    LList.Selected := nil;
+    LList.OnDblClick(LList);
+  end;
+  Assert.AreEqual(TMHBinaryLabPage.TabDiff, LPage.Tabs.ActivePageIndex);
+  Assert.AreEqual<Int64>($80, LPage.HexView.SelStart);
+
+  // Аномалия со смещением 0: PointerToRawData секции с точкой входа меньше 512 —
+  // загрузчик округляет его вниз до 0, точка входа оказывается в начале файла.
+  LBuilder := TTestPeBuilder.Create;
+  try
+    LBuilder.AddSection('.text', TestCodeBytes(2000), SCN_TEXT or SCN_WRITE);
+    LBuilder.AddSection('.data', TestAscii('plain data for the second section'), SCN_DATA);
+    LBuilder.AddImport('KERNEL32.dll', ['ExitProcess']);
+    LBytes := LBuilder.Build;
+    Assert.AreEqual('.text', TEncoding.ASCII.GetString(LBytes, LBuilder.SectionTableOffset, 5));
+    PCardinal(@LBytes[LBuilder.SectionTableOffset + 20])^ := $1FF;
+    LRight := TPath.Combine(FTempDir, 'dbl-zero.exe');
+    TFile.WriteAllBytes(LRight, LBytes);
+  finally
+    LBuilder.Free;
+  end;
+  LPage.OpenFile(LRight);
+  Assert.IsTrue(WaitForBinaryLab(30000));
+  Assert.IsTrue(LPage.HasReport);
+  Assert.AreEqual<Int64>(0, LPage.Report.Pe.EntryPointOffset);
+  LIndex := -1;
+  for I := 0 to High(LPage.Report.Anomalies) do
+    if LPage.Report.Anomalies[I].Offset = 0 then
+      LIndex := I;
+  Assert.IsTrue(LIndex >= 0, 'Аномалия точки входа со смещением 0');
+  LPage.ShowOffset($80, 1);
+  LPage.Tabs.ActivePageIndex := TMHBinaryLabPage.TabOverview;
+  LPage.AnomalyList.Selected := LPage.AnomalyList.Items[LIndex];
+  LPage.AnomalyList.OnDblClick(LPage.AnomalyList);
+  Assert.AreEqual(TMHBinaryLabPage.TabHex, LPage.Tabs.ActivePageIndex);
+  Assert.AreEqual<Int64>(0, LPage.HexView.SelStart);
 end;
 
 procedure TMainFormSmokeTests.BinaryLab_ErrorsCancelAndCloseWhileBusy;
